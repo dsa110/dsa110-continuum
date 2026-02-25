@@ -9,7 +9,6 @@ This module provides the orchestration layer for:
 
 Usage:
     from dsa110_contimg.core.evaluation import run_evaluation, create_evaluation_dataset
-from dsa110_contimg.common.utils import get_env_path
 
     # Create dataset from fixtures
     create_evaluation_dataset(
@@ -35,6 +34,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 import statistics
+
+from dsa110_contimg.common.utils import get_env_path
 
 from .config_loader import load_thresholds_config as load_thresholds_config_helper
 from .evaluators import create_evaluators

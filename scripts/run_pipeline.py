@@ -1,7 +1,10 @@
-#!/usr/bin/env python3
+#!/opt/miniforge/envs/casa6/bin/python
 """Run pipeline: phaseshift → apply cal → image."""
 import os
 import sys
+
+# Ensure the project root is on the path so dsa110_continuum is importable
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 MS = "/stage/dsa110-contimg/ms/2026-01-25T22:26:05.ms"
 BP_TABLE = "/stage/dsa110-contimg/ms/2026-01-25T22:26:05_0~23.b"
@@ -16,7 +19,7 @@ print("=== Step 1: Phaseshift to median meridian ===")
 if os.path.exists(MERIDIAN_MS):
     print(f"  Already exists: {MERIDIAN_MS}")
 else:
-    from dsa110_contimg.core.calibration.runner import phaseshift_ms
+    from dsa110_continuum.calibration.runner import phaseshift_ms
     meridian_ms, info = phaseshift_ms(
         ms_path=MS,
         mode="median_meridian",
@@ -46,7 +49,7 @@ with table(MERIDIAN_MS, readonly=True, ack=False) as t:
         needs_cal = True
 
 if needs_cal:
-    from dsa110_contimg.core.calibration.applycal import apply_to_target
+    from dsa110_continuum.calibration.applycal import apply_to_target
     apply_to_target(
         ms_target=MERIDIAN_MS,
         field="",
@@ -68,7 +71,7 @@ with table(MERIDIAN_MS, readonly=True, ack=False) as t:
 
 # Step 3: Image
 print("\n=== Step 3: Image with WSClean ===")
-from dsa110_contimg.core.imaging.cli_imaging import image_ms
+from dsa110_continuum.imaging.cli_imaging import image_ms
 
 imagename = os.path.join(OUTPUT_DIR, "3c454")
 print(f"  Imagename: {imagename}")
