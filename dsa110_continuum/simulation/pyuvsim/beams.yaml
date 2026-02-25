@@ -1,0 +1,6 @@
+beams:
+  - beam_id: 0
+    beam_type: analytic
+    analytic_type: uniform
+    parameters:
+      diameter_m: 4.5

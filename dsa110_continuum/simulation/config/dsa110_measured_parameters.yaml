@@ -1,0 +1,331 @@
+# DSA-110 Measured System Parameters for Simulation
+#
+# This file contains system parameters with full provenance tracking.
+# Each parameter includes measurement metadata, uncertainty, and validation status.
+#
+# Schema:
+#   parameter_name:
+#     value: <numeric or array>
+#     unit: <string>
+#     uncertainty: <numeric or array>
+#     uncertainty_type: "std" | "systematic" | "combined"
+#     measurement_date: <ISO 8601>
+#     source_observations: [<list of MS files or observation IDs>]
+#     derivation_method: <string describing calculation>
+#     validation_status: "measured" | "validated" | "assumed" | "default"
+#     references: [<list of papers, DOIs, or documentation links>]
+#     notes: <optional additional information>
+#     last_updated: <ISO 8601>
+#     version: <semantic version>
+
+metadata:
+  schema_version: '1.0.0'
+  created: '2025-11-25T00:00:00Z'
+  last_modified: '2025-11-25T00:00:00Z'
+  description: 'DSA-110 system parameters for rigorous simulation'
+  contact: 'DSA-110 Team'
+
+telescope_name: DSA-110
+instrument_name: DSA-110_Continuum
+site:
+  latitude_deg: 37.2314
+  longitude_deg: -118.2817
+  altitude_m: 1222.0
+layout:
+  csv: DSA110_Station_Coordinates.csv
+  polarization_array:
+    - -5 # XX
+    - -6 # YY
+spectral:
+  num_subbands: 16
+  # NOTE: DSA-110 correlator outputs 48 channels per subband (768 total channels)
+  # This was incorrectly set to 384 (CHIME value) - verified against real data
+  channels_per_subband: 48
+  channel_width_hz: 244140.625
+  # Freq range updated to match actual correlator output (verified from sb00-sb15)
+  # sb00: 1.4872-1.4986 GHz, sb15: 1.3114-1.3229 GHz
+  freq_min_hz: 1311400000.0
+  freq_max_hz: 1498600000.0
+  reference_frequency_hz: 1405000000.0
+temporal:
+  integration_time_sec: 12.884902000427246
+  total_duration_sec: 900.0
+  samples_per_integration: 1
+phase_center:
+  ra_deg: 0.0
+  dec_deg: 54.6
+beam_model:
+  config: beams.yaml
+
+system_parameters:
+  system_temperature:
+    value: 50.0 # PLACEHOLDER - awaiting measurement
+    unit: 'K'
+    uncertainty: null
+    uncertainty_type: null
+    measurement_date: null
+    source_observations: []
+    derivation_method: 'ASSUMPTION - Not yet measured from real calibrator observations'
+    validation_status: 'assumed'
+    references: []
+    notes: |
+      Current value is an assumption based on typical L-band systems.
+      Needs measurement via measure_system_parameters.py using calibrator observations.
+      Expected range: 40-80 K for DSA-110 at 1.4 GHz.
+    last_updated: '2025-11-25T00:00:00Z'
+    version: '0.1.0'
+
+  sefd:
+    value: null # To be computed from T_sys and efficiency
+    unit: 'Jy'
+    uncertainty: null
+    uncertainty_type: null
+    measurement_date: null
+    source_observations: []
+    derivation_method: 'SEFD = 2 * k_B * T_sys / (A_eff * efficiency)'
+    validation_status: 'default'
+    references: []
+    notes: |
+      SEFD depends on T_sys and efficiency measurements.
+      For DSA-110 with 4.65m dishes: SEFD ≈ 300-500 Jy (typical for small dishes).
+      VLA at L-band: ~400 Jy, ASKAP: ~2000 Jy.
+    last_updated: '2025-11-25T00:00:00Z'
+    version: '0.1.0'
+
+  aperture_efficiency:
+    value: 0.7 # PLACEHOLDER - awaiting measurement
+    unit: 'dimensionless'
+    uncertainty: null
+    uncertainty_type: null
+    measurement_date: null
+    source_observations: []
+    derivation_method: 'ASSUMPTION - Typical value for small dishes'
+    validation_status: 'assumed'
+    references: []
+    notes: |
+      Aperture efficiency η = A_eff / A_geom.
+      Typical range: 0.6-0.75 for well-designed dishes.
+      Measure from calibrator flux and T_sys: η = (S_cal * 2 * k_B * T_sys) / (A_geom * SEFD).
+    last_updated: '2025-11-25T00:00:00Z'
+    version: '0.1.0'
+
+  jy_per_k_conversion:
+    value: 2.0 # PLACEHOLDER - claimed "calibrated value" but no source
+    unit: 'Jy/K'
+    uncertainty: null
+    uncertainty_type: null
+    measurement_date: null
+    source_observations: []
+    derivation_method: "CLAIMED - Comment says 'calibrated value' but provides no reference"
+    validation_status: 'assumed'
+    references: []
+    notes: |
+      Conversion factor between brightness temperature and flux density.
+      Currently hardcoded in visibility_models.py with comment "calibrated value".
+      Should be derived from: F(Jy/K) = 2 * k_B / A_eff = 2 * k_B / (η * A_geom).
+      For DSA-110: F ≈ 2 * 1.38e-23 / (0.7 * 17.0) ≈ 2.3 Jy/K.
+    last_updated: '2025-11-25T00:00:00Z'
+    version: '0.1.0'
+
+calibration_errors:
+  gain_amplitude_std:
+    value: 0.10 # 10% - PLACEHOLDER - awaiting caltable analysis
+    unit: 'fractional'
+    uncertainty: null
+    uncertainty_type: null
+    measurement_date: null
+    source_observations: []
+    derivation_method: 'ASSUMPTION - Generic interferometer default'
+    validation_status: 'assumed'
+    references: []
+    notes: |
+      Standard deviation of gain amplitude variations per antenna.
+      Current default: 10% (0.10).
+      Measure via analyze_calibration_stability.py from real caltables.
+      VLA typical: 5-15%, ASKAP: 3-10%.
+    last_updated: '2025-11-25T00:00:00Z'
+    version: '0.1.0'
+
+  gain_phase_std:
+    value: 10.0 # degrees - PLACEHOLDER - awaiting caltable analysis
+    unit: 'degrees'
+    uncertainty: null
+    uncertainty_type: null
+    measurement_date: null
+    source_observations: []
+    derivation_method: 'ASSUMPTION - Generic interferometer default'
+    validation_status: 'assumed'
+    references: []
+    notes: |
+      Standard deviation of gain phase variations per antenna.
+      Current default: 10 degrees.
+      Measure via analyze_calibration_stability.py from real caltables.
+      VLA typical: 5-20°, ASKAP: 3-15°.
+      Phase stability depends on atmospheric conditions and antenna quality.
+    last_updated: '2025-11-25T00:00:00Z'
+    version: '0.1.0'
+
+  bandpass_amplitude_std:
+    value: 0.05 # 5% - PLACEHOLDER - awaiting caltable analysis
+    unit: 'fractional'
+    uncertainty: null
+    uncertainty_type: null
+    measurement_date: null
+    source_observations: []
+    derivation_method: 'ASSUMPTION - Generic interferometer default'
+    validation_status: 'assumed'
+    references: []
+    notes: |
+      Standard deviation of bandpass amplitude variations across frequency.
+      Current default: 5% (0.05).
+      Measure via analyze_calibration_stability.py from real bandpass tables.
+      Bandpass stability typically better than gain stability.
+    last_updated: '2025-11-25T00:00:00Z'
+    version: '0.1.0'
+
+antenna_parameters:
+  antenna_diameter:
+    value: 4.65
+    unit: 'm'
+    uncertainty: 0.01
+    uncertainty_type: 'systematic'
+    measurement_date: '2019-01-01T00:00:00Z' # Approximate commissioning
+    source_observations: ['Design specifications']
+    derivation_method: 'Engineering design specification'
+    validation_status: 'validated'
+    references:
+      - 'DSA-110 antenna design documents'
+    notes: '4.65m solid dishes, shared with Allen Telescope Array heritage'
+    last_updated: '2025-11-25T00:00:00Z'
+    version: '1.0.0'
+
+  antenna_positions:
+    value: 'Loaded from DSA110_Station_Coordinates.csv'
+    unit: 'ITRF (m)'
+    uncertainty: '~1cm'
+    uncertainty_type: 'systematic'
+    measurement_date: '2019-01-01T00:00:00Z'
+    source_observations: ['GPS survey']
+    derivation_method: 'GPS survey of antenna pad locations'
+    validation_status: 'validated'
+    references:
+      - 'backend/src/dsa110_contimg/utils/antpos_local/data/DSA110_Station_Coordinates.csv'
+    notes: 'ITRF coordinates (X, Y, Z) in meters for all 117 antennas'
+    last_updated: '2025-11-25T00:00:00Z'
+    version: '1.0.0'
+
+frequency_setup:
+  center_frequency:
+    value: 1.4
+    unit: 'GHz'
+    uncertainty: 0.001
+    uncertainty_type: 'systematic'
+    measurement_date: '2019-01-01T00:00:00Z'
+    source_observations: ['Correlator configuration']
+    derivation_method: 'Correlator center frequency setting'
+    validation_status: 'validated'
+    references:
+      - 'DSA-110 correlator documentation'
+    notes: 'L-band: 1.28 - 1.53 GHz, center at 1.4 GHz'
+    last_updated: '2025-11-25T00:00:00Z'
+    version: '1.0.0'
+
+  bandwidth_total:
+    value: 250.0
+    unit: 'MHz'
+    uncertainty: 0.1
+    uncertainty_type: 'systematic'
+    measurement_date: '2019-01-01T00:00:00Z'
+    source_observations: ['Correlator configuration']
+    derivation_method: 'Correlator bandwidth setting'
+    validation_status: 'validated'
+    references:
+      - 'DSA-110 correlator documentation'
+    notes: 'Total bandwidth: 250 MHz, divided into 16 subbands of 15.625 MHz each'
+    last_updated: '2025-11-25T00:00:00Z'
+    version: '1.0.0'
+
+  channel_width:
+    value: 325.520833
+    unit: 'kHz'
+    uncertainty: 0.001
+    uncertainty_type: 'systematic'
+    measurement_date: '2025-12-05T00:00:00Z'
+    source_observations: ['Correlator configuration', 'Ground truth from /data/incoming HDF5 files']
+    derivation_method: '15.625 MHz / 48 channels per subband'
+    validation_status: 'validated'
+    references:
+      - 'DSA-110 correlator documentation'
+    notes: 'After combining 16 subbands: 768 channels total (16 × 48), ~325.5 kHz each'
+    last_updated: '2025-12-05T00:00:00Z'
+    version: '1.1.0'
+
+  integration_time:
+    value: 12.88
+    unit: 's'
+    uncertainty: 0.01
+    uncertainty_type: 'systematic'
+    measurement_date: '2019-01-01T00:00:00Z'
+    source_observations: ['Correlator configuration']
+    derivation_method: 'Correlator integration time setting'
+    validation_status: 'validated'
+    references:
+      - 'DSA-110 correlator documentation'
+    notes: 'Drift-scan integration time optimized for meridian transit imaging'
+    last_updated: '2025-11-25T00:00:00Z'
+    version: '1.0.0'
+
+observing_parameters:
+  num_antennas:
+    value: 117
+    unit: 'count'
+    uncertainty: 0
+    uncertainty_type: null
+    measurement_date: '2019-01-01T00:00:00Z'
+    source_observations: ['Array configuration']
+    derivation_method: 'DSA-110 array consists of 117 antennas'
+    validation_status: 'validated'
+    references:
+      - 'DSA-110 array design'
+    notes: 'Some antennas may be offline during observations - check actual antenna count in MS'
+    last_updated: '2025-11-25T00:00:00Z'
+    version: '1.0.0'
+
+  num_polarizations:
+    value: 2
+    unit: 'count'
+    uncertainty: 0
+    uncertainty_type: null
+    measurement_date: '2019-01-01T00:00:00Z'
+    source_observations: ['Correlator configuration']
+    derivation_method: 'Dual linear polarization (XX, YY)'
+    validation_status: 'validated'
+    references:
+      - 'DSA-110 correlator documentation'
+    notes: 'Cross-polarizations (XY, YX) also recorded but often not used for continuum'
+    last_updated: '2025-11-25T00:00:00Z'
+    version: '1.0.0'
+# Usage instructions:
+#
+# 1. Update parameters after running measurement scripts:
+#    - measure_system_parameters.py → system_temperature, sefd, aperture_efficiency
+#    - analyze_calibration_stability.py → gain_amplitude_std, gain_phase_std, bandpass_amplitude_std
+#    - validate_noise_model.py → confirms noise model validity
+#
+# 2. Change validation_status from "assumed" to "measured" once real data acquired
+#
+# 3. Populate source_observations with actual MS file paths or observation IDs
+#
+# 4. Add DOI or arXiv links to references for any published papers
+#
+# 5. Increment version using semantic versioning (major.minor.patch)
+#
+# 6. Update last_updated timestamp when changing any field
+#
+# 7. Load parameters in simulation code:
+#    ```python
+#    import yaml
+#    with open("dsa110_measured_parameters.yaml") as f:
+#        params = yaml.safe_load(f)
+#    T_sys = params["system_parameters"]["system_temperature"]["value"]
+#    ```

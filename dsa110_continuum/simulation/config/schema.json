@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DSA-110 Reference Layout Schema",
+  "description": "Validation schema for reference_layout metadata (stored as Parquet)",
+  "type": "object",
+  "required": ["channel_width_hz", "freq_array_hz", "integration_time_sec"],
+  "properties": {
+    "channel_width_hz": {
+      "type": "number",
+      "description": "Channel width in Hz (negative for descending frequency order)",
+      "not": {
+        "const": 0
+      }
+    },
+    "freq_array_hz": {
+      "type": "array",
+      "description": "Frequency array for all channels across all subbands",
+      "items": {
+        "type": "number",
+        "minimum": 0
+      },
+      "minItems": 1
+    },
+    "integration_time_sec": {
+      "type": "number",
+      "description": "Integration time per visibility in seconds",
+      "minimum": 0,
+      "exclusiveMinimum": true
+    },
+    "lst_array_rad": {
+      "type": "array",
+      "description": "Local sidereal time array in radians",
+      "items": {
+        "type": "number"
+      }
+    },
+    "filename": {
+      "type": "string",
+      "description": "Original filename of the reference observation"
+    },
+    "extra_keywords": {
+      "type": "object",
+      "description": "Additional metadata keywords from the reference observation",
+      "properties": {
+        "applied_delays_ns": {
+          "type": "string",
+          "description": "Space-separated antenna delays in nanoseconds"
+        },
+        "fs_table": {
+          "type": "string",
+          "description": "Path to fringestopping table"
+        },
+        "ha_phase_center": {
+          "type": "number",
+          "description": "Hour angle of phase center"
+        },
+        "phase_center_dec": {
+          "type": "number",
+          "description": "Declination of phase center in radians"
+        },
+        "phase_center_epoch": {
+          "type": "string",
+          "description": "Epoch of phase center coordinates",
+          "enum": ["HADEC", "J2000", "B1950"]
+        }
+      }
+    }
+  }
+}

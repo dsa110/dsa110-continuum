@@ -1,0 +1,255 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dsa110_contimg"
+version = "0.1.0"
+description = "DSA-110 Continuum Imaging Pipeline for radio astronomy data processing"
+authors = [
+    {name = "Jakob T. Faber", email = "jfaber@caltech.edu"}
+]
+maintainers = [
+    {name = "Jakob T. Faber", email = "jfaber@caltech.edu"}
+]
+license = {text = "MIT"}
+requires-python = ">=3.11"
+readme = "README.md"
+keywords = [
+    "radio-astronomy",
+    "imaging",
+    "calibration",
+    "pipeline",
+    "dsa110",
+    "interferometry",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Astronomy",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: POSIX :: Linux",
+    "Environment :: Console",
+    "Framework :: Dagster",
+]
+
+dependencies = [
+    "pyuvdata==3.2.5",
+    "pyradiosky>=1.0.0",
+    "numpy",
+    "astropy",
+    "pyuvsim",
+    "matvis",
+    "fastapi>=0.115.0",  # CVE-2024-38 fix (also pulls starlette>=0.40.0)
+    "strawberry-graphql>=0.200.0",  # GraphQL framework for API
+    "antlr4-python3-runtime>=4.13.0",  # Required by Dagster 1.12.x (fixes ord() error)
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.0.0",
+    "uvicorn>=0.27.0",
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.16.0",
+    "aiosqlite>=0.19.0",
+    "slowapi>=0.1.9",
+    "prometheus-client>=0.20.0",
+    "asyncpg>=0.29.0",
+    "redis>=5.0.0",
+    "google-auth>=2.20.0",
+    "google-auth-oauthlib>=1.0.0",
+    "apscheduler>=3.10.0",
+    "pandas>=2.0.0",
+    "matplotlib>=3.0.0",
+    "python-casacore>=3.5.0",
+    "httpx>=0.27.0",  # HTTP client for Slack webhooks
+    "bcrypt>=4.0.0",  # Secure password hashing (OWASP recommended)
+    "pyyaml>=6.0.0",  # Required by docs/scripts/* health check utilities
+    # Phase 1 Refactoring: Replace custom implementations with battle-tested libraries
+    "tenacity>=9.0.0",  # Retry logic with exponential backoff (replaces custom retry.py)
+    "packaging>=24.0,<25.0",  # Semantic version parsing (pip/setuptools standard)
+    # Dagster workflow engine (compatible with dagster-dg-cli 1.12.x MCP tools)
+    # dagster-dg-cli 1.12.x requires dagster >= 1.12.0
+    "dagster>=1.12.10",
+    "dagster-webserver>=1.12.10",
+    "dagster-components>=0.1.18",  # Compatible with dagster 1.12.x
+    # Security: Explicit minimum versions for transitive deps with known CVEs
+    "aiohttp>=3.13.3",  # CVE-2025-69223 through CVE-2025-69230
+    "starlette>=0.47.2",  # CVE-2024-47874, CVE-2025-54121
+    "urllib3>=2.6.3",  # CVE-2025-50181/82, CVE-2025-66418/71, CVE-2026-21441
+    "werkzeug>=3.1.5",  # CVE-2025-66221, CVE-2026-21860
+    "filelock>=3.20.3",  # CVE-2025-68146, CVE-2026-22701
+    "fonttools>=4.60.2",  # CVE-2025-66034
+    "virtualenv>=20.36.1",  # CVE-2026-22702
+    "brotli>=1.2.0",  # CVE-2025-6176
+    "mcp>=1.23.0",  # CVE-2025-66416
+    "azure-core>=1.38.0",  # CVE-2026-21226
+    "bokeh>=3.8.2",  # CVE-2026-21883
+    "pyasn1>=0.6.2",  # CVE-2026-23490
+    # Note: dask/distributed pinned to <2024.11.0 for dask-ms compatibility
+    # CVE-2026-23528 in distributed requires >=2026.1.1, but dask-ms incompatible
+    # Monitor dask-ms updates for compatibility with newer dask versions
+    "dask<2024.11.0",  # Required by dask-ms 0.2.25
+    "distributed<2024.11.0",  # Match dask version constraint
+    # Django integration (Phase 1: Add VAST-style monitoring UI)
+    "django>=4.2,<5.0",  # LTS version with security support until April 2026
+    "django-extensions>=3.2.0",  # Management command enhancements
+    "django-environ>=0.11.0",  # Environment variable configuration
+    "pyarrow>=14.0.0",  # Parquet support for catalog storage
+]
+
+[project.urls]
+Homepage = "https://github.com/dsa110/dsa110-contimg"
+Documentation = "https://dsa110.github.io/dsa110-contimg"
+Repository = "https://github.com/dsa110/dsa110-contimg"
+Issues = "https://github.com/dsa110/dsa110-contimg/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "pytest-asyncio",
+    "pytest-timeout",
+    "pytest-xdist",
+    "pytest-doctestplus",  # Floating-point aware doctest for scientific computing
+    "httpx==0.28.1",
+    "scipy",  # For statistical tests (Gaussianity checks)
+    "hypothesis>=6.0.0",  # Property-based testing for edge case discovery
+    "black",
+    "flake8",
+    "structlog>=24.0.0",  # Structured logging with JSON output
+    "python-json-logger>=2.0.0",  # JSON log formatting
+    "playwright>=1.40.0",  # Browser automation for UI testing and debugging
+]
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.4.0",
+    "mkdocstrings>=0.24.0",
+    "mkdocstrings-python>=1.8.0",
+    "griffe>=0.40.0",
+    "mkdocs-autorefs>=0.5.0",
+    "mkdocs-git-revision-date-localized-plugin>=1.2.0",
+    "ruff>=0.1.0",  # For signature formatting in mkdocstrings
+]
+# Fast visibility simulator (OOM speedup over pyuvsim; unpolarized)
+matvis = ["matvis"]
+# GPU-accelerated tests and runtime (CuPy). For a specific CUDA version use e.g. cupy-cuda12x.
+gpu = ["cupy"]
+
+[project.scripts]
+dsa110 = "dsa110_contimg.interfaces.cli.main:cli"
+dsa110-health = "dsa110_contimg.validation.package_health:main"
+dsa110-validate = "dsa110_contimg.validation.package_health:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = [".codacy", ".git", ".hypothesis", ".venv", "venv", "__pycache__", ".pytest_cache", ".mypy_cache", "node_modules", ".idea", ".vscode", "dist", "build", ".tox", ".eggs", "*.egg", ".archive", ".stale", "manual"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "benchmark: marks tests as performance benchmarks",
+    "contract: marks tests as contract tests using real data",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "requires_router: test requires Apollo Router at localhost:4000",
+    "requires_dagster: test requires Dagster webserver at localhost:3210",
+    "requires_dsa110: test requires DSA-110 GraphQL subgraph at localhost:8001",
+]
+
+# Doctest configuration for scientific computing
+# Run with: pytest --doctest-modules src/dsa110_contimg/utils/
+doctest_optionflags = [
+    "ELLIPSIS",           # Allow ... in output matching
+    "NORMALIZE_WHITESPACE",  # Ignore whitespace differences
+]
+
+# Filter warnings from third-party packages we can't control
+filterwarnings = [
+    # Ignore pkg_resources deprecation warnings from casaconfig (CASA dependency)
+    # This is a known issue in CASA 6.x that will be fixed in a future release
+    "ignore:pkg_resources is deprecated as an API:UserWarning",
+    # Ignore setuptools deprecation warnings from any source
+    "ignore:.*pkg_resources.*:DeprecationWarning",
+    # Ignore NumPy reload warning from astropy (occurs when CASA imports numpy separately)
+    "ignore:The NumPy module was reloaded:UserWarning",
+    # Ignore importlib.resources.is_resource deprecation from casaconfig
+    # casaconfig uses legacy API that will be updated in future CASA releases
+    "ignore:is_resource is deprecated:DeprecationWarning",
+    # Ignore astropy indent deprecation (internal to astropy FITS handling)
+    "ignore:The indent function is deprecated:astropy.utils.exceptions.AstropyDeprecationWarning",
+    # Ignore FITS header validation warnings in truncated file tests
+    "ignore:Error validating header for HDU:astropy.io.fits.verify.VerifyWarning",
+    # Ignore FITS datfix warnings (astropy auto-fixes DATE-OBS to MJD-OBS)
+    "ignore:.*datfix.*:astropy.wcs.wcs.FITSFixedWarning",
+    # Ignore unawaited coroutine warnings from logging during async exception tests
+    "ignore:coroutine 'open_connection' was never awaited:RuntimeWarning",
+    # Ignore python-multipart deprecation warning from starlette (can be removed after upgrading fastapi>=0.110.0)
+    "ignore:Please use `import python_multipart` instead:PendingDeprecationWarning",
+    # Ignore SwigPyPacked/SwigPyObject deprecation warnings from casacore
+    "ignore:builtin type SwigPyPacked has no __module__ attribute:DeprecationWarning",
+    "ignore:builtin type SwigPyObject has no __module__ attribute:DeprecationWarning",
+]
+
+# Test timeout configuration
+# timeout = 60  # Default 60s per test (increased for integration-heavy unit tests)
+# timeout_method = "thread"
+
+
+# Recommended test commands (for reference):
+# Fast unit tests:     pytest tests/unit/ -q
+# Contract tests:      pytest tests/contract/ -q
+# Parallel execution:  pytest tests/unit/ -n 4 -q
+# Full suite:          pytest tests/unit/ tests/contract/ --ignore=tests/integration/
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "TID", "D"]  # D = pydocstyle for docstring enforcement
+ignore = [
+    "E501",  # Line too long - handled by formatter with line-length setting
+    "E402",  # Module level import not at top - intentional for CASA path initialization
+    "D105",  # Missing docstring in magic method
+    "D107",  # Missing docstring in __init__
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"  # Enforce NumPy-style docstrings
+
+[tool.ruff.lint.per-file-ignores]
+# Tests don't need full docstrings
+"tests/**/*.py" = ["D"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+# Ban relative imports to enforce explicit module paths
+ban-relative-imports = "parents"
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# Encourage use of public_api for external users
+# Note: These are soft warnings - internal code can still use direct imports
+"dsa110_contimg.execution.convert_group_unified".msg = "Use dsa110_contimg.public_api.convert_uvh5_to_ms instead"
+"dsa110_contimg.execution.adapter.convert_group_unified".msg = "Use dsa110_contimg.public_api.convert_uvh5_to_ms instead"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pyright]
+# Suppress warnings for packages without type stubs
+# These are runtime dependencies that work correctly but lack stubs
+reportMissingModuleSource = false
+reportMissingTypeStubs = false
+
+[tool.dg]
+# Dagster project configuration for dg MCP tools
+directory_type = "project"
+
+[tool.dg.project]
+root_module = "dsa110_contimg.workflow.dagster"

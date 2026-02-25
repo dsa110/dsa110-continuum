@@ -1,0 +1,27 @@
+telescope_name: DSA-110_Minimal
+instrument_name: DSA-110_Test
+site:
+  latitude_deg: 37.2333752
+  longitude_deg: -118.2856408
+  altitude_m: 1182.6
+layout:
+  csv: antennas.csv
+  polarization_array:
+    - -5  # xx
+    - -6  # yy
+spectral:
+  num_subbands: 4  # Reduced for quick testing
+  channels_per_subband: 64  # Reduced from 384
+  channel_width_hz: 244140.625
+  freq_min_hz: 1405137329.1015625
+  freq_max_hz: 1498643188.4765625
+  reference_frequency_hz: 1451895258.7890625
+temporal:
+  integration_time_sec: 12.884902000427246
+  total_duration_sec: 60.0  # 1 minute for quick tests
+  samples_per_integration: 1
+phase_center:
+  ra_deg: 0.0
+  dec_deg: 54.6
+beam_model:
+  config: beams.yaml

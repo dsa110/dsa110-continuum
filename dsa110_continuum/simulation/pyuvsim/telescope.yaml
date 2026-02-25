@@ -1,0 +1,27 @@
+telescope_name: DSA-110
+instrument_name: DSA-110
+site:
+  latitude_deg: 37.2333752
+  longitude_deg: -118.2856408
+  altitude_m: 1182.6
+layout:
+  csv: antennas.csv
+  polarization_array:
+    - -5 # xx
+    - -6 # yy
+spectral:
+  num_subbands: 16
+  channels_per_subband: 48
+  channel_width_hz: 244140.625
+  freq_min_hz: 1405137329.1015625
+  freq_max_hz: 1592637329.1015625
+  reference_frequency_hz: 1498887329.1015625
+temporal:
+  integration_time_sec: 12.884902000427246
+  total_duration_sec: 296.35276794433594
+  samples_per_integration: 1
+phase_center:
+  ra_deg: 180.0
+  dec_deg: 54.60000000000001
+beam_model:
+  config: beams.yaml

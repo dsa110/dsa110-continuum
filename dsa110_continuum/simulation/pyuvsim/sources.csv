@@ -1,0 +1,2 @@
+name,ra_deg,dec_deg,stokes_i_jy,stokes_q_jy,stokes_u_jy,stokes_v_jy,spectral_index,reference_frequency_hz
+DSA_CAL,180.0,54.6,25.0,0.0,0.0,0.0,0.0,1451895258.7890625
