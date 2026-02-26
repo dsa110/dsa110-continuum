@@ -252,7 +252,11 @@ def coadd_tiles(fits_paths: list[str], out_wcs: WCS, ny: int, nx: int) -> np.nda
         # pb-corrected image.  Pixels where beam < PB_CUTOFF have been
         # noise-amplified by 1/beam and cause severe edge artefacts in the
         # mosaic; blank them before combining.
-        pb_path = path.replace("-image-pb.fits", "-pb.fits")
+        # WSClean names the per-channel beam model "{tag}-beam-0.fits" (not -pb.fits)
+        pb_path = path.replace("-image-pb.fits", "-beam-0.fits")
+        if not os.path.exists(pb_path):
+            # Fallback: plain image tile has no -image-pb suffix
+            pb_path = path.replace("-image.fits", "-beam-0.fits")
         if PB_CUTOFF > 0 and os.path.exists(pb_path):
             with fits.open(pb_path) as pb_hdul:
                 pb_data = pb_hdul[0].data.squeeze().astype(np.float64)
