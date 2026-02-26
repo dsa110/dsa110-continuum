@@ -56,6 +56,11 @@ THRESHOLD = "0.005Jy"
 
 os.makedirs(IMAGE_DIR, exist_ok=True)
 
+# Primary beam cutoff: blank tile pixels where the WSClean beam model is below
+# this fraction of the peak response.  Values < PB_CUTOFF have high noise
+# amplification in pb-corrected images and cause severe edge artefacts in the mosaic.
+PB_CUTOFF = 0.2  # 20 % of peak response
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -242,8 +247,28 @@ def coadd_tiles(fits_paths: list[str], out_wcs: WCS, ny: int, nx: int) -> np.nda
             data = hdul[0].data.squeeze().astype(np.float64)
             hdr = hdul[0].header
 
+        # ── Primary beam cutoff ────────────────────────────────────────────
+        # WSClean writes a companion *-pb.fits beam model alongside the
+        # pb-corrected image.  Pixels where beam < PB_CUTOFF have been
+        # noise-amplified by 1/beam and cause severe edge artefacts in the
+        # mosaic; blank them before combining.
+        pb_path = path.replace("-image-pb.fits", "-pb.fits")
+        if PB_CUTOFF > 0 and os.path.exists(pb_path):
+            with fits.open(pb_path) as pb_hdul:
+                pb_data = pb_hdul[0].data.squeeze().astype(np.float64)
+            # Normalise to peak in case WSClean stores absolute sensitivity
+            pb_peak = np.nanmax(pb_data)
+            if pb_peak > 0:
+                pb_data /= pb_peak
+            low_beam = (pb_data < PB_CUTOFF) | ~np.isfinite(pb_data)
+            data[low_beam] = np.nan
+            n_blanked = low_beam.sum()
+            log.info("  PB cutoff (%.0f%%): blanked %d pixels", PB_CUTOFF * 100, n_blanked)
+        elif PB_CUTOFF > 0:
+            log.warning("  No pb.fits found for %s — skipping beam cutoff", Path(path).name)
+
         # Estimate per-tile noise from the central region (away from bright sources)
-        cy, cx = ny // 2, nx // 2
+        cy, cx = data.shape[0] // 2, data.shape[1] // 2
         margin = 200  # pixels from center
         inner = data[
             max(0, cy - margin): cy + margin,
