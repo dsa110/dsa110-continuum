@@ -16,6 +16,8 @@ import os
 import sys
 from pathlib import Path
 
+sys.path.insert(0, "/data/dsa110-continuum/src") if Path("/data/dsa110-continuum/src").exists() else None
+
 import numpy as np
 from astropy import units as u
 from astropy.coordinates import SkyCoord
@@ -41,7 +43,7 @@ NVSS_MATCH_RADIUS_ARCSEC = 30.0   # tighter: ≤0.5 beam keeps only genuine matc
 # Minimum NVSS flux for comparison: DSA σ≈4.5 mJy → 5σ≈22.5 mJy.
 # Use 50 mJy to ensure clean bright-source comparison (peak ≈ integrated flux).
 NVSS_MIN_FLUX_JY = 0.050
-NVSS_VIZ_CATALOG = "VIII/65/nvss"   # NVSS catalog in Vizier
+NVSS_CATALOG_DIR = Path("/data/dsa110-contimg/state/catalogs")
 
 # Beam solid angle in pixels (for aperture photometry)
 # Synthesized beam: ~60"x34", pixel=6" → beam area ~ (60*34*pi/(4*ln2)) / 36 px
@@ -85,20 +87,24 @@ def get_mosaic_footprint(data: np.ndarray, wcs: WCS) -> tuple[SkyCoord, float]:
     return center_sky, radius_deg
 
 
-def query_nvss(center: SkyCoord, radius_deg: float) -> "astropy.table.Table":
-    """Query NVSS from Vizier for all sources within radius."""
-    from astroquery.vizier import Vizier
-    v = Vizier(columns=["NVSS", "RAJ2000", "DEJ2000", "S1.4"], row_limit=-1)
-    log.info("Querying NVSS within %.2f deg of (%.3f, %.3f) ...",
+def query_nvss(center: SkyCoord, radius_deg: float) -> "pd.DataFrame":
+    """Query NVSS from local SQLite catalog for all sources within radius."""
+    import pandas as pd
+    from dsa110_continuum.catalog.query import cone_search
+    log.info("Querying NVSS (local SQLite) within %.2f deg of (%.3f, %.3f) ...",
              radius_deg, center.ra.deg, center.dec.deg)
-    result = v.query_region(center, radius=radius_deg * u.deg,
-                             catalog=NVSS_VIZ_CATALOG)
-    if not result:
+    df = cone_search(
+        "nvss",
+        ra_center=center.ra.deg,
+        dec_center=center.dec.deg,
+        radius_deg=radius_deg,
+        min_flux_mjy=NVSS_MIN_FLUX_JY * 1000.0,  # convert Jy to mJy
+    )
+    if df is None or len(df) == 0:
         log.warning("No NVSS sources returned")
         return None
-    tbl = result[0]
-    log.info("NVSS query returned %d sources", len(tbl))
-    return tbl
+    log.info("NVSS query returned %d sources (>= %.0f mJy)", len(df), NVSS_MIN_FLUX_JY * 1000.0)
+    return df
 
 
 def read_aegean_catalog() -> SkyCoord | None:
@@ -188,17 +194,19 @@ def main():
         log.error("No NVSS sources to cross-match")
         sys.exit(1)
 
+    # nvss_tbl is now a pandas DataFrame with columns: ra_deg, dec_deg, flux_mjy
+    # flux_mjy is already filtered by NVSS_MIN_FLUX_JY (cone_search applied it)
     nvss_coords = SkyCoord(
-        ra=nvss_tbl["RAJ2000"],
-        dec=nvss_tbl["DEJ2000"],
-        unit=(u.hourangle, u.deg),
+        ra=nvss_tbl["ra_deg"].values * u.deg,
+        dec=nvss_tbl["dec_deg"].values * u.deg,
     )
 
     # ── Load Aegean catalog ────────────────────────────────────────────────────
     cat_coords, aegean_tbl = read_aegean_catalog()
 
-    # ── Cross-match NVSS to Aegean ─────────────────────────────────────────────
-    # For each NVSS source in the footprint, find the nearest Aegean detection
+    # ── Forced photometry at NVSS positions ────────────────────────────────────
+    # If Aegean catalog exists, pre-filter to only NVSS sources with a nearby detection.
+    # If not, do blind forced photometry at all NVSS positions.
     rows = []
 
     if cat_coords is not None:
@@ -207,17 +215,16 @@ def main():
         log.info("NVSS sources: %d total, %d matched within %.0f\"",
                  len(nvss_tbl), matched_mask.sum(), NVSS_MATCH_RADIUS_ARCSEC)
 
-        for i, (nvss_row, matched, sep_val, cat_idx) in enumerate(
-            zip(nvss_tbl, matched_mask, sep.arcsec, idx_nvss)
+        for i, (nvss_row, matched, sep_val) in enumerate(
+            zip(nvss_tbl.itertuples(), matched_mask, sep.arcsec)
         ):
             if not matched:
                 continue
 
-            ra_deg = nvss_coords[i].ra.deg
-            dec_deg = nvss_coords[i].dec.deg
-            nvss_flux = float(nvss_row["S1.4"]) / 1000.0  # mJy → Jy
+            ra_deg = float(nvss_row.ra_deg)
+            dec_deg = float(nvss_row.dec_deg)
+            nvss_flux = float(nvss_row.flux_mjy) / 1000.0  # mJy → Jy
 
-            # Only compare bright NVSS sources where DSA cleanly detects at high SNR
             if nvss_flux < NVSS_MIN_FLUX_JY:
                 continue
 
@@ -229,14 +236,14 @@ def main():
                 continue
 
             snr = meas_flux / noise if noise > 0 else np.nan
-            # Skip noise-dominated measurements (snr < 3) to avoid corrupting ratio stats
             if not np.isfinite(snr) or snr < 3.0:
                 continue
 
             ratio = meas_flux / nvss_flux if nvss_flux > 0 else np.nan
+            source_name = f"NVSS J{ra_deg:.4f}{dec_deg:+.4f}"
 
             rows.append({
-                "source_name": str(nvss_row["NVSS"]),
+                "source_name": source_name,
                 "ra_deg": round(ra_deg, 5),
                 "dec_deg": round(dec_deg, 5),
                 "nvss_flux_jy": round(nvss_flux, 5),
@@ -248,10 +255,10 @@ def main():
     else:
         # No Aegean detections — do forced photometry at all NVSS positions in footprint
         log.warning("No Aegean catalog — doing blind forced photometry at all NVSS positions")
-        for i, nvss_row in enumerate(nvss_tbl):
-            ra_deg = nvss_coords[i].ra.deg
-            dec_deg = nvss_coords[i].dec.deg
-            nvss_flux = float(nvss_row["S1.4"]) / 1000.0
+        for nvss_row in nvss_tbl.itertuples():
+            ra_deg = float(nvss_row.ra_deg)
+            dec_deg = float(nvss_row.dec_deg)
+            nvss_flux = float(nvss_row.flux_mjy) / 1000.0  # mJy → Jy
 
             if nvss_flux < NVSS_MIN_FLUX_JY:
                 continue
@@ -267,9 +274,10 @@ def main():
                 continue
 
             ratio = meas_flux / nvss_flux if nvss_flux > 0 else np.nan
+            source_name = f"NVSS J{ra_deg:.4f}{dec_deg:+.4f}"
 
             rows.append({
-                "source_name": str(nvss_row["NVSS"]),
+                "source_name": source_name,
                 "ra_deg": round(ra_deg, 5),
                 "dec_deg": round(dec_deg, 5),
                 "nvss_flux_jy": round(nvss_flux, 5),
