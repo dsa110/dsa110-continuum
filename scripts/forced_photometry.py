@@ -102,8 +102,11 @@ def query_nvss(center: SkyCoord, radius_deg: float) -> "astropy.table.Table":
 
 
 def read_aegean_catalog() -> SkyCoord | None:
-    """Read Aegean FITS catalog. Returns SkyCoord or None if empty."""
+    """Read Aegean FITS catalog. Returns SkyCoord or None if empty/missing."""
     from astropy.table import Table
+    if not os.path.exists(CATALOG):
+        log.info("No Aegean catalog at %s — will do blind forced photometry", CATALOG)
+        return None, None
     t = Table.read(CATALOG)
     if len(t) == 0:
         log.warning("Aegean catalog is empty")
@@ -250,13 +253,19 @@ def main():
             dec_deg = nvss_coords[i].dec.deg
             nvss_flux = float(nvss_row["S1.4"]) / 1000.0
 
+            if nvss_flux < NVSS_MIN_FLUX_JY:
+                continue
+
             meas_flux, noise = measure_forced_flux(
                 data, wcs, rms_map, ra_deg, dec_deg, global_rms
             )
-            if not np.isfinite(meas_flux):
+            if not np.isfinite(meas_flux) or not np.isfinite(noise):
                 continue
 
             snr = meas_flux / noise if noise > 0 else np.nan
+            if not np.isfinite(snr) or snr < 3.0:
+                continue
+
             ratio = meas_flux / nvss_flux if nvss_flux > 0 else np.nan
 
             rows.append({

@@ -30,9 +30,9 @@ CATALOG_OUT = "/stage/dsa110-contimg/images/mosaic_2026-01-25/sources.fits"
 # Beam ~60" FWHM, pixel 6" → ~10 px/beam → 50 beams = 500 px
 # Use 300 px boxes; step 200 px for good spatial sampling on 17k-px mosaic.
 # cores=1 avoids shared-memory multiprocessing deadlock on NaN-heavy images.
-BANE_BOX = 300      # pixels per box
-BANE_STEP = 200     # step between box centers (larger → fewer grid points → faster)
-AEGEAN_SIGMA = 5.0  # source detection threshold
+BANE_BOX = 600      # pixels per box (larger → better tracks pbcor noise gradient at tile edges)
+BANE_STEP = 300     # step between box centers
+AEGEAN_SIGMA = 7.0  # raised to 7σ to suppress spurious edge detections from pbcor noise amplification
 
 
 def run_bane(mosaic_path: str) -> tuple[str, str]:

@@ -98,15 +98,20 @@ def needs_calibration(ms_path: str) -> bool:
 
 
 def process_ms(ms_path: str) -> str | None:
-    """Phaseshift → applycal → image one MS. Returns path to *-image.fits or None."""
+    """Phaseshift → applycal → image one MS. Returns path to pb-corrected FITS or None."""
     tag = Path(ms_path).stem  # e.g. 2026-01-25T21:17:33
     meridian_ms = get_meridian_path(ms_path)
     imagename = os.path.join(IMAGE_DIR, tag)
+    # With pbcor=True, WSClean produces {imagename}-image-pb.fits (primary-beam corrected)
+    pbcor_fits = imagename + "-image-pb.fits"
     image_fits = imagename + "-image.fits"
 
-    # Skip if already fully processed
+    # Skip if already fully processed (check pbcor output first)
+    if os.path.exists(pbcor_fits):
+        log.info("[%s] PB-corrected image already exists — skipping", tag)
+        return pbcor_fits
     if os.path.exists(image_fits):
-        log.info("[%s] Image already exists — skipping", tag)
+        log.info("[%s] Image already exists (no pbcor) — skipping", tag)
         return image_fits
 
     # ── Step 1: Phaseshift ────────────────────────────────────────────────
@@ -152,7 +157,7 @@ def process_ms(ms_path: str) -> str | None:
             robust=ROBUST,
             niter=NITER,
             threshold=THRESHOLD,
-            pbcor=False,
+            pbcor=True,
             gridder="wgridder",
             backend="wsclean",
             use_unicat_mask=False,
@@ -161,8 +166,11 @@ def process_ms(ms_path: str) -> str | None:
         log.error("[%s] Imaging failed: %s", tag, e)
         return None
 
+    if os.path.exists(pbcor_fits):
+        log.info("[%s] PB-corrected image done: %s", tag, pbcor_fits)
+        return pbcor_fits
     if os.path.exists(image_fits):
-        log.info("[%s] Image done: %s", tag, image_fits)
+        log.warning("[%s] -image-pb.fits not found; falling back to plain image: %s", tag, image_fits)
         return image_fits
     log.error("[%s] WSClean finished but no image FITS found", tag)
     return None

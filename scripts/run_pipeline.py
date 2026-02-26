@@ -86,7 +86,7 @@ image_ms(
     robust=0.5,
     niter=1000,
     threshold="0.005Jy",
-    pbcor=False,
+    pbcor=True,
     gridder="wgridder",
     backend="wsclean",
     use_unicat_mask=False,

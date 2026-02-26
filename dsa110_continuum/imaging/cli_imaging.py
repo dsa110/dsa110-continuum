@@ -294,7 +294,9 @@ def run_wsclean(
         if threshold_val > 0:
             cmd.extend(["-abs-threshold", f"{threshold_val:.6f}"])
 
-    # Primary beam correction disabled for compatibility with older WSClean versions
+    # Primary beam correction via EveryBeam (supported since WSClean 3.x + EveryBeam ≥0.7.2)
+    if pbcor:
+        cmd.append("-apply-primary-beam")
 
     # UV range filtering
     if uvrange:
