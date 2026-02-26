@@ -2,53 +2,133 @@
 """
 Inventory HDF5 data in /data/incoming/ and MS files in /stage/dsa110-contimg/ms/.
 
+Grouping strategy (two-tier):
+  1. Indexed observations: read directly from pipeline.sqlite3 tables
+     ``hdf5_files`` and ``group_time_ranges``.  These groups were built using
+     exact ``time_array[0]`` (Julian Date) matching from HDF5 headers, so they
+     are authoritative.
+  2. Unindexed observations: fall back to filename-based grouping
+     ({YYYY-MM-DDTHH:MM:SS}_sb{NN}.hdf5).  Used for files not yet in the DB.
+
 Outputs:
   - Human-readable summary to stdout
   - /data/dsa110-continuum/inventory.csv
 """
+import csv
 import os
 import re
+import sqlite3
 import sys
-import csv
-from pathlib import Path
 from collections import defaultdict
+from pathlib import Path
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 HDF5_DIR   = Path("/data/incoming")
 MS_DIR     = Path("/stage/dsa110-contimg/ms")
+PIPELINE_DB = Path("/data/dsa110-contimg/state/db/pipeline.sqlite3")
 OUT_CSV    = Path("/data/dsa110-continuum/inventory.csv")
+
+# Expected subbands per complete observation (hard-wired DSA-110 value,
+# verified from the first full day in the DB).
+N_SUBBANDS_EXPECTED = 16
 
 # Regex for valid HDF5 filenames: 2026-01-25T22:26:05_sb03.hdf5
 HDF5_RE = re.compile(
     r"^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})_sb(\d+)\.hdf5$"
 )
 
-# ── Scan HDF5 dir ─────────────────────────────────────────────────────────────
 
-def scan_hdf5(hdf5_dir: Path) -> dict:
-    """
-    Walk hdf5_dir (non-recursively) and collect per-timestamp info.
+# ── Source 1: pipeline SQLite DB ───────────────────────────────────────────────
 
-    Returns:
-        {timestamp_str: {"date": str, "subbands": set[int], "size_bytes": int}}
+def load_from_db(db_path: Path) -> tuple[dict, set]:
     """
-    obs: dict = defaultdict(lambda: {"date": "", "subbands": set(), "size_bytes": 0})
+    Read group metadata from pipeline.sqlite3.
+
+    Returns
+    -------
+    obs_db : dict
+        {timestamp: {"date": str, "n_subbands": int, "size_bytes": int,
+                     "is_complete": bool, "source": "db"}}
+    indexed_timestamps : set[str]
+        All timestamps present in hdf5_files (even if group_time_ranges
+        doesn't have a row yet — shouldn't happen, but defensive).
+    """
+    obs_db: dict = {}
+    indexed_timestamps: set = set()
+
+    if not db_path.exists():
+        return obs_db, indexed_timestamps
+
+    conn = sqlite3.connect(str(db_path), timeout=10)
+
+    # --- per-group summary from group_time_ranges ---------------------------
+    rows = conn.execute(
+        "SELECT group_id, file_count FROM group_time_ranges"
+    ).fetchall()
+    for group_id, file_count in rows:
+        date = group_id[:10]  # "2026-01-25"
+        obs_db[group_id] = {
+            "date": date,
+            "n_subbands": file_count,
+            "size_bytes": 0,          # filled below
+            # Use the same criterion as the filesystem scan: exactly N_SUBBANDS_EXPECTED.
+            # The DB's own `complete` flag uses >= 16, which marks synthetic test groups
+            # (file_count=240, 80) as complete — we want a stricter, uniform definition.
+            "is_complete": (file_count == N_SUBBANDS_EXPECTED),
+            "source": "db",
+        }
+
+    # --- per-file sizes aggregated to group ---------------------------------
+    size_rows = conn.execute(
+        "SELECT group_id, SUM(file_size_bytes) FROM hdf5_files GROUP BY group_id"
+    ).fetchall()
+    for group_id, total_bytes in size_rows:
+        if group_id in obs_db:
+            obs_db[group_id]["size_bytes"] = int(total_bytes or 0)
+        indexed_timestamps.add(group_id)
+
+    # Timestamps in hdf5_files not yet in group_time_ranges (edge case)
+    all_groups = conn.execute(
+        "SELECT DISTINCT group_id FROM hdf5_files"
+    ).fetchall()
+    for (g,) in all_groups:
+        indexed_timestamps.add(g)
+
+    conn.close()
+    return obs_db, indexed_timestamps
+
+
+# ── Source 2: filesystem scan (for unindexed files) ───────────────────────────
+
+def scan_hdf5_unindexed(hdf5_dir: Path, skip_timestamps: set) -> dict:
+    """
+    Walk hdf5_dir non-recursively and collect per-timestamp info for files
+    whose timestamp is NOT already in skip_timestamps (i.e. not in the DB).
+
+    Returns
+    -------
+    obs_fs : dict
+        {timestamp: {"date": str, "n_subbands": int, "size_bytes": int,
+                     "is_complete": bool, "source": "fs"}}
+    """
+    raw: dict = defaultdict(lambda: {"date": "", "subbands": set(), "size_bytes": 0})
     skipped = []
 
     for entry in hdf5_dir.iterdir():
         if not entry.is_file():
-            continue  # skip subdirectories
+            continue
         m = HDF5_RE.match(entry.name)
         if not m:
-            # Report genuinely unexpected names (not dot-files / temp files)
             if not entry.name.startswith(".") and not entry.name.endswith(".corrupted"):
                 skipped.append(entry.name)
             continue
         date_str, time_str, sb_str = m.group(1), m.group(2), m.group(3)
         ts = f"{date_str}T{time_str}"
-        obs[ts]["date"] = date_str
-        obs[ts]["subbands"].add(int(sb_str))
-        obs[ts]["size_bytes"] += entry.stat().st_size
+        if ts in skip_timestamps:
+            continue  # already authoritative from DB
+        raw[ts]["date"] = date_str
+        raw[ts]["subbands"].add(int(sb_str))
+        raw[ts]["size_bytes"] += entry.stat().st_size
 
     if skipped:
         print("WARNING: unexpected files in HDF5 dir (not matched by pattern):")
@@ -58,31 +138,30 @@ def scan_hdf5(hdf5_dir: Path) -> dict:
             print(f"  ... and {len(skipped) - 20} more")
         print()
 
-    return dict(obs)
-
-
-def determine_expected_subbands(obs: dict) -> int:
-    """
-    Infer the expected number of subbands from the data.
-
-    Strategy: the first (earliest) observation that has the maximum
-    subband count is treated as "complete"; its count becomes the
-    expected value for all observations.
-    """
-    if not obs:
-        return 0
-    return max(len(v["subbands"]) for v in obs.values())
+    obs_fs = {}
+    for ts, info in raw.items():
+        n = len(info["subbands"])
+        obs_fs[ts] = {
+            "date": info["date"],
+            "n_subbands": n,
+            "size_bytes": info["size_bytes"],
+            "is_complete": (n == N_SUBBANDS_EXPECTED),
+            "source": "fs",
+        }
+    return obs_fs
 
 
 # ── Scan MS dir ───────────────────────────────────────────────────────────────
 
 def scan_ms(ms_dir: Path) -> set:
     """Return set of timestamp strings that already have a raw MS file."""
-    converted = set()
+    converted: set = set()
     if not ms_dir.exists():
         return converted
     for entry in ms_dir.iterdir():
-        if entry.suffix == ".ms" and "meridian" not in entry.name and "flagversion" not in entry.name:
+        if (entry.suffix == ".ms"
+                and "meridian" not in entry.name
+                and "flagversion" not in entry.name):
             converted.add(entry.stem)
     return converted
 
@@ -103,15 +182,20 @@ def main():
         print(f"ERROR: HDF5 directory not found: {HDF5_DIR}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Scanning {HDF5_DIR} ...")
-    obs = scan_hdf5(HDF5_DIR)
+    # ── Load groups ───────────────────────────────────────────────────────────
+    print(f"Loading indexed groups from {PIPELINE_DB} ...")
+    obs_db, indexed_ts = load_from_db(PIPELINE_DB)
+    print(f"  {len(obs_db)} groups from DB ({len(indexed_ts)} timestamps indexed)")
+
+    print(f"Scanning filesystem for unindexed files in {HDF5_DIR} ...")
+    obs_fs = scan_hdf5_unindexed(HDF5_DIR, skip_timestamps=indexed_ts)
+    print(f"  {len(obs_fs)} unindexed groups from filesystem\n")
+
+    obs = {**obs_db, **obs_fs}  # DB takes priority for any overlap
 
     if not obs:
-        print("ERROR: No valid HDF5 files found — check naming convention.", file=sys.stderr)
+        print("ERROR: No observations found.", file=sys.stderr)
         sys.exit(1)
-
-    n_expected = determine_expected_subbands(obs)
-    print(f"Expected subbands per observation: {n_expected}\n")
 
     converted_ts = scan_ms(MS_DIR)
 
@@ -120,84 +204,77 @@ def main():
     for ts, info in obs.items():
         by_date[info["date"]].append(ts)
 
-    # ── Build CSV rows ────────────────────────────────────────────────────────
-    csv_rows = []
-    for ts, info in sorted(obs.items()):
-        n_found = len(info["subbands"])
-        is_complete = (n_found == n_expected)
-        csv_rows.append({
-            "date": info["date"],
-            "timestamp": ts,
-            "n_subbands_found": n_found,
-            "n_subbands_expected": n_expected,
-            "is_complete": is_complete,
-            "size_bytes": info["size_bytes"],
-            "has_ms": ts in converted_ts,
-        })
-
     # ── Write CSV ─────────────────────────────────────────────────────────────
     OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = ["date", "timestamp", "n_subbands_found", "n_subbands_expected",
-                  "is_complete", "size_bytes", "has_ms"]
+                  "is_complete", "size_bytes", "has_ms", "group_source"]
+    csv_rows = []
+    for ts, info in sorted(obs.items()):
+        csv_rows.append({
+            "date": info["date"],
+            "timestamp": ts,
+            "n_subbands_found": info["n_subbands"],
+            "n_subbands_expected": N_SUBBANDS_EXPECTED,
+            "is_complete": info["is_complete"],
+            "size_bytes": info["size_bytes"],
+            "has_ms": ts in converted_ts,
+            "group_source": info["source"],
+        })
     with open(OUT_CSV, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(csv_rows)
 
     # ── Human-readable report ─────────────────────────────────────────────────
-    grand_total_obs = 0
-    grand_complete  = 0
-    grand_bytes     = 0
-    grand_converted = 0
-
+    grand_total = grand_complete = grand_bytes = grand_converted = 0
     all_dates = sorted(by_date.keys())
 
-    print("=" * 70)
+    print("=" * 72)
     print("DSA-110 HDF5 DATA INVENTORY")
-    print("=" * 70)
+    print(f"  (complete = all {N_SUBBANDS_EXPECTED} subbands present)")
+    print("=" * 72)
 
     for date in all_dates:
         timestamps = sorted(by_date[date])
-        date_obs      = len(timestamps)
-        date_complete = sum(1 for ts in timestamps if len(obs[ts]["subbands"]) == n_expected)
-        date_incomplete = date_obs - date_complete
-        date_bytes    = sum(obs[ts]["size_bytes"] for ts in timestamps)
-        date_converted = sum(1 for ts in timestamps if ts in converted_ts)
+        d_total    = len(timestamps)
+        d_complete = sum(1 for ts in timestamps if obs[ts]["is_complete"])
+        d_bytes    = sum(obs[ts]["size_bytes"] for ts in timestamps)
+        d_conv     = sum(1 for ts in timestamps if ts in converted_ts)
 
-        print(f"\n── {date}  ({date_obs} obs | {date_complete} complete | "
-              f"{date_incomplete} incomplete | {fmt_bytes(date_bytes)} | "
-              f"{date_converted} converted to MS)")
-        print(f"   {'TIMESTAMP':<22}  {'FOUND':>5}  {'EXPCT':>5}  {'OK':>3}  {'MS':>3}  SIZE")
-        print(f"   {'-'*22}  {'-----':>5}  {'-----':>5}  {'---':>3}  {'---':>3}  ----")
+        print(f"\n── {date}  "
+              f"({d_total} obs | {d_complete} complete | "
+              f"{d_total - d_complete} incomplete | "
+              f"{fmt_bytes(d_bytes)} | {d_conv} MS)")
+        print(f"   {'TIMESTAMP':<22}  {'SRC':>3}  {'FOUND':>5}  {'OK':>3}  {'MS':>3}  SIZE")
+        print(f"   {'-'*22}  {'---':>3}  {'-----':>5}  {'---':>3}  {'---':>3}  ----")
 
         for ts in timestamps:
-            n_found = len(obs[ts]["subbands"])
-            is_complete = n_found == n_expected
-            has_ms = ts in converted_ts
-            flag = "" if is_complete else "  *** INCOMPLETE"
+            info = obs[ts]
+            flag = "" if info["is_complete"] else "  *** INCOMPLETE"
             print(
-                f"   {ts:<22}  {n_found:>5}  {n_expected:>5}  "
-                f"{'Y' if is_complete else 'N':>3}  "
-                f"{'Y' if has_ms else 'N':>3}  "
-                f"{fmt_bytes(obs[ts]['size_bytes'])}{flag}"
+                f"   {ts:<22}  {info['source']:>3}  "
+                f"{info['n_subbands']:>5}  "
+                f"{'Y' if info['is_complete'] else 'N':>3}  "
+                f"{'Y' if ts in converted_ts else 'N':>3}  "
+                f"{fmt_bytes(info['size_bytes'])}{flag}"
             )
 
-        grand_total_obs += date_obs
-        grand_complete  += date_complete
-        grand_bytes     += date_bytes
-        grand_converted += date_converted
+        grand_total    += d_total
+        grand_complete += d_complete
+        grand_bytes    += d_bytes
+        grand_converted += d_conv
 
     print()
-    print("=" * 70)
+    print("=" * 72)
     print("GRAND TOTAL")
-    print("=" * 70)
+    print("=" * 72)
     print(f"  Date range         : {all_dates[0]}  →  {all_dates[-1]}")
     print(f"  Dates with data    : {len(all_dates)}")
-    print(f"  Total observations : {grand_total_obs}")
-    print(f"  Complete           : {grand_complete}  ({100*grand_complete/grand_total_obs:.1f}%)")
-    print(f"  Incomplete         : {grand_total_obs - grand_complete}")
-    print(f"  Converted to MS    : {grand_converted} / {grand_total_obs}")
-    print(f"  Still to process   : {grand_total_obs - grand_converted}")
+    print(f"  Total observations : {grand_total}")
+    print(f"  Complete           : {grand_complete}  ({100*grand_complete/grand_total:.1f}%)")
+    print(f"  Incomplete         : {grand_total - grand_complete}")
+    print(f"  Converted to MS    : {grand_converted} / {grand_total}")
+    print(f"  Still to process   : {grand_total - grand_converted}")
     print(f"  Total data volume  : {fmt_bytes(grand_bytes)}")
     print(f"\nCSV written to: {OUT_CSV}")
 
