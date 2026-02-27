@@ -17,6 +17,9 @@ Key paths (H17)
 /data/incoming/                              raw HDF5 files
 /stage/dsa110-contimg/ms/                   Measurement Sets
 /opt/miniforge/envs/casa6                   CASA conda env
+Pipeline DB
+dsa110 convert queries the pipeline SQLite DB, not the filesystem.
+New dates must be indexed first: dsa110 index add --start YYYY-MM-DD --end YYYY-MM-DD --directory /data/incoming
 Reference docs
 docs/skills/ contains verified implementation notes for each pipeline step.
 Read these before writing any new code for that step.

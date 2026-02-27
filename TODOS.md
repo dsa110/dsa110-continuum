@@ -1,5 +1,5 @@
 
-Last updated: 2026-02-27
+Last updated: 2026-02-27 (02h test run)
 
 ---
 
@@ -32,6 +32,8 @@ Last updated: 2026-02-27
 ---
 
 ## Low priority / future
+
+- [x] **02h test epoch run (2026-01-25)**: `batch_pipeline.py --start-hour 2 --end-hour 3` completed 2026-02-27. 11 tiles, mosaic peak 7.79 Jy/beam, RMS 11.9 mJy/beam, DR 656, QA PASSED. ATNF cone search (8 deg radius): 8 pulsars found; none detected above 5×RMS (only one with known 1.4 GHz flux, J0304+1932 at 15 mJy, fell off the mosaic footprint). Output: `/stage/dsa110-contimg/images/mosaic_2026-01-25/2026-01-25T0200_mosaic.fits`.
 
 - [ ] **Bulk data processing**: Once inventory is complete and primary beam correction is verified, run full pipeline on all available dates.
 
