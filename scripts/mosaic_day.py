@@ -12,9 +12,11 @@ Then:
   5. Coadd with noise (1/σ²) weighting
   6. Write final mosaic FITS
 """
+import argparse
 import glob
 import logging
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -39,12 +41,15 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ── Configuration ────────────────────────────────────────────────────────────
-MS_DIR = "/stage/dsa110-contimg/ms"
-IMAGE_DIR = "/stage/dsa110-contimg/images/mosaic_2026-01-25"
-MOSAIC_OUT = "/stage/dsa110-contimg/images/mosaic_2026-01-25/full_mosaic.fits"
+DATE = "2026-01-25"
 
-BP_TABLE = f"{MS_DIR}/2026-01-25T22:26:05_0~23.b"
-G_TABLE = f"{MS_DIR}/2026-01-25T22:26:05_0~23.g"
+MS_DIR = "/stage/dsa110-contimg/ms"
+IMAGE_DIR = f"/stage/dsa110-contimg/images/mosaic_{DATE}"
+MOSAIC_OUT = f"{IMAGE_DIR}/full_mosaic.fits"
+PRODUCTS_DIR = f"/data/dsa110-continuum/products/mosaics/{DATE}"
+
+BP_TABLE = f"{MS_DIR}/{DATE}T22:26:05_0~23.b"
+G_TABLE = f"{MS_DIR}/{DATE}T22:26:05_0~23.g"
 
 # Imaging parameters — same as run_pipeline.py
 IMSIZE = 2400
@@ -102,7 +107,7 @@ def needs_calibration(ms_path: str) -> bool:
         return True
 
 
-def process_ms(ms_path: str) -> str | None:
+def process_ms(ms_path: str, keep_intermediates: bool = False) -> str | None:
     """Phaseshift → applycal → image one MS. Returns path to pb-corrected FITS or None."""
     tag = Path(ms_path).stem  # e.g. 2026-01-25T21:17:33
     meridian_ms = get_meridian_path(ms_path)
@@ -171,14 +176,26 @@ def process_ms(ms_path: str) -> str | None:
         log.error("[%s] Imaging failed: %s", tag, e)
         return None
 
+    result_fits = None
     if os.path.exists(pbcor_fits):
         log.info("[%s] PB-corrected image done: %s", tag, pbcor_fits)
-        return pbcor_fits
-    if os.path.exists(image_fits):
+        result_fits = pbcor_fits
+    elif os.path.exists(image_fits):
         log.warning("[%s] -image-pb.fits not found; falling back to plain image: %s", tag, image_fits)
-        return image_fits
-    log.error("[%s] WSClean finished but no image FITS found", tag)
-    return None
+        result_fits = image_fits
+    else:
+        log.error("[%s] WSClean finished but no image FITS found", tag)
+        return None
+
+    # ── Cleanup: delete meridian MS now that imaging succeeded ────────────────
+    if not keep_intermediates and os.path.isdir(meridian_ms):
+        try:
+            shutil.rmtree(meridian_ms)
+            log.info("[%s] Deleted intermediate meridian MS: %s", tag, meridian_ms)
+        except Exception as e:
+            log.warning("[%s] Could not delete meridian MS %s: %s", tag, meridian_ms, e)
+
+    return result_fits
 
 
 # ── Mosaicking ────────────────────────────────────────────────────────────────
@@ -363,6 +380,16 @@ def check_mosaic_quality(mosaic_path: str) -> bool:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
+    parser = argparse.ArgumentParser(description="Mosaic a full day of DSA-110 drift observations.")
+    parser.add_argument(
+        "--keep-intermediates",
+        action="store_true",
+        default=False,
+        help="Keep *_meridian.ms files and skip moving the mosaic to products/ (useful for debugging).",
+    )
+    args = parser.parse_args()
+    keep = args.keep_intermediates
+
     ms_list = find_valid_ms()
     if not ms_list:
         log.error("No valid MS files found — aborting")
@@ -371,7 +398,7 @@ def main():
     # ── Phase 1: Process each MS ──────────────────────────────────────────────
     tile_images = []
     for ms_path in ms_list:
-        result = process_ms(ms_path)
+        result = process_ms(ms_path, keep_intermediates=keep)
         if result:
             tile_images.append(result)
         else:
@@ -410,7 +437,44 @@ def main():
     else:
         print(f"\nWARNING: Mosaic QA failed — check noise consistency")
 
+    # ── Phase 4: Move finished mosaic to products/ ────────────────────────────
+    if not keep:
+        _move_mosaic_to_products()
+
     return MOSAIC_OUT
+
+
+def _move_mosaic_to_products() -> None:
+    """Move the completed mosaic directory from stage to the products tree.
+
+    Source:      IMAGE_DIR  (/stage/dsa110-contimg/images/mosaic_{DATE}/)
+    Destination: PRODUCTS_DIR  (/data/dsa110-continuum/products/mosaics/{DATE}/)
+
+    If PRODUCTS_DIR already exists (e.g. from a previous run), the move is
+    skipped and a warning is logged rather than overwriting science products.
+    """
+    if not os.path.isfile(MOSAIC_OUT):
+        log.warning("Move skipped: mosaic file not found at %s", MOSAIC_OUT)
+        return
+
+    if os.path.exists(PRODUCTS_DIR):
+        log.warning(
+            "Move skipped: destination already exists — remove it manually if you want to overwrite: %s",
+            PRODUCTS_DIR,
+        )
+        return
+
+    parent = Path(PRODUCTS_DIR).parent
+    parent.mkdir(parents=True, exist_ok=True)
+
+    log.info("Moving mosaic directory: %s → %s", IMAGE_DIR, PRODUCTS_DIR)
+    try:
+        shutil.move(IMAGE_DIR, PRODUCTS_DIR)
+        log.info("Mosaic moved to products: %s", PRODUCTS_DIR)
+        print(f"\nMosaic archived to: {PRODUCTS_DIR}/full_mosaic.fits")
+    except Exception as e:
+        log.error("Failed to move mosaic to products: %s", e)
+        print(f"\nERROR: Could not move mosaic to {PRODUCTS_DIR}: {e}")
 
 
 if __name__ == "__main__":
