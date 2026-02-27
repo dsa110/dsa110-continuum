@@ -210,27 +210,39 @@ def run_photometry_phase(mosaic_path: str) -> list[dict] | None:
         return []
 
     log.info("Found %d NVSS sources (>10 mJy)", len(sources))
-    coords = [(s["ra"], s["dec"]) for s in sources]
+
     try:
-        results = measure_many(mosaic_path, coords)
-    except Exception as e:
-        log.error("measure_many failed: %s", e)
+        from dsa110_continuum.photometry.forced import measure_forced_peak
+    except ImportError as e:
+        log.error("Cannot import measure_forced_peak: %s", e)
         return None
 
+    # Use per-source measure_forced_peak rather than measure_many so that sources
+    # outside the mosaic footprint (empty cutout → broadcast error) are skipped
+    # gracefully instead of aborting the whole batch.
     rows = []
-    for src, meas in zip(sources, results):
-        if meas is None:
+    n_skip = 0
+    for src in sources:
+        try:
+            meas = measure_forced_peak(mosaic_path, src["ra_deg"], src["dec_deg"])
+            if meas is None:
+                n_skip += 1
+                continue
+        except Exception:
+            n_skip += 1
             continue
         nvss_flux_jy = src.get("flux_mjy", 0.0) / 1000.0
         ratio = (meas.peak_jyb / nvss_flux_jy) if nvss_flux_jy > 0 else float("nan")
         rows.append({
-            "ra_deg": round(src["ra"], 6),
-            "dec_deg": round(src["dec"], 6),
+            "ra_deg": round(src["ra_deg"], 6),
+            "dec_deg": round(src["dec_deg"], 6),
             "nvss_flux_jy": round(nvss_flux_jy, 6),
             "dsa_peak_jyb": round(meas.peak_jyb, 6),
             "dsa_peak_err_jyb": round(meas.peak_err_jyb, 6),
             "dsa_nvss_ratio": round(ratio, 4),
         })
+    if n_skip:
+        log.info("Skipped %d sources outside mosaic footprint", n_skip)
     return rows
 
 

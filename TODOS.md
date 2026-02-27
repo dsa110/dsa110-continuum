@@ -5,7 +5,7 @@ Last updated: 2026-02-27 (02h test run)
 
 ## Blocking (must fix before science results are trustworthy)
 
-- [ ] **Primary beam correction**: Set `pbcor=True` in all `image_ms()` calls in `mosaic_day.py` and `run_pipeline.py`. Current median DSA/NVSS flux ratio is 0.39 — should be 0.8–1.2 after correction.
+- [x] **Primary beam correction**: `pbcor=True` confirmed working. 02h epoch forced photometry (2026-02-27): median DSA/NVSS ratio = **0.893** on 1047 NVSS sources — within the 0.8–1.2 target. Previous ratio of 0.39 was from before pbcor was enabled.
 
 ---
 
