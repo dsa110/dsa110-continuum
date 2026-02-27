@@ -323,6 +323,20 @@ def main() -> None:
         default=False,
         help="Skip forced photometry step.",
     )
+    parser.add_argument(
+        "--start-hour",
+        type=int,
+        default=None,
+        metavar="H",
+        help="Only process MS files with timestamp >= this UTC hour (0–23). Default: all hours.",
+    )
+    parser.add_argument(
+        "--end-hour",
+        type=int,
+        default=None,
+        metavar="H",
+        help="Only process MS files with timestamp < this UTC hour (0–23). Default: all hours.",
+    )
     args = parser.parse_args()
 
     date = args.date
@@ -352,6 +366,35 @@ def main() -> None:
         log.error("No valid MS files found for %s — aborting", date)
         sys.exit(1)
     log.info("Found %d valid MS files", len(ms_list))
+
+    # Apply --start-hour / --end-hour filter
+    start_hour = args.start_hour
+    end_hour = args.end_hour
+    if start_hour is not None or end_hour is not None:
+        def _ms_hour(ms_path: str) -> int | None:
+            ts_str = Path(ms_path).stem  # e.g. 2026-01-25T21:17:33
+            try:
+                return datetime.strptime(ts_str, "%Y-%m-%dT%H:%M:%S").hour
+            except ValueError:
+                return None
+
+        before = len(ms_list)
+        ms_list = [
+            p for p in ms_list
+            if (h := _ms_hour(p)) is not None
+            and (start_hour is None or h >= start_hour)
+            and (end_hour is None or h < end_hour)
+        ]
+        log.info(
+            "Hour filter [%s, %s): %d → %d MS files",
+            f"{start_hour:02d}" if start_hour is not None else "*",
+            f"{end_hour:02d}" if end_hour is not None else "*",
+            before,
+            len(ms_list),
+        )
+        if not ms_list:
+            log.error("No MS files remain after hour filter — aborting")
+            sys.exit(1)
 
     # ── Phase 2: Calibrate + image all tiles ──────────────────────────────────
     log.info("=== Phase 1/3: Calibrate + Image all tiles ===")
