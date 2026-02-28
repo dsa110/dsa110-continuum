@@ -3,7 +3,7 @@
 Batch pipeline: calibrate → image → hourly-epoch mosaics → forced photometry.
 
 Usage:
-    python scripts/batch_pipeline.py [--date DATE] [--keep-intermediates] [--skip-photometry]
+    python scripts/batch_pipeline.py [--date DATE] [--cal-date DATE] [--keep-intermediates] [--skip-photometry]
 
 Steps:
     1. Find all valid MS files for DATE and process each one:
@@ -324,6 +324,17 @@ def main() -> None:
     )
     parser.add_argument("--date", default=DEFAULT_DATE, help="Observation date (YYYY-MM-DD)")
     parser.add_argument(
+        "--cal-date",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help=(
+            "Date whose calibration tables (BP/gain) to use. "
+            "Defaults to --date if not provided. "
+            "Use this when processing a new date whose cal tables are symlinked "
+            "from 2026-01-25 (see CLAUDE.md)."
+        ),
+    )
+    parser.add_argument(
         "--keep-intermediates",
         action="store_true",
         default=False,
@@ -352,10 +363,13 @@ def main() -> None:
     args = parser.parse_args()
 
     date = args.date
+    cal_date = args.cal_date if args.cal_date is not None else date
     keep = args.keep_intermediates
     paths = get_paths(date)
 
     log.info("=== DSA-110 Batch Pipeline — %s ===", date)
+    if cal_date != date:
+        log.info("Calibration tables from: %s", cal_date)
     log.info("Stage dir:    %s", paths["stage_dir"])
     log.info("Products dir: %s", paths["products_dir"])
 
@@ -369,8 +383,8 @@ def main() -> None:
     _md.IMAGE_DIR = paths["stage_dir"]
     _md.MOSAIC_OUT = f"{paths['stage_dir']}/full_mosaic.fits"  # not used, but keeps _md consistent
     _md.PRODUCTS_DIR = paths["products_dir"]
-    _md.BP_TABLE = f"{MS_DIR}/{date}T22:26:05_0~23.b"
-    _md.G_TABLE = f"{MS_DIR}/{date}T22:26:05_0~23.g"
+    _md.BP_TABLE = f"{MS_DIR}/{cal_date}T22:26:05_0~23.b"
+    _md.G_TABLE = f"{MS_DIR}/{cal_date}T22:26:05_0~23.g"
 
     # ── Phase 1: Find + validate MS files ────────────────────────────────────
     ms_list = _md.find_valid_ms()
@@ -379,23 +393,30 @@ def main() -> None:
         sys.exit(1)
     log.info("Found %d valid MS files", len(ms_list))
 
-    # Apply --start-hour / --end-hour filter
+    # Apply date filter (--date), then --start-hour / --end-hour
+    def _ms_ts(ms_path: str):
+        ts_str = Path(ms_path).stem  # e.g. 2026-01-25T21:17:33
+        try:
+            return datetime.strptime(ts_str, "%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            return None
+
+    before = len(ms_list)
+    ms_list = [p for p in ms_list if (t := _ms_ts(p)) is not None and t.strftime("%Y-%m-%d") == date]
+    log.info("Date filter (%s): %d → %d MS files", date, before, len(ms_list))
+    if not ms_list:
+        log.error("No MS files for date %s — aborting", date)
+        sys.exit(1)
+
     start_hour = args.start_hour
     end_hour = args.end_hour
     if start_hour is not None or end_hour is not None:
-        def _ms_hour(ms_path: str) -> int | None:
-            ts_str = Path(ms_path).stem  # e.g. 2026-01-25T21:17:33
-            try:
-                return datetime.strptime(ts_str, "%Y-%m-%dT%H:%M:%S").hour
-            except ValueError:
-                return None
-
         before = len(ms_list)
         ms_list = [
             p for p in ms_list
-            if (h := _ms_hour(p)) is not None
-            and (start_hour is None or h >= start_hour)
-            and (end_hour is None or h < end_hour)
+            if (t := _ms_ts(p)) is not None
+            and (start_hour is None or t.hour >= start_hour)
+            and (end_hour is None or t.hour < end_hour)
         ]
         log.info(
             "Hour filter [%s, %s): %d → %d MS files",

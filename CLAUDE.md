@@ -20,6 +20,12 @@ Key paths (H17)
 Pipeline DB
 dsa110 convert queries the pipeline SQLite DB, not the filesystem.
 New dates must be indexed first: dsa110 index add --start YYYY-MM-DD --end YYYY-MM-DD --directory /data/incoming
+Calibration tables
+Cal tables live at /stage/dsa110-contimg/ms/{date}T22:26:05_0~23.{b,g}.
+Until per-date calibration runs are available, symlink new dates from 2026-01-25:
+  ln -s /stage/dsa110-contimg/ms/2026-01-25T22:26:05_0~23.b /stage/dsa110-contimg/ms/YYYY-MM-DDT22:26:05_0~23.b
+  ln -s /stage/dsa110-contimg/ms/2026-01-25T22:26:05_0~23.g /stage/dsa110-contimg/ms/YYYY-MM-DDT22:26:05_0~23.g
+Then run batch_pipeline.py with --cal-date 2026-01-25 to use those tables for a different --date.
 Reference docs
 docs/skills/ contains verified implementation notes for each pipeline step.
 Read these before writing any new code for that step.
