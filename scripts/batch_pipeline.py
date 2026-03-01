@@ -26,11 +26,14 @@ Output layout (after mosaic move to products/):
 """
 import argparse
 import csv
+import json
 import logging
 import os
 import shutil
 import sys
+import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -68,6 +71,7 @@ MS_DIR = "/stage/dsa110-contimg/ms"
 STAGE_IMAGE_BASE = "/stage/dsa110-contimg/images"
 PRODUCTS_BASE = "/data/dsa110-continuum/products/mosaics"
 CELL_ARCSEC = 6.0  # must match mosaic_day.py
+TILE_TIMEOUT_SEC = 1800  # 30 min max per tile before we kill & skip
 
 
 def get_paths(date: str) -> dict:
@@ -198,7 +202,7 @@ def run_photometry_phase(mosaic_path: str) -> list[dict] | None:
         sources = query_sources_for_fits(
             fits_path=Path(mosaic_path),
             catalog="nvss",
-            radius_deg=5.0,   # per-epoch mosaic covers ~1 hour of RA drift (~15 deg)
+            radius_deg=12.0,  # mosaic spans ~15 deg RA; use 12 deg radius to cover full footprint
             min_flux_mjy=10.0,
         )
     except Exception as e:
@@ -316,9 +320,55 @@ def print_summary(date: str, epoch_results: list[dict]) -> None:
     print("=" * 78 + "\n")
 
 
+
+# ── Tile execution: timeout + retry ──────────────────────────────────────────
+
+def _run_process_ms(ms_path: str, keep: bool) -> str | None:
+    """Thin wrapper so process_ms can be submitted to a thread pool."""
+    import mosaic_day as _md  # already imported by caller, but re-import is harmless
+    return _md.process_ms(ms_path, keep_intermediates=keep)
+
+
+def process_tile_safe(
+    md,
+    ms_path: str,
+    keep: bool,
+    timeout_sec: int,
+    retry: bool,
+) -> str | None:
+    """Run md.process_ms with a hard timeout and optional single retry.
+
+    If the tile hangs beyond *timeout_sec*, any CASA/WSClean subprocesses are
+    killed with SIGKILL and None is returned.  With *retry=True* a second
+    attempt is made after a 60-second cool-down.
+    """
+    tag = Path(ms_path).stem
+
+    def _attempt() -> str | None:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            fut = pool.submit(md.process_ms, ms_path, keep)
+            try:
+                return fut.result(timeout=timeout_sec)
+            except FuturesTimeoutError:
+                log.error("[%s] TIMEOUT after %ds — killing CASA/WSClean", tag, timeout_sec)
+                for pattern in ["applycal", "wsclean", "mpicasa"]:
+                    subprocess.run(["pkill", "-9", "-f", pattern], capture_output=True)
+                return None
+
+    result = _attempt()
+    if result is None and retry:
+        log.warning("[%s] First attempt failed — waiting 60s then retrying once", tag)
+        time.sleep(60)
+        result = _attempt()
+        if result is None:
+            log.error("[%s] Retry also failed — skipping tile", tag)
+    return result
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    _main_start = time.time()
     parser = argparse.ArgumentParser(
         description="Hourly-epoch mosaic pipeline for DSA-110 drift observations."
     )
@@ -360,10 +410,40 @@ def main() -> None:
         metavar="H",
         help="Only process MS files with timestamp < this UTC hour (0–23). Default: all hours.",
     )
+    parser.add_argument(
+        "--tile-timeout",
+        type=int,
+        default=TILE_TIMEOUT_SEC,
+        metavar="SECONDS",
+        help=f"Hard timeout per tile (applycal + WSClean). Default: {TILE_TIMEOUT_SEC}s (30 min). "
+             "If a tile exceeds this, CASA/WSClean are killed and the tile is skipped (or retried).",
+    )
+    parser.add_argument(
+        "--retry-failed",
+        action="store_true",
+        default=False,
+        help="Retry each failed tile once (60s cool-down between attempts). "
+             "Useful for transient CASA crashes or memory pressure.",
+    )
     args = parser.parse_args()
 
     date = args.date
     cal_date = args.cal_date if args.cal_date is not None else date
+
+    # ── Cal-table validation ───────────────────────────────────────────────
+    _bp = os.path.join(STAGE, f"ms/{cal_date}T22:26:05_0~23.b")
+    _ga = os.path.join(STAGE, f"ms/{cal_date}T22:26:05_0~23.g")
+    _missing = [t for t in [_bp, _ga] if not os.path.exists(t)]
+    if _missing:
+        for _t in _missing:
+            log.error("ABORT: calibration table not found: %s", _t)
+        log.error("Available .b tables in %s/ms/:", STAGE)
+        for _f in sorted(os.listdir(os.path.join(STAGE, "ms"))):
+            if _f.endswith(".b"):
+                log.error("  %s", _f)
+        sys.exit(1)
+    log.info("Cal tables verified for %s", cal_date)
+    # ───────────────────────────────────────────────────────────────────────
     keep = args.keep_intermediates
     paths = get_paths(date)
 
@@ -430,27 +510,52 @@ def main() -> None:
             sys.exit(1)
 
     # ── Phase 2: Calibrate + image all tiles ──────────────────────────────────
-    log.info("=== Phase 1/3: Calibrate + Image all tiles ===")
+    tile_timeout = args.tile_timeout
+    retry_failed = args.retry_failed
+    checkpoint_path = os.path.join(paths["stage_dir"], ".tile_checkpoint.json")
+
+    # Load completed tiles from a previous (crashed) run
     tile_fits: list[str] = []
+    if os.path.exists(checkpoint_path):
+        try:
+            ck = json.load(open(checkpoint_path))
+            tile_fits = [p for p in ck.get("completed", []) if os.path.exists(p)]
+            if tile_fits:
+                log.info("Checkpoint: resuming with %d previously completed tiles", len(tile_fits))
+        except Exception as e:
+            log.warning("Could not read checkpoint file: %s", e)
+
+    completed_fits = set(tile_fits)
+    log.info("=== Phase 1/3: Calibrate + Image all tiles (timeout=%ds, retry=%s) ===",
+             tile_timeout, retry_failed)
     n_imaged = n_skipped_tiles = n_failed_tiles = 0
 
     for i, ms_path in enumerate(ms_list, 1):
         tag = Path(ms_path).stem
         log.info("[%d/%d] %s", i, len(ms_list), tag)
         t0 = time.time()
-        result = _md.process_ms(ms_path, keep_intermediates=keep)
+        result = process_tile_safe(_md, ms_path, keep, tile_timeout, retry_failed)
         elapsed = time.time() - t0
 
         if result is None:
             log.error("  FAILED after %.0fs", elapsed)
             n_failed_tiles += 1
         else:
-            tile_fits.append(result)
+            if result not in completed_fits:
+                tile_fits.append(result)
+                completed_fits.add(result)
             if elapsed < 2.0:
                 n_skipped_tiles += 1
             else:
                 log.info("  Done in %.0fs → %s", elapsed, Path(result).name)
                 n_imaged += 1
+
+            # Write checkpoint after every successful tile
+            try:
+                with open(checkpoint_path, "w") as ck_f:
+                    json.dump({"date": date, "cal_date": cal_date, "completed": tile_fits}, ck_f, indent=2)
+            except Exception as e:
+                log.warning("Could not write checkpoint: %s", e)
 
     log.info(
         "Tiles: %d imaged, %d already done, %d failed",
@@ -538,6 +643,50 @@ def main() -> None:
 
     # ── Print summary ─────────────────────────────────────────────────────────
     print_summary(date, epoch_results)
+
+
+    emit_run_summary(date, cal_date, epoch_results, time.time() - _main_start)
+
+def emit_run_summary(date: str, cal_date: str, epoch_results: dict, wall_time_sec: float) -> None:
+    """Write /tmp/pipeline_last_run.json and optionally POST to DSA_NOTIFY_URL."""
+    import json as _json
+    from datetime import datetime as _dt
+
+    epochs_list = [
+        {"epoch": ep, **vals}
+        for ep, vals in epoch_results.items()
+    ]
+    n_pass = sum(1 for v in epoch_results.values() if v.get("status") == "ok")
+    n_fail = sum(1 for v in epoch_results.values() if v.get("status") != "ok")
+
+    payload = {
+        "date": date,
+        "cal_date": cal_date,
+        "finished_at": _dt.utcnow().isoformat() + "Z",
+        "wall_time_sec": round(wall_time_sec),
+        "n_epochs": len(epoch_results),
+        "n_pass": n_pass,
+        "n_fail": n_fail,
+        "epochs": epochs_list,
+    }
+
+    summary_path = "/tmp/pipeline_last_run.json"
+    with open(summary_path, "w") as _f:
+        _json.dump(payload, _f, indent=2)
+
+    log.info(
+        "Run complete — date=%s cal=%s  epochs=%d  pass=%d  fail=%d  wall=%.0fm  → %s",
+        date, cal_date, len(epoch_results), n_pass, n_fail,
+        wall_time_sec / 60, summary_path,
+    )
+
+    notify_url = os.environ.get("DSA_NOTIFY_URL")
+    if notify_url:
+        try:
+            import requests as _req
+            _req.post(notify_url, json=payload, timeout=10)
+        except Exception:
+            pass  # notification is best-effort
 
 
 if __name__ == "__main__":

@@ -70,8 +70,8 @@ PB_CUTOFF = 0.2  # 20 % of peak response
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def find_valid_ms() -> list[str]:
-    """Return sorted list of valid (non-corrupt) raw MS paths for 2026-01-25."""
-    candidates = sorted(glob.glob(f"{MS_DIR}/2026-01-25T*.ms"))
+    """Return sorted list of valid (non-corrupt) raw MS paths for DATE."""
+    candidates = sorted(glob.glob(f"{MS_DIR}/{DATE}T*.ms"))
     candidates = [p for p in candidates if "meridian" not in p and "flagversion" not in p]
     valid = []
     for path in candidates:
@@ -147,7 +147,7 @@ def process_ms(ms_path: str, keep_intermediates: bool = False) -> str | None:
                 ms_target=meridian_ms,
                 field="",
                 gaintables=[BP_TABLE, G_TABLE],
-                interp=["linear", "linear"],
+                interp=["nearest", "linear"],
             )
         except Exception as e:
             log.error("[%s] Applycal failed: %s", tag, e)
