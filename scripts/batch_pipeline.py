@@ -33,7 +33,7 @@ import shutil
 import sys
 import subprocess
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import ProcessPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -345,8 +345,8 @@ def process_tile_safe(
     tag = Path(ms_path).stem
 
     def _attempt() -> str | None:
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            fut = pool.submit(md.process_ms, ms_path, keep)
+        with ProcessPoolExecutor(max_workers=1) as pool:
+            fut = pool.submit(_run_process_ms, ms_path, keep)
             try:
                 return fut.result(timeout=timeout_sec)
             except FuturesTimeoutError:
@@ -431,14 +431,14 @@ def main() -> None:
     cal_date = args.cal_date if args.cal_date is not None else date
 
     # ── Cal-table validation ───────────────────────────────────────────────
-    _bp = os.path.join(STAGE, f"ms/{cal_date}T22:26:05_0~23.b")
-    _ga = os.path.join(STAGE, f"ms/{cal_date}T22:26:05_0~23.g")
+    _bp = f"{MS_DIR}/{cal_date}T22:26:05_0~23.b"
+    _ga = f"{MS_DIR}/{cal_date}T22:26:05_0~23.g"
     _missing = [t for t in [_bp, _ga] if not os.path.exists(t)]
     if _missing:
         for _t in _missing:
             log.error("ABORT: calibration table not found: %s", _t)
-        log.error("Available .b tables in %s/ms/:", STAGE)
-        for _f in sorted(os.listdir(os.path.join(STAGE, "ms"))):
+        log.error("Available .b tables in %s:", MS_DIR)
+        for _f in sorted(os.listdir(MS_DIR)):
             if _f.endswith(".b"):
                 log.error("  %s", _f)
         sys.exit(1)
@@ -647,17 +647,14 @@ def main() -> None:
 
     emit_run_summary(date, cal_date, epoch_results, time.time() - _main_start)
 
-def emit_run_summary(date: str, cal_date: str, epoch_results: dict, wall_time_sec: float) -> None:
+def emit_run_summary(date: str, cal_date: str, epoch_results: list, wall_time_sec: float) -> None:
     """Write /tmp/pipeline_last_run.json and optionally POST to DSA_NOTIFY_URL."""
     import json as _json
     from datetime import datetime as _dt
 
-    epochs_list = [
-        {"epoch": ep, **vals}
-        for ep, vals in epoch_results.items()
-    ]
-    n_pass = sum(1 for v in epoch_results.values() if v.get("status") == "ok")
-    n_fail = sum(1 for v in epoch_results.values() if v.get("status") != "ok")
+    epochs_list = epoch_results
+    n_pass = sum(1 for v in epoch_results if v.get("status") == "ok")
+    n_fail = sum(1 for v in epoch_results if v.get("status") != "ok")
 
     payload = {
         "date": date,
