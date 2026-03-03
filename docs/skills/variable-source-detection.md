@@ -238,4 +238,4 @@ from dsa110_contimg.workflow.pipeline.events import EventType
 
 - Photometry skill: `.agent/skills/photometry/SKILL.md`
 - Science context: `.agent/skills/pipeline-advisor/SCIENCE_CONTEXT.md`
-- Light curve stage: `backend/src/dsa110_contimg/workflow/pipeline/stages/light_curve.py`
+- Light curve stage: `dsa110_continuum/workflow/pipeline/stages/light_curve.py`

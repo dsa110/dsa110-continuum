@@ -164,7 +164,7 @@ Do NOT image `*_cal.ms` - it has the wrong phase center!
 
 ## Calibration Configuration
 
-Use the default preset for all DSA-110 calibration (see [presets.py](backend/src/dsa110_contimg/core/calibration/presets.py)):
+Use the default preset for all DSA-110 calibration (see [presets.py](dsa110_continuum/core/calibration/presets.py)):
 
 ```python
 from dsa110_contimg.core.calibration.presets import get_preset, DEFAULT_PRESET
@@ -521,15 +521,15 @@ config = SelfCalConfig(use_galvin_clip=True, galvin_box_size=100)
 
 | File | Purpose |
 |------|---------|
-| [calibration.py](backend/src/dsa110_contimg/core/calibration/calibration.py) | Core gaincal/bandpass routines |
-| [presets.py](backend/src/dsa110_contimg/core/calibration/presets.py) | Calibration configuration presets |
-| [casa_service.py](backend/src/dsa110_contimg/core/calibration/casa_service.py) | Safe CASA task execution |
-| [selfcal.py](backend/src/dsa110_contimg/core/calibration/selfcal.py) | Self-calibration routines |
-| [selection.py](backend/src/dsa110_contimg/core/calibration/selection.py) | Calibrator field selection |
-| [field_naming.py](backend/src/dsa110_contimg/core/calibration/field_naming.py) | Field renaming utilities |
-| [applycal.py](backend/src/dsa110_contimg/core/calibration/applycal.py) | Apply calibration to target MS |
-| [gpu_calibration.py](backend/src/dsa110_contimg/core/calibration/gpu_calibration.py) | GPU-accelerated gain application |
-| [catalogs.py](backend/src/dsa110_contimg/core/calibration/catalogs.py) | VLA calibrator catalog loading |
+| [calibration.py](dsa110_continuum/core/calibration/calibration.py) | Core gaincal/bandpass routines |
+| [presets.py](dsa110_continuum/core/calibration/presets.py) | Calibration configuration presets |
+| [casa_service.py](dsa110_continuum/core/calibration/casa_service.py) | Safe CASA task execution |
+| [selfcal.py](dsa110_continuum/core/calibration/selfcal.py) | Self-calibration routines |
+| [selection.py](dsa110_continuum/core/calibration/selection.py) | Calibrator field selection |
+| [field_naming.py](dsa110_continuum/core/calibration/field_naming.py) | Field renaming utilities |
+| [applycal.py](dsa110_continuum/core/calibration/applycal.py) | Apply calibration to target MS |
+| [gpu_calibration.py](dsa110_continuum/core/calibration/gpu_calibration.py) | GPU-accelerated gain application |
+| [catalogs.py](dsa110_continuum/core/calibration/catalogs.py) | VLA calibrator catalog loading |
 
 ## CLI Reference
 

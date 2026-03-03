@@ -1200,3 +1200,94 @@ else:
 | `core/conversion/writers.py`                 | Writer factory             |
 | `core/conversion/ms_utils.py`                | MS configuration utilities |
 | `infrastructure/database/hdf5_index.py`      | Subband grouping queries   |
+
+---
+
+## Known Upstream Issue: PyUVData 3.2+ Unit-Stripping
+
+PyUVData 3.2 changed the type requirements for the telescope location arguments
+passed to internal phasing utilities. Passing an astropy Quantity object (e.g.,
+`telescope_location * u.rad`) to `calc_app_coords` triggers:
+
+    UnitTypeError: 'rad2' (unit) and '' (unit) are not convertible
+
+The fix is to strip astropy units before passing telescope coordinates to
+`calc_app_coords` and `calc_uvw`. This is already applied in
+`conversion/helpers_coordinates.py` at the `compute_and_set_uvw` call site.
+
+**Do not "fix" this by re-adding units.** The unit-stripping is intentional and
+required for compatibility with pyuvdata==3.2.5 (pinned in pyproject.toml).
+
+If pyuvdata is upgraded, re-test `compute_and_set_uvw` against 2026-01-25 test
+data and verify that UVW coordinates match the expected values from the
+RevF ITRF antenna positions.
+
+---
+
+## Coordinate Metadata: Three Patches Required After Phaseshift
+
+The conversion and phaseshift workflow must maintain consistency across three
+separate representations of the phase centre in a CASA Measurement Set. Failing
+to apply any one of these patches produces no runtime error but gives wrong science.
+
+### Patch 1: FIELD::PHASE_DIR after chgcentre
+
+WSClean's `chgcentre` rotates the visibility phases but may not update the
+FIELD table. Always call `update_phase_dir_to_target` after running chgcentre:
+
+```python
+from dsa110_continuum.calibration.runner import update_phase_dir_to_target
+
+update_phase_dir_to_target(ms_path, target_ra_deg, target_dec_deg)
+```
+
+Source: `calibration/runner.py`, function `update_phase_dir_to_target` (~line 140).
+
+**Symptom if skipped**: Tools that read FIELD::PHASE_DIR (e.g., CASA listobs,
+some quality-check scripts) report the old phase centre. More critically, any
+subsequent CASA phaseshift will start from the wrong position.
+
+### Patch 2: FIELD::REFERENCE_DIR synchronisation
+
+CASA's `ft()` task reads `FIELD::REFERENCE_DIR` (not `PHASE_DIR`) when predicting
+model visibilities into MODEL_DATA. After any phaseshift, these two columns must
+be kept in sync:
+
+```python
+from dsa110_continuum.calibration.runner import sync_reference_dir_with_phase_dir
+
+sync_reference_dir_with_phase_dir(ms_path)
+```
+
+Source: `calibration/runner.py`, function `sync_reference_dir_with_phase_dir` (~line 186).
+
+**Symptom if skipped**: `ft()` computes model visibilities at the pre-phaseshift
+position. Sky model seeding is offset; self-calibration gain solutions are computed
+against a misaligned model and will diverge or corrupt the data.
+
+### Patch 3: OBSERVATION::TELESCOPE_NAME = DSA_110 before WSClean
+
+The SPW-merge step (`merge_spws()`, required before IDG imaging) resets
+`OBSERVATION::TELESCOPE_NAME` to `OVRO_MMA`. EveryBeam requires `DSA_110` to
+select the correct Airy-disk beam model (added in EveryBeam 0.7.2). The name
+is restored automatically inside `run_wsclean`:
+
+```python
+from dsa110_continuum.conversion.helpers_telescope import set_ms_telescope_name
+
+set_ms_telescope_name(ms_path, name="DSA_110")
+```
+
+Source: `conversion/helpers_telescope.py`, function `set_ms_telescope_name` (~line 227).
+
+**Symptom if skipped**: EveryBeam silently falls back to a generic or wrong beam
+model. Primary beam correction errors up to ~20% appear at the field edges; flux
+density measurements near the beam half-power radius are systematically wrong.
+
+### Summary table
+
+| Column / field | Set by | If missing |
+|---|---|---|
+| `FIELD::PHASE_DIR` | `update_phase_dir_to_target` | Old phase centre propagates downstream |
+| `FIELD::REFERENCE_DIR` | `sync_reference_dir_with_phase_dir` | `ft()` predicts model at wrong position |
+| `OBSERVATION::TELESCOPE_NAME` | `set_ms_telescope_name` | Wrong EveryBeam beam model selected |

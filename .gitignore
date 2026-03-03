@@ -1,0 +1,15 @@
+.aider*
+
+# Data products — never commit large binary/data files
+ms/
+products/
+*.ms
+*.fits
+*.h5
+*.hdf5
+
+# Cache and scratch
+.cache/
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md

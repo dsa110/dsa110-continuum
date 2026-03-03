@@ -53,7 +53,7 @@ For detailed GPU guidance, see: `GPU_CONTEXT.md`
 ## Purpose
 
 Combine knowledge of:
-1. **Current pipeline implementation** in `backend/src/dsa110_contimg/core/`
+1. **Current pipeline implementation** in `dsa110_continuum/core/`
 2. **Best practices from external tools** indexed in `state/db/external_docs.sqlite3`
 3. **Radio astronomy domain expertise** to identify improvement opportunities
 
@@ -337,7 +337,7 @@ for r in results:
 **Step 2: Read current implementation**
 ```python
 # Read selfcal.py
-with open("backend/src/dsa110_contimg/core/calibration/selfcal.py") as f:
+with open("dsa110_continuum/core/calibration/selfcal.py") as f:
     code = f.read()
 ```
 
@@ -399,7 +399,7 @@ For comprehensive analysis, use this template:
 ## [Component] Improvement Analysis
 
 ### Current Implementation
-- File: `backend/src/dsa110_contimg/core/[component]/[file].py`
+- File: `dsa110_continuum/core/[component]/[file].py`
 - Key parameters: [list current settings]
 
 ### Documentation Comparison
@@ -421,10 +421,10 @@ For comprehensive analysis, use this template:
 ## Related Files
 
 - **Documentation index**: `/data/dsa110-contimg/state/db/external_docs.sqlite3`
-- **Calibration code**: `backend/src/dsa110_contimg/core/calibration/`
-- **Imaging code**: `backend/src/dsa110_contimg/core/imaging/`
-- **Mosaic code**: `backend/src/dsa110_contimg/core/mosaic/`
-- **Self-cal code**: `backend/src/dsa110_contimg/core/selfcal/`
+- **Calibration code**: `dsa110_continuum/core/calibration/`
+- **Imaging code**: `dsa110_continuum/core/imaging/`
+- **Mosaic code**: `dsa110_continuum/core/mosaic/`
+- **Self-cal code**: `dsa110_continuum/core/selfcal/`
 - **Science context**: `.agent/skills/pipeline-advisor/SCIENCE_CONTEXT.md`
 - **GPU context**: `.agent/skills/pipeline-advisor/GPU_CONTEXT.md`
 - **Full GPU skill**: `.agent/skills/gpu-acceleration/SKILL.md`

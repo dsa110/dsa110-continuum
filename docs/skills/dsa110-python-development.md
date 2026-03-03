@@ -11,7 +11,7 @@ Modern Python development patterns for the DSA-110 continuum imaging pipeline.
 ## Project Structure
 
 ```
-backend/src/dsa110_contimg/
+dsa110_continuum/
 ├── api/             # FastAPI routes and schemas
 ├── calibration/     # CASA calibration service
 ├── dagster/         # Workflow assets and resources

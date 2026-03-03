@@ -189,4 +189,4 @@ dsa110 photometry lightcurve NVSS_J083000+550000 --days 30
 
 - Variable source detection: `.agent/skills/variable-source-detection/SKILL.md`
 - Pipeline advisor: `.agent/skills/pipeline-advisor/SKILL.md`
-- Photometry CLI: `backend/src/dsa110_contimg/core/photometry/cli.py`
+- Photometry CLI: `dsa110_continuum/core/photometry/cli.py`
