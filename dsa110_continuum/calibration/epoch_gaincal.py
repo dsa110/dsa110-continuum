@@ -187,6 +187,11 @@ def calibrate_epoch(
         ap_table = str(work / f"{stem}.ap.G")
         wsclean_prefix = str(work / f"{stem}_model")
 
+        # Return cached result if the ap.G table already exists
+        if os.path.exists(ap_table):
+            log.info("Epoch gaincal [%s]: cached ap.G found — reusing %s", stem, ap_table)
+            return ap_table
+
         # ── 1. Phaseshift to median meridian ──────────────────────────────────
         if not os.path.exists(meridian_ms):
             log.info("Epoch gaincal [%s]: phaseshifting", stem)
