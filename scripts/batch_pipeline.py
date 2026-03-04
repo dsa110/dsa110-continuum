@@ -278,21 +278,25 @@ def mosaic_stats(mosaic_path: str) -> tuple[float, float]:
 
 def print_summary(date: str, epoch_results: list[dict]) -> None:
     """Print a per-epoch table plus overall totals."""
-    print("\n" + "=" * 78)
+    print("\n" + "=" * 88)
     print(f"  DSA-110 Batch Pipeline Summary — {date}")
-    print("=" * 78)
-    hdr = f"  {'Epoch':12s}  {'Tiles':>5}  {'Peak(Jy/b)':>10}  {'RMS(mJy/b)':>10}  {'Sources':>7}  {'DSA/NVSS':>8}"
+    print("=" * 88)
+    hdr = (
+        f"  {'Epoch':12s}  {'Tiles':>5}  {'GainCal':>8}"
+        f"  {'Peak(Jy/b)':>10}  {'RMS(mJy/b)':>10}  {'Sources':>7}  {'DSA/NVSS':>8}"
+    )
     print(hdr)
-    print("  " + "-" * 74)
+    print("  " + "-" * 84)
 
     all_ratios: list[float] = []
     for r in epoch_results:
         status = r.get("status", "ok")
+        gcal_str = r.get("gaincal_status", "n/a")[:8]
         if status == "skipped":
-            print(f"  {r['label']:12s}  {'--':>5}  {'(skipped)':>10}")
+            print(f"  {r['label']:12s}  {'--':>5}  {gcal_str:>8}  {'(skipped)':>10}")
             continue
         if status == "failed":
-            print(f"  {r['label']:12s}  {r['n_tiles']:>5}  {'FAILED':>10}")
+            print(f"  {r['label']:12s}  {r['n_tiles']:>5}  {gcal_str:>8}  {'FAILED':>10}")
             continue
 
         peak_str = f"{r['peak']:.4f}" if r['peak'] is not None else "n/a"
@@ -304,11 +308,11 @@ def print_summary(date: str, epoch_results: list[dict]) -> None:
             all_ratios.append(ratio)
 
         print(
-            f"  {r['label']:12s}  {r['n_tiles']:>5}  {peak_str:>10}  {rms_str:>10}"
-            f"  {src_str:>7}  {ratio_str:>8}"
+            f"  {r['label']:12s}  {r['n_tiles']:>5}  {gcal_str:>8}"
+            f"  {peak_str:>10}  {rms_str:>10}  {src_str:>7}  {ratio_str:>8}"
         )
 
-    print("  " + "-" * 74)
+    print("  " + "-" * 84)
     if all_ratios:
         overall = float(np.median(all_ratios))
         flag = "  OK" if 0.8 <= overall <= 1.2 else "  WARNING: outside 0.8–1.2 target"
@@ -576,35 +580,6 @@ def main() -> None:
         except Exception as e:
             log.warning("Could not read checkpoint file: %s", e)
 
-    # ── Per-epoch gain calibration ─────────────────────────────────────────
-    _epoch_gaincal_status = "skipped"
-    if not args.skip_epoch_gaincal and len(ms_list) >= 1:
-        from dsa110_continuum.calibration.epoch_gaincal import calibrate_epoch
-        epoch_gaincal_dir = os.path.join(stage_dir, "epoch_gaincal")
-        os.makedirs(epoch_gaincal_dir, exist_ok=True)
-        epoch_tiles = ms_list[:12] if len(ms_list) >= 12 else (
-            ms_list + [ms_list[-1]] * (12 - len(ms_list))  # pad with last tile if <12
-        )
-        log.info("=== Phase 0/3: Per-epoch gain calibration (central tile selection) ===")
-        epoch_g = calibrate_epoch(
-            epoch_ms_paths=epoch_tiles,
-            bp_table=_bp,
-            work_dir=epoch_gaincal_dir,
-            refant="103",
-        )
-        if epoch_g is not None:
-            log.info("Epoch gaincal SUCCESS: %s", epoch_g)
-            _md.G_TABLE = epoch_g
-            _epoch_gaincal_status = "ok"
-        else:
-            log.warning(
-                "Epoch gaincal failed — falling back to static daily G table (%s)", _ga
-            )
-            _epoch_gaincal_status = "fallback"
-    elif args.skip_epoch_gaincal:
-        log.info("--skip-epoch-gaincal set: using static daily G table")
-    # ──────────────────────────────────────────────────────────────────────
-
     completed_fits = set(tile_fits)
     log.info("=== Phase 1/3: Calibrate + Image all tiles (timeout=%ds, retry=%s) ===",
              tile_timeout, retry_failed)
@@ -677,7 +652,7 @@ def main() -> None:
         # Skip if mosaic already exists
         if os.path.exists(mosaic_path):
             log.info("  Mosaic already exists — skipping epoch %s", label)
-            epoch_results.append({"label": label, "status": "skipped", "n_tiles": len(epoch_tiles)})
+            epoch_results.append({"label": label, "status": "skipped", "n_tiles": len(epoch_tiles), "gaincal_status": _epoch_gaincal_status})
             continue
 
         # Build mosaic
@@ -687,7 +662,7 @@ def main() -> None:
             write_epoch_mosaic(mosaic_arr, out_wcs, epoch_tiles, mosaic_path, date, hour, len(epoch_tiles))
         except Exception as e:
             log.error("  Mosaic failed for epoch %s: %s", label, e)
-            epoch_results.append({"label": label, "status": "failed", "n_tiles": len(epoch_tiles)})
+            epoch_results.append({"label": label, "status": "failed", "n_tiles": len(epoch_tiles), "gaincal_status": _epoch_gaincal_status})
             continue
 
         # QA
@@ -729,6 +704,7 @@ def main() -> None:
             "n_sources": n_sources,
             "median_ratio": median_ratio,
             "mosaic_path": mosaic_path,
+            "gaincal_status": _epoch_gaincal_status,
         })
 
     # ── Print summary ─────────────────────────────────────────────────────────
