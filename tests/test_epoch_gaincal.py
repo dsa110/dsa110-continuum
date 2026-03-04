@@ -7,6 +7,7 @@ def test_select_calibration_tile_from_ms_picks_richer_tile():
     """Should return the MS whose central pointing has more catalog sources."""
     from dsa110_continuum.calibration.epoch_gaincal import select_calibration_tile_from_ms
 
+    # 12 tiles: centre pair is indices 5 (mid-1) and 6 (mid) where mid = 12//2 = 6
     fake_paths = [f"/fake/tile_{i:02d}.ms" for i in range(12)]
 
     def fake_phase_center(ms_path):
@@ -29,13 +30,40 @@ def test_select_calibration_tile_from_ms_picks_richer_tile():
     assert result == "/fake/tile_06.ms"
 
 
-def test_select_calibration_tile_raises_on_wrong_count():
-    """Should raise ValueError when not given exactly 12 MS paths."""
+def test_select_calibration_tile_works_with_11_tiles():
+    """Should work with 11 tiles (centre pair is indices 4 and 5)."""
+    from dsa110_continuum.calibration.epoch_gaincal import select_calibration_tile_from_ms
+
+    # 11 tiles: mid = 11//2 = 5, centre pair is indices 4 and 5
+    fake_paths = [f"/fake/tile_{i:02d}.ms" for i in range(11)]
+
+    def fake_phase_center(ms_path):
+        idx = int(Path(ms_path).stem.split("_")[1])
+        return (float(idx) * 10.0, 37.0)
+
+    def fake_count(pointing_ra_deg, pointing_dec_deg, **kwargs):
+        # tile index 5 → ra=50.0 → 9 sources; tile index 4 → ra=40.0 → 2 sources
+        return 9 if pointing_ra_deg == 50.0 else 2
+
+    with patch(
+        "dsa110_continuum.calibration.epoch_gaincal._read_ms_phase_center",
+        side_effect=fake_phase_center,
+    ), patch(
+        "dsa110_continuum.calibration.epoch_gaincal.count_bright_sources_in_tile",
+        side_effect=fake_count,
+    ):
+        result = select_calibration_tile_from_ms(fake_paths)
+
+    assert result == "/fake/tile_05.ms"
+
+
+def test_select_calibration_tile_raises_on_too_few():
+    """Should raise ValueError when given fewer than 2 MS paths."""
     from dsa110_continuum.calibration.epoch_gaincal import select_calibration_tile_from_ms
     import pytest
 
-    with pytest.raises(ValueError, match="Expected 12"):
-        select_calibration_tile_from_ms(["/fake/a.ms", "/fake/b.ms"])
+    with pytest.raises(ValueError, match="at least 2"):
+        select_calibration_tile_from_ms(["/fake/a.ms"])
 
 
 def test_select_calibration_tile_defaults_to_tile5_on_failure():

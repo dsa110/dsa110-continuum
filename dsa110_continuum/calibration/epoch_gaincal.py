@@ -56,14 +56,15 @@ def select_calibration_tile_from_ms(
 ) -> str:
     """Return the central tile MS with the most bright catalog sources.
 
-    Checks tiles at indices 5 and 6 (0-indexed) of the sorted 12-tile epoch
-    list and returns the MS path whose pointing has more catalog sources above
-    *min_flux_mjy* within *source_radius_deg*.
+    Checks the two tiles nearest the centre of the sorted list and returns
+    the MS path whose pointing has more catalog sources above *min_flux_mjy*
+    within *source_radius_deg*.  Optimised for MOSAIC_TILE_COUNT (12) tiles
+    but gracefully handles any count >= 2.
 
     Parameters
     ----------
     epoch_ms_paths:
-        Sorted list of exactly MOSAIC_TILE_COUNT (12) MS paths for the epoch.
+        Sorted list of >= 2 MS paths for the epoch.
     min_flux_mjy:
         Minimum source flux for the source count query (default: 5 mJy).
     source_radius_deg:
@@ -77,14 +78,15 @@ def select_calibration_tile_from_ms(
     Raises
     ------
     ValueError
-        If epoch_ms_paths does not contain exactly MOSAIC_TILE_COUNT entries.
+        If epoch_ms_paths contains fewer than 2 entries.
     """
-    if len(epoch_ms_paths) != MOSAIC_TILE_COUNT:
-        raise ValueError(
-            f"Expected {MOSAIC_TILE_COUNT} MS paths, got {len(epoch_ms_paths)}"
-        )
+    n = len(epoch_ms_paths)
+    if n < 2:
+        raise ValueError(f"Need at least 2 MS paths for tile selection, got {n}")
 
-    center_indices = [5, 6]
+    # Pick the two tiles nearest the centre of the list
+    mid = n // 2
+    center_indices = [mid - 1, mid]
     best_ms: str | None = None
     best_count = -1
 
@@ -196,7 +198,22 @@ def calibrate_epoch(
         else:
             log.info("Epoch gaincal [%s]: meridian MS exists, reusing", stem)
 
-        # ── 2. Apply bandpass only → CORRECTED_DATA ───────────────────────────
+        # ── 2. Initialise MODEL_DATA column before any applycal ──────────────
+        # predict_from_skymodel_wsclean needs MODEL_DATA to exist; if it's absent
+        # it attempts clearcal which would destroy CORRECTED_DATA. We add it now
+        # while the MS is still "uncalibrated" so the protection guard never fires.
+        log.info("Epoch gaincal [%s]: initialising MODEL_DATA column", stem)
+        try:
+            import casacore.tables as _ct
+            with _ct.table(meridian_ms, readonly=True, ack=False) as _t:
+                _has_model = "MODEL_DATA" in _t.colnames()
+            if not _has_model:
+                from dsa110_continuum.calibration.casa_service import CASAService as _CS
+                _CS().clearcal(vis=meridian_ms, addmodel=True)
+        except Exception as _e:
+            log.warning("Epoch gaincal [%s]: MODEL_DATA init failed (%s) — continuing", stem, _e)
+
+        # ── 3. Apply bandpass only → CORRECTED_DATA ───────────────────────────
         log.info("Epoch gaincal [%s]: applying BP table", stem)
         apply_to_target(
             ms_target=meridian_ms,
@@ -205,7 +222,7 @@ def calibrate_epoch(
             interp=["nearest"],
         )
 
-        # ── 3. Catalog MODEL_DATA ─────────────────────────────────────────────
+        # ── 5. Catalog MODEL_DATA ─────────────────────────────────────────────
         log.info("Epoch gaincal [%s]: building catalog sky model", stem)
         ra, dec = _read_ms_phase_center(meridian_ms)
         sky = make_unified_skymodel(ra, dec, source_radius_deg, min_mjy=min_flux_mjy)
@@ -218,7 +235,7 @@ def calibrate_epoch(
         log.info("Epoch gaincal [%s]: sky model has %d components", stem, sky.Ncomponents)
         predict_from_skymodel_wsclean(meridian_ms, sky)
 
-        # ── 4. Phase-only gaincal ─────────────────────────────────────────────
+        # ── 6. Phase-only gaincal ─────────────────────────────────────────────
         log.info("Epoch gaincal [%s]: phase-only gaincal → %s", stem, Path(p_table).name)
         service = CASAService()
         service.gaincal(
@@ -245,7 +262,7 @@ def calibrate_epoch(
             interp=["nearest", "linear"],
         )
 
-        # ── 5. Quick WSClean self-cal image to update MODEL_DATA ──────────────
+        # ── 7. Quick WSClean self-cal image to update MODEL_DATA ──────────────
         wsclean_exec = shutil.which("wsclean")
         if not wsclean_exec:
             log.warning(
@@ -279,7 +296,7 @@ def calibrate_epoch(
                 )
                 predict_from_skymodel_wsclean(meridian_ms, sky)
 
-        # ── 6. Amplitude+phase gaincal ────────────────────────────────────────
+        # ── 8. Amplitude+phase gaincal ────────────────────────────────────────
         log.info("Epoch gaincal [%s]: ap gaincal → %s", stem, Path(ap_table).name)
         service.gaincal(
             vis=meridian_ms,

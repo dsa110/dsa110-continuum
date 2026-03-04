@@ -328,9 +328,24 @@ def print_summary(date: str, epoch_results: list[dict]) -> None:
 
 # ── Tile execution: timeout + retry ──────────────────────────────────────────
 
-def _run_process_ms(ms_path: str, keep: bool, force_recal: bool = False) -> str | None:
-    """Thin wrapper so process_ms can be submitted to a thread pool."""
-    import mosaic_day as _md  # already imported by caller, but re-import is harmless
+def _run_process_ms(
+    ms_path: str,
+    keep: bool,
+    force_recal: bool = False,
+    g_table: str | None = None,
+    bp_table: str | None = None,
+) -> str | None:
+    """Thin wrapper so process_ms can be submitted to a subprocess pool.
+
+    Accepts optional *g_table* and *bp_table* so that the epoch-derived G table
+    (set on the parent process's _md module) is propagated into the fresh
+    ``mosaic_day`` import that runs inside the subprocess.
+    """
+    import mosaic_day as _md
+    if g_table is not None:
+        _md.G_TABLE = g_table
+    if bp_table is not None:
+        _md.BP_TABLE = bp_table
     return _md.process_ms(ms_path, keep_intermediates=keep, force_recal=force_recal)
 
 
@@ -341,6 +356,8 @@ def process_tile_safe(
     timeout_sec: int,
     retry: bool,
     force_recal: bool = False,
+    g_table: str | None = None,
+    bp_table: str | None = None,
 ) -> str | None:
     """Run md.process_ms with a hard timeout and optional single retry.
 
@@ -352,7 +369,7 @@ def process_tile_safe(
 
     def _attempt() -> str | None:
         with ProcessPoolExecutor(max_workers=1) as pool:
-            fut = pool.submit(_run_process_ms, ms_path, keep, force_recal)
+            fut = pool.submit(_run_process_ms, ms_path, keep, force_recal, g_table, bp_table)
             try:
                 return fut.result(timeout=timeout_sec)
             except FuturesTimeoutError:
@@ -534,8 +551,9 @@ def main() -> None:
         log.info("=== Phase 0/3: Per-epoch gain calibration ===")
         try:
             from dsa110_continuum.calibration.epoch_gaincal import calibrate_epoch
-            _epoch_ms = ms_list[:12] if len(ms_list) >= 12 else ms_list
-            if len(_epoch_ms) == 12:
+            from dsa110_continuum.calibration.mosaic_constants import MOSAIC_TILE_COUNT
+            _epoch_ms = ms_list[:MOSAIC_TILE_COUNT] if len(ms_list) >= MOSAIC_TILE_COUNT else ms_list
+            if len(_epoch_ms) >= 2:
                 _epoch_g_table = calibrate_epoch(
                     epoch_ms_paths=_epoch_ms,
                     bp_table=_bp,
@@ -553,7 +571,7 @@ def main() -> None:
                     _epoch_gaincal_status = "fallback"
             else:
                 log.warning(
-                    "Epoch gaincal skipped: need 12 MS files, found %d", len(_epoch_ms)
+                    "Epoch gaincal skipped: need at least 2 MS files, found %d", len(_epoch_ms)
                 )
                 _epoch_gaincal_status = "skipped"
         except Exception as _eg_exc:
@@ -592,6 +610,8 @@ def main() -> None:
         result = process_tile_safe(
             _md, ms_path, keep, tile_timeout, retry_failed,
             force_recal=(_epoch_gaincal_status == "ok"),
+            g_table=_epoch_g_table,
+            bp_table=_bp,
         )
         elapsed = time.time() - t0
 

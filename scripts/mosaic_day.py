@@ -116,13 +116,14 @@ def process_ms(ms_path: str, keep_intermediates: bool = False, force_recal: bool
     pbcor_fits = imagename + "-image-pb.fits"
     image_fits = imagename + "-image.fits"
 
-    # Skip if already fully processed (check pbcor output first)
-    if os.path.exists(pbcor_fits):
-        log.info("[%s] PB-corrected image already exists — skipping", tag)
-        return pbcor_fits
-    if os.path.exists(image_fits):
-        log.info("[%s] Image already exists (no pbcor) — skipping", tag)
-        return image_fits
+    # Skip if already fully processed — unless force_recal requests a fresh run
+    if not force_recal:
+        if os.path.exists(pbcor_fits):
+            log.info("[%s] PB-corrected image already exists — skipping", tag)
+            return pbcor_fits
+        if os.path.exists(image_fits):
+            log.info("[%s] Image already exists (no pbcor) — skipping", tag)
+            return image_fits
 
     # ── Step 1: Phaseshift ────────────────────────────────────────────────
     if os.path.exists(meridian_ms):
