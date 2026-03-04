@@ -67,9 +67,9 @@ log = logging.getLogger(__name__)
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 DEFAULT_DATE = "2026-01-25"
-MS_DIR = "/stage/dsa110-contimg/ms"
-STAGE_IMAGE_BASE = "/stage/dsa110-contimg/images"
-PRODUCTS_BASE = "/data/dsa110-continuum/products/mosaics"
+MS_DIR = os.environ.get("DSA110_MS_DIR", "/stage/dsa110-contimg/ms")
+STAGE_IMAGE_BASE = os.environ.get("DSA110_STAGE_IMAGE_BASE", "/stage/dsa110-contimg/images")
+PRODUCTS_BASE = os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-continuum/products/mosaics")
 CELL_ARCSEC = 6.0  # must match mosaic_day.py
 TILE_TIMEOUT_SEC = 1800  # 30 min max per tile before we kill & skip
 
@@ -226,7 +226,7 @@ def run_photometry_phase(mosaic_path: str) -> list[dict] | None:
     # gracefully instead of aborting the whole batch.
     rows = []
     n_skip = 0
-    for src in sources:
+    for i, src in enumerate(sources):
         try:
             meas = measure_forced_peak(mosaic_path, src["ra_deg"], src["dec_deg"])
             if meas is None:
@@ -244,6 +244,7 @@ def run_photometry_phase(mosaic_path: str) -> list[dict] | None:
             "dsa_peak_jyb": round(meas.peak_jyb, 6),
             "dsa_peak_err_jyb": round(meas.peak_err_jyb, 6),
             "dsa_nvss_ratio": round(ratio, 4),
+            "source_id": i,
         })
     if n_skip:
         log.info("Skipped %d sources outside mosaic footprint", n_skip)
@@ -627,6 +628,13 @@ def main() -> None:
                     if ratios:
                         median_ratio = float(np.median(ratios))
                         log.info("  Median DSA/NVSS ratio: %.3f  (%d sources)", median_ratio, len(ratios))
+
+        # Archive epoch mosaic FITS alongside CSV
+        mosaic_fits_src = Path(mosaic_path)
+        mosaic_fits_dst = Path(paths["products_dir"]) / mosaic_fits_src.name
+        if mosaic_fits_src.exists() and not mosaic_fits_dst.exists():
+            shutil.copy2(str(mosaic_fits_src), str(mosaic_fits_dst))
+            log.info("Archived mosaic FITS: %s", mosaic_fits_dst)
 
         epoch_results.append({
             "label": label,

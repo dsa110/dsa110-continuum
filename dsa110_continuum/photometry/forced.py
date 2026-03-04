@@ -95,6 +95,8 @@ class ForcedPhotometryResult:
     dof: int | None = None  # Degrees of freedom
     # Cluster ID if part of blended source group
     cluster_id: int | None = None
+    # Stable integer identifier: row index in the input catalog (e.g. NVSS)
+    source_id: int | None = None
 
 
 # Position angle offset: VAST uses E of N convention
