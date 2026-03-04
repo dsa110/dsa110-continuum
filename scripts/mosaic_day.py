@@ -107,7 +107,7 @@ def needs_calibration(ms_path: str) -> bool:
         return True
 
 
-def process_ms(ms_path: str, keep_intermediates: bool = False) -> str | None:
+def process_ms(ms_path: str, keep_intermediates: bool = False, force_recal: bool = False) -> str | None:
     """Phaseshift → applycal → image one MS. Returns path to pb-corrected FITS or None."""
     tag = Path(ms_path).stem  # e.g. 2026-01-25T21:17:33
     meridian_ms = get_meridian_path(ms_path)
@@ -140,8 +140,8 @@ def process_ms(ms_path: str, keep_intermediates: bool = False) -> str | None:
             return None
 
     # ── Step 2: Calibration ────────────────────────────────────────────────
-    if needs_calibration(meridian_ms):
-        log.info("[%s] Applying calibration ...", tag)
+    if force_recal or needs_calibration(meridian_ms):
+        log.info("[%s] Applying calibration (force_recal=%s) ...", tag, force_recal)
         try:
             apply_to_target(
                 ms_target=meridian_ms,

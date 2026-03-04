@@ -267,6 +267,7 @@ def make_unified_skymodel(
     df_first = fetch_catalog("first")
     df_racs = fetch_catalog("racs")
     df_nvss = fetch_catalog("nvss")
+    df_vlass = fetch_catalog("vlass")
 
     # Add source origin label
     if not df_first.empty:
@@ -275,6 +276,8 @@ def make_unified_skymodel(
         df_racs["origin"] = "RACS"
     if not df_nvss.empty:
         df_nvss["origin"] = "NVSS"
+    if not df_vlass.empty:
+        df_vlass["origin"] = "VLASS"
 
     # 2. Start with FIRST (Highest Priority)
     unified_df = df_first.copy()
@@ -330,6 +333,26 @@ def make_unified_skymodel(
             unique_nvss = df_nvss[is_unmatched]
 
             unified_df = pd.concat([unified_df, unique_nvss], ignore_index=True)
+
+    # 5. Merge VLASS (Lowest priority — broadest coverage but lower resolution than FIRST)
+    if not df_vlass.empty:
+        if unified_df.empty:
+            unified_df = df_vlass.copy()
+        else:
+            c_unified = SkyCoord(
+                ra=unified_df["ra_deg"].values * u.deg,
+                dec=unified_df["dec_deg"].values * u.deg,
+                frame="icrs",
+            )
+            c_vlass = SkyCoord(
+                ra=df_vlass["ra_deg"].values * u.deg,
+                dec=df_vlass["dec_deg"].values * u.deg,
+                frame="icrs",
+            )
+            idx, d2d, _ = c_vlass.match_to_catalog_sky(c_unified)
+            is_unmatched = d2d > (match_radius_arcsec * u.arcsec)
+            unique_vlass = df_vlass[is_unmatched]
+            unified_df = pd.concat([unified_df, unique_vlass], ignore_index=True)
 
     if unified_df.empty:
         # Return an empty SkyModel with run_check=False to avoid validation errors

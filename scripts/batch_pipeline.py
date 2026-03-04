@@ -324,10 +324,10 @@ def print_summary(date: str, epoch_results: list[dict]) -> None:
 
 # ── Tile execution: timeout + retry ──────────────────────────────────────────
 
-def _run_process_ms(ms_path: str, keep: bool) -> str | None:
+def _run_process_ms(ms_path: str, keep: bool, force_recal: bool = False) -> str | None:
     """Thin wrapper so process_ms can be submitted to a thread pool."""
     import mosaic_day as _md  # already imported by caller, but re-import is harmless
-    return _md.process_ms(ms_path, keep_intermediates=keep)
+    return _md.process_ms(ms_path, keep_intermediates=keep, force_recal=force_recal)
 
 
 def process_tile_safe(
@@ -336,6 +336,7 @@ def process_tile_safe(
     keep: bool,
     timeout_sec: int,
     retry: bool,
+    force_recal: bool = False,
 ) -> str | None:
     """Run md.process_ms with a hard timeout and optional single retry.
 
@@ -347,7 +348,7 @@ def process_tile_safe(
 
     def _attempt() -> str | None:
         with ProcessPoolExecutor(max_workers=1) as pool:
-            fut = pool.submit(_run_process_ms, ms_path, keep)
+            fut = pool.submit(_run_process_ms, ms_path, keep, force_recal)
             try:
                 return fut.result(timeout=timeout_sec)
             except FuturesTimeoutError:
@@ -396,6 +397,16 @@ def main() -> None:
         action="store_true",
         default=False,
         help="Skip forced photometry step.",
+    )
+    parser.add_argument(
+        "--skip-epoch-gaincal",
+        action="store_true",
+        default=False,
+        help=(
+            "Skip per-epoch gain calibration. "
+            "Falls back to the static daily G table (--cal-date). "
+            "Use for debugging or when cal tables already exist."
+        ),
     )
     parser.add_argument(
         "--start-hour",
@@ -510,7 +521,46 @@ def main() -> None:
             log.error("No MS files remain after hour filter — aborting")
             sys.exit(1)
 
-    # ── Phase 2: Calibrate + image all tiles ──────────────────────────────────
+    # ── Phase 0: Per-epoch gain calibration ───────────────────────────────────
+    epoch_gaincal_dir = os.path.join(paths["stage_dir"], "epoch_gaincal")
+    os.makedirs(epoch_gaincal_dir, exist_ok=True)
+
+    _epoch_g_table: str | None = None
+    if not args.skip_epoch_gaincal:
+        log.info("=== Phase 0/3: Per-epoch gain calibration ===")
+        try:
+            from dsa110_continuum.calibration.epoch_gaincal import calibrate_epoch
+            _epoch_ms = ms_list[:12] if len(ms_list) >= 12 else ms_list
+            if len(_epoch_ms) == 12:
+                _epoch_g_table = calibrate_epoch(
+                    epoch_ms_paths=_epoch_ms,
+                    bp_table=_bp,
+                    work_dir=epoch_gaincal_dir,
+                    refant="103",
+                )
+                if _epoch_g_table is not None:
+                    log.info("Epoch gaincal SUCCESS: %s", _epoch_g_table)
+                    _md.G_TABLE = _epoch_g_table
+                    _epoch_gaincal_status = "ok"
+                else:
+                    log.warning(
+                        "Epoch gaincal failed — falling back to static daily G table (%s)", _ga
+                    )
+                    _epoch_gaincal_status = "fallback"
+            else:
+                log.warning(
+                    "Epoch gaincal skipped: need 12 MS files, found %d", len(_epoch_ms)
+                )
+                _epoch_gaincal_status = "skipped"
+        except Exception as _eg_exc:
+            log.error("Epoch gaincal error: %s — using static table", _eg_exc)
+            _epoch_gaincal_status = "error"
+    else:
+        log.info("--skip-epoch-gaincal set: using static daily G table (%s)", _ga)
+        _epoch_gaincal_status = "skipped"
+    # ──────────────────────────────────────────────────────────────────────────
+
+    # ── Phase 1: Calibrate + image all tiles ──────────────────────────────────
     tile_timeout = args.tile_timeout
     retry_failed = args.retry_failed
     checkpoint_path = os.path.join(paths["stage_dir"], ".tile_checkpoint.json")
@@ -526,6 +576,35 @@ def main() -> None:
         except Exception as e:
             log.warning("Could not read checkpoint file: %s", e)
 
+    # ── Per-epoch gain calibration ─────────────────────────────────────────
+    _epoch_gaincal_status = "skipped"
+    if not args.skip_epoch_gaincal and len(ms_list) >= 1:
+        from dsa110_continuum.calibration.epoch_gaincal import calibrate_epoch
+        epoch_gaincal_dir = os.path.join(stage_dir, "epoch_gaincal")
+        os.makedirs(epoch_gaincal_dir, exist_ok=True)
+        epoch_tiles = ms_list[:12] if len(ms_list) >= 12 else (
+            ms_list + [ms_list[-1]] * (12 - len(ms_list))  # pad with last tile if <12
+        )
+        log.info("=== Phase 0/3: Per-epoch gain calibration (central tile selection) ===")
+        epoch_g = calibrate_epoch(
+            epoch_ms_paths=epoch_tiles,
+            bp_table=_bp,
+            work_dir=epoch_gaincal_dir,
+            refant="103",
+        )
+        if epoch_g is not None:
+            log.info("Epoch gaincal SUCCESS: %s", epoch_g)
+            _md.G_TABLE = epoch_g
+            _epoch_gaincal_status = "ok"
+        else:
+            log.warning(
+                "Epoch gaincal failed — falling back to static daily G table (%s)", _ga
+            )
+            _epoch_gaincal_status = "fallback"
+    elif args.skip_epoch_gaincal:
+        log.info("--skip-epoch-gaincal set: using static daily G table")
+    # ──────────────────────────────────────────────────────────────────────
+
     completed_fits = set(tile_fits)
     log.info("=== Phase 1/3: Calibrate + Image all tiles (timeout=%ds, retry=%s) ===",
              tile_timeout, retry_failed)
@@ -535,7 +614,10 @@ def main() -> None:
         tag = Path(ms_path).stem
         log.info("[%d/%d] %s", i, len(ms_list), tag)
         t0 = time.time()
-        result = process_tile_safe(_md, ms_path, keep, tile_timeout, retry_failed)
+        result = process_tile_safe(
+            _md, ms_path, keep, tile_timeout, retry_failed,
+            force_recal=(_epoch_gaincal_status == "ok"),
+        )
         elapsed = time.time() - t0
 
         if result is None:
