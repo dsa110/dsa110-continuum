@@ -43,10 +43,10 @@ log = logging.getLogger(__name__)
 # ── Configuration ────────────────────────────────────────────────────────────
 DATE = "2026-01-25"
 
-MS_DIR = "/stage/dsa110-contimg/ms"
+MS_DIR = os.environ.get("DSA110_MS_DIR", "/stage/dsa110-contimg/ms")
 IMAGE_DIR = f"/stage/dsa110-contimg/images/mosaic_{DATE}"
 MOSAIC_OUT = f"{IMAGE_DIR}/full_mosaic.fits"
-PRODUCTS_DIR = f"/data/dsa110-continuum/products/mosaics/{DATE}"
+PRODUCTS_DIR = os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-continuum/products/mosaics") + f"/{DATE}"
 
 BP_TABLE = f"{MS_DIR}/{DATE}T22:26:05_0~23.b"
 G_TABLE = f"{MS_DIR}/{DATE}T22:26:05_0~23.g"
@@ -59,13 +59,13 @@ ROBUST = 0.5
 NITER = 1000
 THRESHOLD = "0.005Jy"
 
-os.makedirs(IMAGE_DIR, exist_ok=True)
-
 # Primary beam cutoff: blank tile pixels where the WSClean beam model is below
 # this fraction of the peak response.  Values < PB_CUTOFF have high noise
 # amplification in pb-corrected images and cause severe edge artefacts in the mosaic.
 PB_CUTOFF = 0.2  # 20 % of peak response
 
+
+# IMAGE_DIR is created in main() after --date is resolved, not at import time.
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -382,6 +382,22 @@ def check_mosaic_quality(mosaic_path: str) -> bool:
 def main():
     parser = argparse.ArgumentParser(description="Mosaic a full day of DSA-110 drift observations.")
     parser.add_argument(
+        "--date",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help="Observation date to process (default: module-level DATE = %(default)s).",
+    )
+    parser.add_argument(
+        "--cal-date",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help=(
+            "Date whose calibration tables (BP/gain) to use. "
+            "Defaults to --date if not provided. "
+            "Use when processing a new date whose cal tables are symlinked from 2026-01-25."
+        ),
+    )
+    parser.add_argument(
         "--keep-intermediates",
         action="store_true",
         default=False,
@@ -389,6 +405,42 @@ def main():
     )
     args = parser.parse_args()
     keep = args.keep_intermediates
+
+    # Allow overriding the global DATE and derived paths via --date / --cal-date
+    global DATE, IMAGE_DIR, MOSAIC_OUT, PRODUCTS_DIR, BP_TABLE, G_TABLE
+    if args.date is not None:
+        DATE = args.date
+        IMAGE_DIR = f"/stage/dsa110-contimg/images/mosaic_{DATE}"
+        MOSAIC_OUT = f"{IMAGE_DIR}/full_mosaic.fits"
+        PRODUCTS_DIR = os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-continuum/products/mosaics") + f"/{DATE}"
+
+    cal_date = args.cal_date if args.cal_date is not None else DATE
+    BP_TABLE = f"{MS_DIR}/{cal_date}T22:26:05_0~23.b"
+    G_TABLE = f"{MS_DIR}/{cal_date}T22:26:05_0~23.g"
+
+    # ── Cal-table validation (ABORT early if missing) ─────────────────────────
+    _missing = [t for t in [BP_TABLE, G_TABLE] if not os.path.exists(t)]
+    if _missing:
+        for _t in _missing:
+            log.error("ABORT: calibration table not found: %s", _t)
+        log.error("Available .b tables in %s:", MS_DIR)
+        for _f in sorted(os.listdir(MS_DIR)):
+            if _f.endswith(".b"):
+                log.error("  %s", _f)
+        log.error(
+            "To use a different date's tables, run with: --cal-date YYYY-MM-DD\n"
+            "To symlink from 2026-01-25, run:\n"
+            "  ln -s %s/2026-01-25T22:26:05_0~23.b %s\n"
+            "  ln -s %s/2026-01-25T22:26:05_0~23.g %s",
+            MS_DIR, BP_TABLE,
+            MS_DIR, G_TABLE,
+        )
+        sys.exit(1)
+
+    if cal_date != DATE:
+        log.info("Calibration tables from: %s", cal_date)
+    log.info("Cal tables verified: %s, %s", BP_TABLE, G_TABLE)
+    os.makedirs(IMAGE_DIR, exist_ok=True)
 
     ms_list = find_valid_ms()
     if not ms_list:
