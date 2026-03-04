@@ -121,6 +121,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--products-dir", default=str(PRODUCTS_DIR))
     parser.add_argument("--top-n", type=int, default=50)
+    parser.add_argument(
+        "--candidates-only",
+        action="store_true",
+        default=False,
+        help="Only plot variable candidate sources (faster; suitable for summary HTML)",
+    )
     args = parser.parse_args()
 
     products = Path(args.products_dir)
@@ -138,9 +144,14 @@ def main():
     plots_dir = products / "lightcurves" / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
 
-    multi_epoch_ids = metrics[metrics["n_epochs"] >= 2]["source_id"].values
-    print(f"Plotting {len(multi_epoch_ids)} sources with \u22652 epochs...")
-    for sid in multi_epoch_ids:
+    if args.candidates_only:
+        plot_ids = metrics[metrics["is_variable_candidate"]]["source_id"].values
+        print(f"Plotting {len(plot_ids)} variable candidate sources (--candidates-only)...")
+    else:
+        plot_ids = metrics[metrics["n_epochs"] >= 2]["source_id"].values
+        print(f"Plotting {len(plot_ids)} sources with \u22652 epochs...")
+
+    for sid in plot_ids:
         group = lc[lc["source_id"] == sid]
         nvss = group["nvss_flux_jy"].iloc[0]
         out_path = plots_dir / f"{int(sid):06d}.png"
