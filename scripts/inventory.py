@@ -166,6 +166,18 @@ def scan_ms(ms_dir: Path) -> set:
     return converted
 
 
+def read_dec_for_timestamp(ms_dir: Path, timestamp: str) -> float | None:
+    """Return Dec (deg) for a converted MS, or None if not yet converted."""
+    ms_path = ms_dir / f"{timestamp}.ms"
+    if not ms_path.exists():
+        return None
+    try:
+        from dsa110_continuum.calibration.dec_utils import read_ms_dec
+        return round(read_ms_dec(str(ms_path)), 1)
+    except Exception:
+        return None
+
+
 # ── Formatting helpers ────────────────────────────────────────────────────────
 
 def fmt_bytes(n: int) -> str:
@@ -207,7 +219,7 @@ def main():
     # ── Write CSV ─────────────────────────────────────────────────────────────
     OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = ["date", "timestamp", "n_subbands_found", "n_subbands_expected",
-                  "is_complete", "size_bytes", "has_ms", "group_source"]
+                  "is_complete", "size_bytes", "has_ms", "dec_deg", "group_source"]
     csv_rows = []
     for ts, info in sorted(obs.items()):
         csv_rows.append({
@@ -218,6 +230,7 @@ def main():
             "is_complete": info["is_complete"],
             "size_bytes": info["size_bytes"],
             "has_ms": ts in converted_ts,
+            "dec_deg": read_dec_for_timestamp(MS_DIR, ts),
             "group_source": info["source"],
         })
     with open(OUT_CSV, "w", newline="") as f:
@@ -245,17 +258,20 @@ def main():
               f"({d_total} obs | {d_complete} complete | "
               f"{d_total - d_complete} incomplete | "
               f"{fmt_bytes(d_bytes)} | {d_conv} MS)")
-        print(f"   {'TIMESTAMP':<22}  {'SRC':>3}  {'FOUND':>5}  {'OK':>3}  {'MS':>3}  SIZE")
-        print(f"   {'-'*22}  {'---':>3}  {'-----':>5}  {'---':>3}  {'---':>3}  ----")
+        print(f"   {'TIMESTAMP':<22}  {'SRC':>3}  {'FOUND':>5}  {'OK':>3}  {'MS':>3}  {'DEC':>6}  SIZE")
+        print(f"   {'-'*22}  {'---':>3}  {'-----':>5}  {'---':>3}  {'---':>3}  {'------':>6}  ----")
 
         for ts in timestamps:
             info = obs[ts]
             flag = "" if info["is_complete"] else "  *** INCOMPLETE"
+            dec = read_dec_for_timestamp(MS_DIR, ts)
+            dec_str = f"{dec:>5.1f}°" if dec is not None else "     ?"
             print(
                 f"   {ts:<22}  {info['source']:>3}  "
                 f"{info['n_subbands']:>5}  "
                 f"{'Y' if info['is_complete'] else 'N':>3}  "
                 f"{'Y' if ts in converted_ts else 'N':>3}  "
+                f"{dec_str:>6}  "
                 f"{fmt_bytes(info['size_bytes'])}{flag}"
             )
 
