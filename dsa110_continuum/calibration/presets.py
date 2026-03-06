@@ -62,15 +62,17 @@ class CalibrationPreset:
 
     # Pre-bandpass phase parameters
     prebp_phase: bool = False  # Enable if data has strong phase drifts
-    prebp_uvrange: str = ""
+    prebp_uvrange: str = ">1klambda"
     prebp_minsnr: float = 3.0
 
     # BP (bandpass) parameters
     bp_combine_field: bool = True  # Combine all fields for max SNR
-    bp_combine_spw: bool = True  # Recommended: combine SPWs
+    bp_combine_spw: bool = False  # Per-SPW solutions: each subband has a distinct bandpass shape
     bp_model_standard: str = "Perley-Butler 2017"
     bp_minsnr: float = 3.0
     bp_uvrange: str = ""
+    bp_fillgaps: int = 3  # Interpolate flagged channels up to this width (kHz: 3 x 244kHz = 732 kHz)
+    bp_minblperant: int = 4  # Minimum baselines per antenna required for a valid solution
     bp_smooth_type: str | None = None  # "median", "mean", or None
     bp_smooth_window: int | None = None
 
@@ -178,7 +180,7 @@ DEFAULT_PRESET = CalibrationPreset(
     bp_minsnr=5.0,  # Bandpass SNR threshold
     gain_minsnr=3.0,  # Gain SNR threshold
     bp_combine_field=True,  # Combine all fields for max SNR
-    bp_combine_spw=True,  # Combine SPWs for max SNR
+    bp_combine_spw=False,  # Per-SPW solutions: each subband has a distinct bandpass shape
     do_flagging=True,  # Enable flagging
     flag_autocorr=True,  # Flag autocorrelations
     use_adaptive_flagging=True,  # Adaptive RFI flagging

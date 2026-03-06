@@ -1241,6 +1241,11 @@ def run_calibrator(
             set_model=False,
             prebandpass_phase_table=prebandpass_phase_table,
             calibrator_name=calibrator_name,
+            combine_spw=False,      # per-SPW solutions; each of the 16 DSA-110 subbands has a distinct bandpass shape
+            minsnr=5.0,             # validated threshold (DEFAULT_PRESET); function default is 3.0
+            uvrange=">1klambda",    # exclude short baselines for bandpass
+            fillgaps=3,             # interpolate flagged channels up to 3 wide (~730 kHz at 244 kHz/ch)
+            minblperant=4,          # minimum baselines per antenna for a valid solution
         )
         if bp_tables:
             caltables.extend(bp_tables)

@@ -314,7 +314,7 @@ class MosaicWSCleanBuildJob(Job):
                 niter=50000 if tier_config.timeout_minutes >= 30 else 10000,
                 mgain=0.6,
                 auto_threshold=3.0,
-                idg_mode="cpu",
+                idg_mode="hybrid",  # GPU-accelerated: cuda-nvcc-11-1 installed, RTX 2080 Ti sm_75 validated
                 parallel_deconvolution=2000,
                 local_rms=True,
             )

@@ -357,7 +357,7 @@ def run_wsclean(
         abs_mem = os.getenv("WSCLEAN_ABS_MEM", "16")
     else:
         # Production mode: Scale with image size
-        abs_mem = os.getenv("WSCLEAN_ABS_MEM", "32" if imsize >= 2400 else "16")
+        abs_mem = os.getenv("WSCLEAN_ABS_MEM", "64" if imsize >= 4800 else "32" if imsize >= 2400 else "16")
     cmd.extend(["-abs-mem", abs_mem])
     LOG.debug("WSClean memory allocation: %sGB", abs_mem)
 
@@ -526,8 +526,8 @@ def image_ms(
     imagename: str,
     field: str = "",
     spw: str = "",
-    imsize: int = 2400,
-    cell_arcsec: float | str | None = 6.0,
+    imsize: int = 4800,
+    cell_arcsec: float | str | None = 3.0,
     weighting: str = "briggs",
     robust: float = 0.5,
     specmode: str = "mfs",
@@ -570,7 +570,7 @@ def image_ms(
     Automatically selects CORRECTED_DATA when present, otherwise uses DATA.
 
     Cell Size (Pixel Scale):
-        Default is 6.0 arcseconds, which provides ~3-5 pixels across the
+        Default is 3.0 arcseconds, which provides ~3-5 pixels across the
         synthesized beam for typical DSA-110 L-band observations.
         Set cell_arcsec='auto' to calculate automatically from UV coverage
         using the formula: cell = (λ / 2·umax) / 5.
@@ -952,10 +952,10 @@ def image_ms(
 
             # Calculate primary beam radius based on pblimit
             # Primary beam FWHM = 1.22 * lambda / D
-            # For DSA-110: D = 4.7 m, lambda = c / (freq_ghz * 1e9)
+            # For DSA-110: D = 4.65 m, lambda = c / (freq_ghz * 1e9)
             # At pblimit=0.2, effective radius is approximately FWHM * sqrt(-ln(0.2)) / sqrt(-ln(0.5))
             c_mps = 299792458.0
-            dish_dia_m = 4.7
+            dish_dia_m = 4.65
             lambda_m = c_mps / (freq_ghz * 1e9)
             fwhm_rad = 1.22 * lambda_m / dish_dia_m
             fwhm_deg = math.degrees(fwhm_rad)

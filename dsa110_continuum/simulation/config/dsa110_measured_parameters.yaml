@@ -231,17 +231,17 @@ frequency_setup:
     version: '1.0.0'
 
   bandwidth_total:
-    value: 250.0
+    value: 187.5
     unit: 'MHz'
     uncertainty: 0.1
     uncertainty_type: 'systematic'
-    measurement_date: '2019-01-01T00:00:00Z'
-    source_observations: ['Correlator configuration']
-    derivation_method: 'Correlator bandwidth setting'
+    measurement_date: '2026-03-01T00:00:00Z'
+    source_observations: ['1311.25 MHz to 1498.75 MHz observed band']
+    derivation_method: '16 subbands x 11.71875 MHz per subband = 187.5 MHz'
     validation_status: 'validated'
     references:
       - 'DSA-110 correlator documentation'
-    notes: 'Total bandwidth: 250 MHz, divided into 16 subbands of 15.625 MHz each'
+    notes: 'Usable science band: 1311.25-1498.75 MHz = 187.5 MHz. Correlator nominal window is 250 MHz but outer subbands are not science-grade.'
     last_updated: '2025-11-25T00:00:00Z'
     version: '1.0.0'
 

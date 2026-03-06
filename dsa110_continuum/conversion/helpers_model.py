@@ -26,7 +26,7 @@ def amplitude_sky_model(
     lst: np.ndarray,
     pt_dec: u.Quantity,
     freq_ghz: np.ndarray,
-    dish_diameter_m: float = 4.7,
+    dish_diameter_m: float = 4.65,
 ) -> np.ndarray:
     """Construct a primary-beam weighted amplitude model using EveryBeam.
 

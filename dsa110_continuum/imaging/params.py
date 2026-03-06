@@ -40,8 +40,8 @@ class ImagingParams:
     spw: str = ""
 
     # Image geometry
-    imsize: int = 2400
-    cell_arcsec: float | Literal["auto"] = 6.0
+    imsize: int = 4800
+    cell_arcsec: float | Literal["auto"] = 3.0
 
     # Weighting
     weighting: str = "briggs"
@@ -290,7 +290,7 @@ class ImagingParams:
             "imagename": imagename,
             "quality_tier": "standard",
             "niter": 1000,
-            "imsize": 2400,
+            "imsize": 4800,
         }
         defaults.update(kwargs)
         return cls(**defaults)
@@ -318,7 +318,7 @@ class ImagingParams:
             "imagename": imagename,
             "quality_tier": "high_precision",
             "niter": 5000,
-            "imsize": 2400,
+            "imsize": 4800,
             "threshold": "0.05mJy",
         }
         defaults.update(kwargs)
@@ -370,7 +370,7 @@ class ImagingParams:
             "niter": 10000,  # Deep cleaning for mosaic quality
             "auto_mask": 4.0,  # Aggressive masking for clean mosaics
             "auto_threshold": 0.5,  # Deep cleaning threshold
-            "imsize": 2400,
+            "imsize": 4800,
             "robust": 0.0,  # Briggs 0 for balanced resolution
         }
         defaults.update(kwargs)

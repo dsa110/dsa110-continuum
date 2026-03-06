@@ -70,7 +70,7 @@ class WSCleanMosaicConfig:
     niter: int = 50000
     mgain: float = 0.6
     auto_threshold: float = 3.0
-    idg_mode: str = "cpu"  # No GPU available
+    idg_mode: str = "hybrid"  # GPU-accelerated: cuda-nvcc-11-1 installed, RTX 2080 Ti sm_75 validated
     parallel_deconvolution: int = 2000
     local_rms: bool = True
     # Calibration settings

@@ -503,7 +503,7 @@ def compute_calibrator_score(
     target_ra_deg: float,
     target_dec_deg: float,
     frequency_ghz: float = 1.4,
-    dish_diameter_m: float = 4.7,
+    dish_diameter_m: float = 4.65,
     dec_weight_sigma_deg: float = 1.0,
 ) -> float:
     """Compute composite selection score for a calibrator.

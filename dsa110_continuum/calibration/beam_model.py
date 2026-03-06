@@ -48,7 +48,7 @@ class BeamConfig:
     frequency_ghz: float
     antenna_ra: float
     antenna_dec: float
-    dish_diameter_m: float = 4.7
+    dish_diameter_m: float = 4.65
     ms_path: str | None = None
     field_id: int = 0
     beam_mode: str = "analytic"

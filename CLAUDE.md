@@ -41,8 +41,35 @@ Then run batch_pipeline.py with --cal-date 2026-01-25 to use those tables for a 
 
 ## Reference docs
 
-docs/skills/ contains verified implementation notes for each pipeline step.
-Read these before writing any new code for that step.
+Two layers of documentation exist. Read both before implementing any pipeline subsystem.
+
+### docs/skills/ — implementation notes for the current pipeline
+
+Verified notes on how the code in THIS repository works.
+Read before writing new code for any step in this pipeline.
+
+### docs/reference/ — validated knowledge from reference codebases
+
+Distilled source analysis of the OLD dsa110-contimg pipeline and the ASKAP VAST
+pipeline. These contain validated numerical parameters, known failure modes, and
+instrument-specific constraints that are not obvious from the current codebase alone.
+
+READ THESE BEFORE IMPLEMENTING any of the following:
+
+  flagging.md           AOFlagger Lua strategy, OVRO RFI, validated fractions,
+                        two-stage flagging contract (do NOT omit Stage 2)
+  calibration.md        K/B/G parameters, DEFAULT_PRESET, self-cal SelfCalConfig,
+                        bp_minsnr=5.0 (not the function default of 3.0)
+  conversion-and-qa.md  UVH5 ingest workarounds, PyUVData float64/run_check,
+                        TELESCOPE_NAME dual-identity, post-conversion QA gates
+  imaging.md            WSClean hardcoded flags, sky model seeding two-step workflow,
+                        IDG SPW-merge, Galvin adaptive clip
+  mosaicking.md         QUICKLOOK vs SCIENCE/DEEP configs, mean-RA wrap bug,
+                        -grid-with-beam vs -apply-primary-beam distinction
+  photometry-and-ese.md Condon matched-filter, differential photometry reference
+                        selection, ESE scoring, variability thresholds
+  vast-crossref.md      Variability metric formulas (Vs, m, eta), ForcedPhot library
+                        interface, Condon errors, Huber flux-scale correction
 
 ## Critical silent failures
 

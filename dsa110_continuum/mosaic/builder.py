@@ -101,7 +101,7 @@ def build_mosaic(
         Default is True.
     apply_pb_correction : bool, optional
         If True, apply primary beam correction using DSA-110
-        Airy disk model (4.7m dish). This divides each pixel by the primary
+        Airy disk model (4.65m dish). This divides each pixel by the primary
         beam response to correct for attenuation away from the phase center.
         The correction is limited at PB < 0.1 to avoid amplifying edge noise.
         Default is False.
@@ -247,7 +247,7 @@ def build_mosaic(
             wcs.wcs.crval[0],  # Phase center RA
             wcs.wcs.crval[1],  # Phase center Dec
             freq_hz=freq_hz,
-            dish_dia_m=4.7,  # DSA-110 dish diameter
+            dish_dia_m=4.65,  # DSA-110 dish diameter
         )
         pb_weights.append(pb_weight)
 
@@ -271,7 +271,7 @@ def build_mosaic(
             output_wcs,
             output_shape,
             freq_hz=freq_hz,
-            dish_dia_m=4.7,  # DSA-110 dish diameter
+            dish_dia_m=4.65,  # DSA-110 dish diameter
             pb_cutoff=0.1,
         )
         combined = combined * pb_correction
@@ -599,7 +599,7 @@ def compute_pb_weight_map(
     phase_center_ra: float,
     phase_center_dec: float,
     freq_hz: float = 1.4e9,
-    dish_dia_m: float = 4.7,
+    dish_dia_m: float = 4.65,
 ) -> NDArray:
     """Compute primary beam weight map for an image.
 
@@ -621,7 +621,7 @@ def compute_pb_weight_map(
         Default is 1.4e9.
     dish_dia_m : float, optional
         Dish diameter in meters.
-        Default is 4.7.
+        Default is 4.65.
 
     Returns
     -------
@@ -777,7 +777,7 @@ def compute_pb_correction_map(
     wcs: WCS,
     shape: tuple[int, int],
     freq_hz: float = 1.4e9,
-    dish_dia_m: float = 4.7,
+    dish_dia_m: float = 4.65,
     pb_cutoff: float = 0.1,
 ) -> NDArray:
     """Compute primary beam correction map for DSA-110.
@@ -796,7 +796,7 @@ def compute_pb_correction_map(
         Default is 1.4e9.
     dish_dia_m : float, optional
         Dish diameter in meters.
-        Default is 4.7.
+        Default is 4.65.
     pb_cutoff : float, optional
         Minimum PB response to apply correction.
         Default is 0.1.
