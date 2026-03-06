@@ -34,6 +34,16 @@ for every epoch that passes QA, with variability metrics computed.
   confirm ratio is back at 0.893. If not, bisect: compare CORRECTED_DATA amplitudes before/after
   applycal, check `detect_datacolumn()` fallback, verify pbcor FITS is being read (not dirty image).
 
+- [ ] **Epoch gaincal SNR collapse at faint RA fields**: Feb 15 diagnostic re-run (2026-03-06)
+  produced median DSA/NVSS ~0.14 for brightest sources. Root cause: phase-only gaincal flags
+  44–54% of 164 antenna solutions per SPW (SNR < 3); AP gaincal flags 70–80%. The 13-source
+  NVSS+FIRST sky model at RA~40–45° provides insufficient flux for per-antenna gain solutions.
+  WSClean self-cal imaging also fails (exit 255). Investigation needed:
+  (1) Check if Jan 25 02h gaincal also had high flagging rates — if Jan 25 worked despite flagging,
+      the bandpass alone may be sufficient and epoch gaincal is actively harming these fields.
+  (2) If gaincal can be made to work: VLASS database would add more sky model components.
+  (3) If not: add a flagging-rate monitor and fall back to bandpass-only when >30% flagged.
+
 - [ ] **Complete import rename**: 828 references in `dsa110_continuum/` still import from
   `dsa110_contimg.core.*`. Pipeline silently uses stale code if the old package is installed.
   Do a mass rename; confirm 120/122 module imports pass under casa6 env after.
