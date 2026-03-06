@@ -10,7 +10,7 @@ import numpy as np
 log = logging.getLogger(__name__)
 
 
-def read_ms_dec(ms_path: str, fits_fallback: str | None = None) -> float:
+def read_ms_dec(ms_path: str | Path, fits_fallback: str | Path | None = None) -> float:
     """Return the median observed declination (degrees) for a Measurement Set.
 
     Reads FIELD::PHASE_DIR (column shape n_fields × 1 × 2, values in radians).
@@ -29,14 +29,21 @@ def read_ms_dec(ms_path: str, fits_fallback: str | None = None) -> float:
     RuntimeError
         If neither source yields a valid Dec.
     """
+    _last_exc: Exception | None = None
+
     try:
         import casacore.tables as ct
-        with ct.table(ms_path + "/FIELD", readonly=True, ack=False) as t:
-            phase_dir = t.getcol("PHASE_DIR")   # (n_fields, 1, 2)
-        dec_rad = np.median(phase_dir[:, 0, 1])
-        return float(np.degrees(dec_rad))
-    except Exception as e:
-        log.debug("read_ms_dec: MS read failed (%s), trying FITS fallback", e)
+    except ImportError:
+        log.debug("read_ms_dec: casacore not available, trying FITS fallback")
+    else:
+        try:
+            with ct.table(str(ms_path) + "::FIELD", readonly=True, ack=False) as t:
+                phase_dir = t.getcol("PHASE_DIR")   # (n_fields, 1, 2)
+            dec_rad = np.median(phase_dir[:, 0, 1])
+            return float(np.degrees(dec_rad))
+        except Exception as e:
+            log.warning("read_ms_dec: MS read failed (%s), trying FITS fallback", e)
+            _last_exc = e
 
     if fits_fallback is not None:
         try:
@@ -49,5 +56,6 @@ def read_ms_dec(ms_path: str, fits_fallback: str | None = None) -> float:
             log.debug("read_ms_dec: FITS fallback failed (%s)", e2)
 
     raise RuntimeError(
-        f"Cannot determine Dec for {ms_path!r}: MS unreadable and no valid FITS fallback."
-    )
+        f"Cannot determine Dec for {ms_path!r}: "
+        "MS unreadable (see WARNING above) and no valid FITS fallback."
+    ) from _last_exc
