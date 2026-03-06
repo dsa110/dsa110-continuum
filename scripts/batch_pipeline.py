@@ -388,6 +388,36 @@ def process_tile_safe(
     return result
 
 
+# ── Dec-strip guard ───────────────────────────────────────────────────────────
+
+def check_dec_strip(
+    observed_dec: float,
+    expected_dec: float,
+    threshold_deg: float = 5.0,
+) -> None:
+    """Abort if the observed Dec strip differs from the expected calibration strip.
+
+    DSA-110 observes at different declination strips on different nights. Calibration
+    tables are strip-specific — applying tables from one strip to another silently
+    produces near-zero flux (confirmed: median DSA/NVSS ≈ 0.06 for cross-strip runs).
+    """
+    delta = abs(observed_dec - expected_dec)
+    if delta > threshold_deg:
+        log.error(
+            "ABORT: observed Dec %.1f° differs from expected %.1f° by %.1f° "
+            "(threshold %.1f°). Cal tables were derived at Dec≈%.1f° — "
+            "applying them at Dec≈%.1f° will produce invalid flux scale. "
+            "Re-run with --expected-dec %.1f once cal tables for that strip exist.",
+            observed_dec, expected_dec, delta, threshold_deg,
+            expected_dec, observed_dec, observed_dec,
+        )
+        sys.exit(1)
+    log.info(
+        "Dec-strip check passed: observed %.1f° vs expected %.1f° (Δ=%.1f°)",
+        observed_dec, expected_dec, delta,
+    )
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -405,6 +435,17 @@ def main() -> None:
             "Defaults to --date if not provided. "
             "Use this when processing a new date whose cal tables are symlinked "
             "from 2026-01-25 (see CLAUDE.md)."
+        ),
+    )
+    parser.add_argument(
+        "--expected-dec",
+        type=float,
+        default=16.1,
+        metavar="DEG",
+        help=(
+            "Expected pointing declination for this cal-table strip (default: 16.1°). "
+            "Pipeline aborts if the first MS differs by more than 5° (DEC_CHANGE_THRESHOLD_DEG). "
+            "Set this explicitly when processing a non-default Dec strip once cal tables exist."
         ),
     )
     parser.add_argument(
@@ -476,6 +517,23 @@ def main() -> None:
                 log.error("  %s", _f)
         sys.exit(1)
     log.info("Cal tables verified for %s", cal_date)
+
+    # ── Dec-strip validation ───────────────────────────────────────────────────
+    from dsa110_continuum.calibration.dec_utils import read_ms_dec as _read_ms_dec
+    _first_ms_list = sorted(
+        f for f in os.listdir(MS_DIR)
+        if f.endswith(".ms") and f.startswith(date) and "meridian" not in f
+    )
+    if _first_ms_list:
+        try:
+            _obs_dec = _read_ms_dec(os.path.join(MS_DIR, _first_ms_list[0]))
+            check_dec_strip(_obs_dec, args.expected_dec)
+        except RuntimeError as _e:
+            log.warning("Could not determine observed Dec (%s) — skipping dec-strip check", _e)
+    else:
+        log.warning("No MS files found for %s yet — dec-strip check skipped", date)
+    # ─────────────────────────────────────────────────────────────────────────
+
     # ───────────────────────────────────────────────────────────────────────
     keep = args.keep_intermediates
     paths = get_paths(date)
