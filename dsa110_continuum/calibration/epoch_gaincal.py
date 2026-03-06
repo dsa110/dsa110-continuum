@@ -155,13 +155,18 @@ def calibrate_epoch(
 
     Workflow
     --------
-    1. Select central tile (by catalog source count).
-    2. Phaseshift to median meridian (reuses existing meridian MS if present).
-    3. Apply bandpass-only to CORRECTED_DATA.
-    4. Populate MODEL_DATA from unified catalog (FIRST+RACS+NVSS+VLASS).
-    5. Phase-only gaincal (solint='inf') → epoch_p.G.
-    6. Apply BP + epoch_p.G, then WSClean quick image (-save-model).
-    7. Amplitude+phase gaincal (solint='inf') → epoch_ap.G  ← returned.
+    1.  Select central tile (by catalog source count).
+    2.  Phaseshift to median meridian (reuses existing meridian MS if present).
+    1b. Pre-calibration RFI flagging (autocorr + AOFlagger/tfcrop+rflag).
+    3.  Apply bandpass-only to CORRECTED_DATA.
+    4.  Populate MODEL_DATA from unified catalog (FIRST+RACS+NVSS+VLASS).
+    5b. Pre-conditioner phase solve: calmode='p', solint='60s', combine='spw'
+        → precond.G.  Tracks short-term phase drift across the full bandwidth
+        to prevent vector decorrelation in the long inf-interval solves below.
+    6.  Phase-only gaincal (solint='inf', gaintable=[bp, precond]) → epoch_p.G.
+    7.  Apply BP + precond + p.G, then WSClean quick image (-save-model).
+    8.  Amplitude+phase gaincal (solint='inf', gaintable=[bp, precond, p.G])
+        → epoch_ap.G  ← returned.
 
     Any exception causes an early return of None so callers can fall back to
     the static daily G table.
@@ -206,9 +211,10 @@ def calibrate_epoch(
             source_radius_deg=source_radius_deg,
         )
         stem = Path(central_raw_ms).stem
-        meridian_ms = str(work / f"{stem}_meridian.ms")
-        p_table = str(work / f"{stem}.p.G")
-        ap_table = str(work / f"{stem}.ap.G")
+        meridian_ms   = str(work / f"{stem}_meridian.ms")
+        precond_table = str(work / f"{stem}.precond.G")
+        p_table       = str(work / f"{stem}.p.G")
+        ap_table      = str(work / f"{stem}.ap.G")
         wsclean_prefix = str(work / f"{stem}_model")
 
         # Return cached result if the ap.G table already exists
@@ -301,9 +307,63 @@ def calibrate_epoch(
         log.info("Epoch gaincal [%s]: sky model has %d components", stem, sky.Ncomponents)
         predict_from_skymodel_wsclean(meridian_ms, sky)
 
+        # ── 5b. Short-timescale pre-conditioner phase solve ───────────────────
+        # Problem: the main solint='inf' gaincal integrates the full ~4-5 minute
+        # drift-scan window into a single solution. When the ionosphere or instrument
+        # phase drifts within that window, the vector sum of visibilities decorrelates
+        # — amplitudes shrink and the solver flags the solution (SNR < 3.0). This is
+        # the dominant failure mode observed on Feb 15 (faint distributed sky model).
+        #
+        # Fix: solve a frequency-independent phase per antenna at 60s intervals
+        # (combine='spw' averages all 16 subbands, boosting per-interval SNR ~4×).
+        # The resulting table is passed as a prior into the main gaincal so it only
+        # needs to account for slow residual amplitude drifts rather than fast phases.
+        #
+        # This is the "narrow scope" adaptation of the NRAO-recommended pre-bandpass
+        # phase solve (see dsa110-contimg runner.py STEP 3.5). If an automated script
+        # is ever added to re-derive the daily bandpass table, this SPW-combined
+        # pre-solve should also be inserted before that bandpass solve.
+        service = CASAService()
+        log.info("Epoch gaincal [%s]: pre-conditioner phase solve (60s, combine='spw')", stem)
+        try:
+            service.gaincal(
+                vis=meridian_ms,
+                caltable=precond_table,
+                field="",
+                refant=refant,
+                calmode="p",
+                solint="60s",
+                combine="spw",
+                minsnr=3.0,
+                gaintype="G",
+                gaintable=[bp_table],
+                interp=["nearest"],
+            )
+            if os.path.exists(precond_table):
+                log.info(
+                    "Epoch gaincal [%s]: pre-conditioner solve SUCCESS → %s",
+                    stem, Path(precond_table).name,
+                )
+            else:
+                log.warning(
+                    "Epoch gaincal [%s]: pre-conditioner produced no table — "
+                    "proceeding without it (expect lower epoch gaincal SNR)",
+                    stem,
+                )
+        except Exception as _precond_err:
+            log.warning(
+                "Epoch gaincal [%s]: pre-conditioner solve failed (%s) — continuing",
+                stem, _precond_err,
+            )
+
+        # Build the optional precond chain used in all downstream gaintable lists.
+        # If the step above failed or produced no table, these lists are empty and
+        # the remaining solves behave exactly as before the pre-conditioner was added.
+        _precond = [precond_table] if os.path.exists(precond_table) else []
+        _precond_interp = ["linear"] * len(_precond)
+
         # ── 6. Phase-only gaincal ─────────────────────────────────────────────
         log.info("Epoch gaincal [%s]: phase-only gaincal → %s", stem, Path(p_table).name)
-        service = CASAService()
         service.gaincal(
             vis=meridian_ms,
             caltable=p_table,
@@ -313,19 +373,19 @@ def calibrate_epoch(
             solint="inf",
             minsnr=3.0,
             gaintype="G",
-            gaintable=[bp_table],
-            interp=["nearest"],
+            gaintable=[bp_table, *_precond],
+            interp=["nearest", *_precond_interp],
         )
         if not os.path.exists(p_table):
             log.error("Epoch gaincal [%s]: phase-only solve produced no table", stem)
             return None
 
-        # Apply BP + p.G before WSClean imaging
+        # Apply BP + precond (if present) + p.G before WSClean imaging
         apply_to_target(
             ms_target=meridian_ms,
             field="",
-            gaintables=[bp_table, p_table],
-            interp=["nearest", "linear"],
+            gaintables=[bp_table, *_precond, p_table],
+            interp=["nearest", *_precond_interp, "linear"],
         )
 
         # ── 7. Quick WSClean self-cal image to update MODEL_DATA ──────────────
@@ -388,8 +448,8 @@ def calibrate_epoch(
             solint="inf",
             minsnr=3.0,
             gaintype="G",
-            gaintable=[bp_table, p_table],
-            interp=["nearest", "linear"],
+            gaintable=[bp_table, *_precond, p_table],
+            interp=["nearest", *_precond_interp, "linear"],
         )
         if not os.path.exists(ap_table):
             log.error("Epoch gaincal [%s]: ap solve produced no table", stem)

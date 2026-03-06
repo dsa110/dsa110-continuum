@@ -311,6 +311,150 @@ def test_wsclean_runs_when_flag_fraction_below_limit():
     assert "wsclean" in mock_subprocess.call_args[0][0][0]
 
 
+def test_preconditioner_table_threaded_into_downstream_solves():
+    """precond.G must appear in gaintable of p.G and ap.G solves when it succeeds."""
+    import tempfile
+    from dsa110_continuum.calibration.epoch_gaincal import calibrate_epoch
+
+    fake_paths = [f"/fake/tile_{i:02d}.ms" for i in range(6)]
+    mock_sky = MagicMock()
+    mock_sky.Ncomponents = 5
+    mock_service = MagicMock()
+    wsclean_ok = MagicMock()
+    wsclean_ok.returncode = 0
+
+    with tempfile.TemporaryDirectory() as work_dir:
+        meridian_ms    = str(Path(work_dir) / "tile_03_meridian.ms")
+        precond_table  = str(Path(work_dir) / "tile_03.precond.G")
+        ap_table       = str(Path(work_dir) / "tile_03.ap.G")
+
+        # os.path.exists: False for ap_table (no cache), True for everything else
+        # (meridian MS, precond table, p table all "exist" after their solves)
+        def _exists(p: str) -> bool:
+            return str(p) != ap_table
+
+        with patch(
+            "dsa110_continuum.calibration.epoch_gaincal.select_calibration_tile_from_ms",
+            return_value="/fake/tile_03.ms",
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal.phaseshift_ms",
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal.apply_to_target",
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal._read_ms_phase_center",
+            return_value=(44.89, 16.08),
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal.make_unified_skymodel",
+            return_value=mock_sky,
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal.predict_from_skymodel_wsclean",
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal._ms_flag_fraction",
+            return_value=0.25,
+        ), patch(
+            "dsa110_continuum.calibration.casa_service.CASAService",
+            return_value=mock_service,
+        ), patch(
+            "shutil.which", return_value="/usr/bin/wsclean",
+        ), patch(
+            "subprocess.run", return_value=wsclean_ok,
+        ), patch(
+            "os.path.exists", side_effect=_exists,
+        ):
+            calibrate_epoch(fake_paths, "/fake/bp.b", work_dir)
+
+    gaincal_calls = mock_service.gaincal.call_args_list
+    assert len(gaincal_calls) == 3, f"expected 3 gaincal calls, got {len(gaincal_calls)}"
+
+    precond_call, p_call, ap_call = gaincal_calls
+
+    # Pre-conditioner solve
+    assert precond_call.kwargs["solint"] == "60s"
+    assert precond_call.kwargs["combine"] == "spw"
+    assert precond_call.kwargs["calmode"] == "p"
+    assert precond_call.kwargs["gaintable"] == ["/fake/bp.b"]
+
+    # p.G solve must include precond table
+    assert precond_table in p_call.kwargs["gaintable"], \
+        "precond table must be in p.G gaintable"
+    assert "/fake/bp.b" in p_call.kwargs["gaintable"]
+    assert p_call.kwargs["solint"] == "inf"
+
+    # ap.G solve must include both precond table and p table
+    ap_gt = ap_call.kwargs["gaintable"]
+    assert precond_table in ap_gt, "precond table must be in ap.G gaintable"
+    assert "/fake/bp.b" in ap_gt
+    assert ap_call.kwargs["calmode"] == "ap"
+
+
+def test_preconditioner_failure_does_not_abort_epoch_gaincal():
+    """If precond solve fails entirely, the main p.G and ap.G solves must still run."""
+    import tempfile
+    from dsa110_continuum.calibration.epoch_gaincal import calibrate_epoch
+
+    fake_paths = [f"/fake/tile_{i:02d}.ms" for i in range(6)]
+    mock_sky = MagicMock()
+    mock_sky.Ncomponents = 5
+    mock_service = MagicMock()
+    # Make the first gaincal call (precond) raise; subsequent calls succeed
+    call_count = {"n": 0}
+    def _gaincal_side_effect(**kw):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise RuntimeError("CASA unavailable for precond")
+    mock_service.gaincal.side_effect = _gaincal_side_effect
+    wsclean_ok = MagicMock()
+    wsclean_ok.returncode = 0
+
+    with tempfile.TemporaryDirectory() as work_dir:
+        meridian_ms   = str(Path(work_dir) / "tile_03_meridian.ms")
+        ap_table      = str(Path(work_dir) / "tile_03.ap.G")
+        p_table       = str(Path(work_dir) / "tile_03.p.G")
+        precond_table = str(Path(work_dir) / "tile_03.precond.G")
+
+        def _exists(p: str) -> bool:
+            # ap and precond tables never exist; meridian MS and p table exist
+            return str(p) not in (ap_table, precond_table)
+
+        with patch(
+            "dsa110_continuum.calibration.epoch_gaincal.select_calibration_tile_from_ms",
+            return_value="/fake/tile_03.ms",
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal.phaseshift_ms",
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal.apply_to_target",
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal._read_ms_phase_center",
+            return_value=(44.89, 16.08),
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal.make_unified_skymodel",
+            return_value=mock_sky,
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal.predict_from_skymodel_wsclean",
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal._ms_flag_fraction",
+            return_value=0.25,
+        ), patch(
+            "dsa110_continuum.calibration.casa_service.CASAService",
+            return_value=mock_service,
+        ), patch(
+            "shutil.which", return_value="/usr/bin/wsclean",
+        ), patch(
+            "subprocess.run", return_value=wsclean_ok,
+        ), patch(
+            "os.path.exists", side_effect=_exists,
+        ):
+            calibrate_epoch(fake_paths, "/fake/bp.b", work_dir)
+
+    # All three gaincal calls attempted despite the first raising
+    assert mock_service.gaincal.call_count == 3
+
+    # p.G and ap.G gaintables must NOT include the precond table (it doesn't exist)
+    _, p_call, ap_call = mock_service.gaincal.call_args_list
+    assert precond_table not in p_call.kwargs["gaintable"]
+    assert precond_table not in ap_call.kwargs["gaintable"]
+
+
 def test_rfi_flagging_falls_back_to_casa_when_aoflagger_unavailable():
     """When AOFlagger is not importable, CASA tfcrop+rflag must be called instead."""
     import tempfile
