@@ -34,6 +34,18 @@ from dsa110_continuum.calibration.skymodels import (
 log = logging.getLogger(__name__)
 
 
+_WSCLEAN_FLAG_FRACTION_LIMIT = 0.60  # skip WSClean self-cal if MS is more flagged than this
+
+
+def _ms_flag_fraction(ms_path: str) -> float:
+    """Return the fraction of FLAG=True elements in the MS DATA column."""
+    import casacore.tables as ct
+
+    with ct.table(ms_path, readonly=True, ack=False) as t:
+        flags = t.getcol("FLAG")
+    return float(flags.sum()) / flags.size
+
+
 def _read_ms_phase_center(ms_path: str) -> tuple[float, float]:
     """Return (ra_deg, dec_deg) of the median field phase center in an MS."""
     import casacore.tables as ct
@@ -108,8 +120,17 @@ def select_calibration_tile_from_ms(
             log.warning("Cannot count sources for tile %d (%s): %s", idx, ms, exc)
 
     if best_ms is None:
-        log.warning("Source count failed for both central tiles; defaulting to tile 5")
-        best_ms = epoch_ms_paths[5]
+        # Both catalog queries failed (e.g. VLASS/RACS databases absent).
+        # Fall back to the geometrically central tile rather than a hardcoded
+        # index that is only correct for MOSAIC_TILE_COUNT=12.
+        fallback_idx = len(epoch_ms_paths) // 2
+        best_ms = epoch_ms_paths[fallback_idx]
+        log.warning(
+            "Source count failed for all candidate tiles — "
+            "defaulting to central tile index %d (%s)",
+            fallback_idx,
+            Path(best_ms).stem,
+        )
 
     log.info(
         "Selected calibration tile: %s (%d sources)",
@@ -124,7 +145,7 @@ def calibrate_epoch(
     bp_table: str,
     work_dir: str,
     *,
-    refant: str = "103",
+    refant: str = "103,104,105,106,107,10,11,12",
     min_flux_mjy: float = SKYMODEL_MIN_FLUX_MJY,
     source_radius_deg: float = SOURCE_QUERY_RADIUS_DEG,
     wsclean_niter: int = 1000,
@@ -154,7 +175,10 @@ def calibrate_epoch(
     work_dir:
         Scratch directory for intermediate files and output G table.
     refant:
-        Reference antenna (default: "103").
+        Reference antenna. CASA uses the first unflagged antenna in a
+        comma-separated list, so the default is an outrigger priority chain:
+        103 (primary outrigger), then 104–107, then core antennas 10–12 as
+        last-resort fallbacks.
     min_flux_mjy:
         Minimum flux for catalog source selection (default: 5 mJy).
     source_radius_deg:
@@ -202,6 +226,43 @@ def calibrate_epoch(
             )
         else:
             log.info("Epoch gaincal [%s]: meridian MS exists, reusing", stem)
+
+        # ── 1b. Pre-calibration RFI flagging ─────────────────────────────────
+        # Must run on the raw meridian MS before any calibration solve.
+        # Unflagged RFI spikes corrupt the least-squares gain solver; the old
+        # dsa110-contimg pipeline validated this as critical for drift-scan data
+        # where the time axis has only ~24 samples.
+        try:
+            _svc = CASAService()
+            log.info("Epoch gaincal [%s]: flagging autocorrelations", stem)
+            _svc.flagdata(vis=meridian_ms, autocorr=True, flagbackup=False)
+            try:
+                from dsa110_contimg.core.calibration.flagging import flag_rfi as _flag_rfi
+                log.info("Epoch gaincal [%s]: AOFlagger RFI flagging", stem)
+                _flag_rfi(meridian_ms, backend="aoflagger")
+                log.info("Epoch gaincal [%s]: AOFlagger complete", stem)
+            except Exception as _aof_err:
+                log.warning(
+                    "Epoch gaincal [%s]: AOFlagger unavailable (%s) — "
+                    "falling back to CASA tfcrop+rflag",
+                    stem, _aof_err,
+                )
+                _svc.flagdata(
+                    vis=meridian_ms, mode="tfcrop", datacolumn="data",
+                    timecutoff=4.0, freqcutoff=4.0,
+                    extendflags=False, flagbackup=False,
+                )
+                _svc.flagdata(
+                    vis=meridian_ms, mode="rflag", datacolumn="data",
+                    timedevscale=4.0, freqdevscale=4.0,
+                    extendflags=False, flagbackup=False,
+                )
+                log.info("Epoch gaincal [%s]: CASA tfcrop+rflag complete", stem)
+        except Exception as _flag_err:
+            log.warning(
+                "Epoch gaincal [%s]: pre-calibration flagging failed (%s) — continuing",
+                stem, _flag_err,
+            )
 
         # ── 2. Initialise MODEL_DATA column before any applycal ──────────────
         # predict_from_skymodel_wsclean needs MODEL_DATA to exist; if it's absent
@@ -268,8 +329,23 @@ def calibrate_epoch(
         )
 
         # ── 7. Quick WSClean self-cal image to update MODEL_DATA ──────────────
+        # Skip WSClean if the MS is too heavily flagged: WSClean crashes during
+        # gridding when the uv-plane is under-sampled (UV-starvation). The 60%
+        # threshold is conservative; the Feb 15 gaincal MS was 70% flagged.
+        _flag_frac = _ms_flag_fraction(meridian_ms)
+        log.info(
+            "Epoch gaincal [%s]: MS flag fraction before WSClean = %.1f%%",
+            stem, 100 * _flag_frac,
+        )
         wsclean_exec = shutil.which("wsclean")
-        if not wsclean_exec:
+        if _flag_frac >= _WSCLEAN_FLAG_FRACTION_LIMIT:
+            log.warning(
+                "Epoch gaincal [%s]: %.1f%% of data flagged (≥%.0f%% limit) — "
+                "skipping WSClean self-cal, re-predicting catalog model for ap solve",
+                stem, 100 * _flag_frac, 100 * _WSCLEAN_FLAG_FRACTION_LIMIT,
+            )
+            predict_from_skymodel_wsclean(meridian_ms, sky)
+        elif not wsclean_exec:
             log.warning(
                 "Epoch gaincal [%s]: wsclean not on PATH — "
                 "re-predicting catalog model for ap solve",
