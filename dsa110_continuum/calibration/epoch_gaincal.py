@@ -359,8 +359,30 @@ def calibrate_epoch(
         # Build the optional precond chain used in all downstream gaintable lists.
         # If the step above failed or produced no table, these lists are empty and
         # the remaining solves behave exactly as before the pre-conditioner was added.
+        #
+        # spwmap note: combine='spw' produces a table with only SPW 0.  Without an
+        # explicit spwmap, CASA flags SPWs 1-15 in every subsequent gaincal and
+        # applycal that includes the precond table.  We derive the SPW count from the
+        # MS and provide spwmap=[0,0,...,0] so CASA re-uses the SPW-0 solution for
+        # all 16 subbands instead of flagging them.
         _precond = [precond_table] if os.path.exists(precond_table) else []
         _precond_interp = ["linear"] * len(_precond)
+        if _precond:
+            try:
+                import casacore.tables as _ct2
+                with _ct2.table(f"{meridian_ms}::SPECTRAL_WINDOW",
+                                readonly=True, ack=False) as _tspw:
+                    _n_spw = _tspw.nrows()
+                _precond_spwmap: list[list[int]] = [[0] * _n_spw]
+            except Exception as _spw_err:
+                log.warning(
+                    "Epoch gaincal [%s]: could not determine SPW count for precond "
+                    "spwmap (%s) — SPWs 1+ may be flagged in downstream solves",
+                    stem, _spw_err,
+                )
+                _precond_spwmap = []
+        else:
+            _precond_spwmap = []
 
         # ── 6. Phase-only gaincal ─────────────────────────────────────────────
         log.info("Epoch gaincal [%s]: phase-only gaincal → %s", stem, Path(p_table).name)
@@ -375,6 +397,7 @@ def calibrate_epoch(
             gaintype="G",
             gaintable=[bp_table, *_precond],
             interp=["nearest", *_precond_interp],
+            **( {"spwmap": [[], *_precond_spwmap]} if _precond_spwmap else {} ),
         )
         if not os.path.exists(p_table):
             log.error("Epoch gaincal [%s]: phase-only solve produced no table", stem)
@@ -386,6 +409,7 @@ def calibrate_epoch(
             field="",
             gaintables=[bp_table, *_precond, p_table],
             interp=["nearest", *_precond_interp, "linear"],
+            spwmap=([[], *_precond_spwmap, []] if _precond_spwmap else None),
         )
 
         # ── 7. Quick WSClean self-cal image to update MODEL_DATA ──────────────
@@ -450,6 +474,7 @@ def calibrate_epoch(
             gaintype="G",
             gaintable=[bp_table, *_precond, p_table],
             interp=["nearest", *_precond_interp, "linear"],
+            **( {"spwmap": [[], *_precond_spwmap, []]} if _precond_spwmap else {} ),
         )
         if not os.path.exists(ap_table):
             log.error("Epoch gaincal [%s]: ap solve produced no table", stem)
