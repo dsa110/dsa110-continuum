@@ -35,3 +35,13 @@ def test_sources_in_footprint_excludes_out_of_bounds():
     dec = np.array([16.0])
     mask = sources_in_footprint(ra, dec, wcs, valid_mask)
     assert mask[0] == False
+
+
+def test_sources_in_footprint_handles_empty_input():
+    from dsa110_continuum.photometry.footprint import sources_in_footprint
+    import numpy as np
+    wcs = _make_simple_wcs()
+    valid_mask = np.ones((10, 10), dtype=bool)
+    result = sources_in_footprint(np.array([]), np.array([]), wcs, valid_mask)
+    assert result.shape == (0,)
+    assert result.dtype == bool
