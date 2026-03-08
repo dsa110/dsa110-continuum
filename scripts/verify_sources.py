@@ -39,8 +39,9 @@ logging.basicConfig(
 log = logging.getLogger("verify_sources")
 
 DEFAULT_MASTER_DB = Path("/data/dsa110-contimg/state/catalogs/master_sources.sqlite3")
+DEFAULT_NVSS_DB   = Path("/data/dsa110-contimg/state/catalogs/nvss_full.sqlite3")
 DEFAULT_ATNF_DB   = Path("/data/dsa110-contimg/state/catalogs/atnf_full.sqlite3")
-DEFAULT_MIN_FLUX_JY  = 0.010   # 10 mJy — skip confusion-limited faint sources
+DEFAULT_MIN_FLUX_JY  = 0.050   # 50 mJy — well above the ~10 mJy noise floor, avoids box confusion
 DEFAULT_BOX_PIX      = 5
 RATIO_PASS_THRESHOLD = 0.80
 RATIO_WARN_THRESHOLD = 0.70
@@ -115,6 +116,50 @@ def _query_master(
     ]
 
 
+def _query_nvss(
+    db_path: Path,
+    ra_min: float,
+    ra_max: float,
+    dec_min: float,
+    dec_max: float,
+    min_flux_jy: float,
+) -> list[dict]:
+    """Query nvss_full.sqlite3 and return sources above min_flux_jy.
+
+    NVSS stores flux in mJy; we convert to Jy on output.
+    """
+    min_flux_mjy = min_flux_jy * 1000.0
+    conn = sqlite3.connect(db_path)
+    cur  = conn.cursor()
+    if ra_min < ra_max:
+        cur.execute(
+            "SELECT source_id, ra_deg, dec_deg, flux_mjy "
+            "FROM sources "
+            "WHERE dec_deg BETWEEN ? AND ? "
+            "  AND ra_deg  BETWEEN ? AND ? "
+            "  AND flux_mjy >= ?",
+            (dec_min, dec_max, ra_min, ra_max, min_flux_mjy),
+        )
+    else:
+        cur.execute(
+            "SELECT source_id, ra_deg, dec_deg, flux_mjy "
+            "FROM sources "
+            "WHERE dec_deg BETWEEN ? AND ? "
+            "  AND (ra_deg >= ? OR ra_deg <= ?) "
+            "  AND flux_mjy >= ?",
+            (dec_min, dec_max, ra_min + 360.0, ra_max, min_flux_mjy),
+        )
+    rows = cur.fetchall()
+    conn.close()
+    log.info("nvss_full query: %d candidates in sky box", len(rows))
+    return [
+        {"source_id": r[0], "ra_deg": r[1], "dec_deg": r[2],
+         "flux_jy": r[3] / 1000.0, "name": f"NVSS_{r[0]}",
+         "source_type": "continuum", "catalog": "nvss"}
+        for r in rows
+    ]
+
+
 def _query_atnf(
     db_path: Path,
     ra_min: float,
@@ -161,6 +206,7 @@ def _query_atnf(
 def verify(
     fits_path: Path,
     master_db: Path,
+    nvss_db: Path,
     atnf_db: Path,
     out_csv: Path | None,
     min_flux_jy: float,
@@ -187,7 +233,28 @@ def verify(
     if master_db.exists():
         sources.extend(_query_master(master_db, ra_min, ra_max, dec_min, dec_max, min_flux_jy))
     else:
-        log.warning("master_sources DB not found at %s — skipping continuum sources", master_db)
+        log.warning("master_sources DB not found at %s — skipping", master_db)
+
+    if nvss_db.exists():
+        nvss_srcs = _query_nvss(nvss_db, ra_min, ra_max, dec_min, dec_max, min_flux_jy)
+        # De-duplicate by position: skip NVSS sources already within 1 arcmin of a master source
+        if nvss_srcs and sources:
+            master_ra  = np.array([s["ra_deg"]  for s in sources])
+            master_dec = np.array([s["dec_deg"] for s in sources])
+            added = 0
+            for ns in nvss_srcs:
+                sep = np.sqrt(
+                    ((ns["ra_deg"]  - master_ra) * np.cos(np.radians(ns["dec_deg"]))) ** 2
+                    + (ns["dec_deg"] - master_dec) ** 2
+                )
+                if sep.min() > 1.0 / 60.0:   # > 1 arcmin from any master source
+                    sources.append(ns)
+                    added += 1
+            log.info("nvss: %d new sources added (after dedup vs master)", added)
+        else:
+            sources.extend(nvss_srcs)
+    else:
+        log.warning("NVSS DB not found at %s — skipping NVSS sources", nvss_db)
 
     if atnf_db.exists():
         sources.extend(_query_atnf(atnf_db, ra_min, ra_max, dec_min, dec_max))
@@ -280,6 +347,8 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--fits",        required=True,  type=Path, help="Mosaic FITS path")
     p.add_argument("--master-db",   default=DEFAULT_MASTER_DB, type=Path,
                    help="Path to master_sources.sqlite3")
+    p.add_argument("--nvss-db",     default=DEFAULT_NVSS_DB,   type=Path,
+                   help="Path to nvss_full.sqlite3 (1.4 GHz reference; full-sky)")
     p.add_argument("--atnf-db",     default=DEFAULT_ATNF_DB,   type=Path,
                    help="Path to atnf_full.sqlite3")
     p.add_argument("--out",         default=None,   type=Path,
@@ -296,6 +365,7 @@ if __name__ == "__main__":
     exit_code = verify(
         fits_path  = args.fits,
         master_db  = args.master_db,
+        nvss_db    = args.nvss_db,
         atnf_db    = args.atnf_db,
         out_csv    = args.out,
         min_flux_jy= args.min_flux_jy,

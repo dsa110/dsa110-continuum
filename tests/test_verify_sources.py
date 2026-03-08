@@ -149,17 +149,31 @@ def _make_empty_atnf_db(path: Path) -> None:
     conn.close()
 
 
+def _make_empty_nvss_db(path: Path) -> None:
+    """Write a minimal nvss_full.sqlite3 with no sources."""
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE sources ("
+        "source_id INTEGER PRIMARY KEY, ra_deg REAL, dec_deg REAL, "
+        "flux_mjy REAL, flux_err_mjy REAL)"
+    )
+    conn.commit()
+    conn.close()
+
+
 def test_verify_sources_integration():
     """End-to-end: synthetic FITS + synthetic DB => VERIFY PASS or WARN."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
         fits_path = tmp / "mosaic.fits"
         master_db = tmp / "master_sources.sqlite3"
+        nvss_db   = tmp / "nvss_full.sqlite3"
         atnf_db   = tmp / "atnf_full.sqlite3"
         out_csv   = tmp / "verify.csv"
 
         _make_synthetic_fits(fits_path, source_flux_jy=0.5, noise_jy=0.010)
         _make_synthetic_master_db(master_db)
+        _make_empty_nvss_db(nvss_db)
         _make_empty_atnf_db(atnf_db)
 
         result = subprocess.run(
@@ -167,6 +181,7 @@ def test_verify_sources_integration():
                 sys.executable, "scripts/verify_sources.py",
                 "--fits",        str(fits_path),
                 "--master-db",   str(master_db),
+                "--nvss-db",     str(nvss_db),
                 "--atnf-db",     str(atnf_db),
                 "--out",         str(out_csv),
                 "--min-flux-jy", "0.010",
