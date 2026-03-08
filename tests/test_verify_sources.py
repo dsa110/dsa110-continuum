@@ -45,3 +45,25 @@ def test_sources_in_footprint_handles_empty_input():
     result = sources_in_footprint(np.array([]), np.array([]), wcs, valid_mask)
     assert result.shape == (0,)
     assert result.dtype == bool
+
+
+def test_measure_peak_box_returns_correct_flux():
+    from dsa110_continuum.photometry.simple_peak import measure_peak_box
+    wcs = _make_simple_wcs()
+    data = np.zeros((10, 10))
+    # crpix=[5,5] 1-indexed → pixel (4,4) 0-indexed for crval=(40.0, 16.0)
+    data[4, 4] = 0.5
+    flux, snr, x, y = measure_peak_box(data, wcs, ra_deg=40.0, dec_deg=16.0,
+                                        box_pix=2, rms=0.010)
+    assert abs(flux - 0.5) < 0.001
+    assert abs(snr - 50.0) < 1.0
+
+
+def test_measure_peak_box_returns_nan_outside_image():
+    from dsa110_continuum.photometry.simple_peak import measure_peak_box
+    wcs = _make_simple_wcs()
+    data = np.zeros((10, 10))
+    flux, snr, x, y = measure_peak_box(data, wcs, ra_deg=99.0, dec_deg=99.0,
+                                        box_pix=2, rms=0.010)
+    assert not np.isfinite(flux)
+    assert not np.isfinite(snr)
