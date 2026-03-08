@@ -35,6 +35,7 @@ log = logging.getLogger(__name__)
 
 
 _WSCLEAN_FLAG_FRACTION_LIMIT = 0.60  # skip WSClean self-cal if MS is more flagged than this
+GAINCAL_FLAG_FRACTION_LIMIT  = 0.30  # abort epoch gaincal if p.G table is more flagged than this
 
 
 def _ms_flag_fraction(ms_path: str) -> float:
@@ -402,6 +403,40 @@ def calibrate_epoch(
         if not os.path.exists(p_table):
             log.error("Epoch gaincal [%s]: phase-only solve produced no table", stem)
             return None
+
+        # ── 6b. Flag-fraction monitor on p.G table ────────────────────────────
+        # Read the CASA FLAG column from the cal table directly.  CASA often
+        # pre-allocates rows but sets FLAG=True for solutions that failed the
+        # SNR gate (minsnr=3.0).  A high flagged fraction means the sky model
+        # was too faint to support reliable gain solutions; applying a noisy
+        # ap.G table would actively worsen the bandpass calibration already
+        # applied in Step 3.  Return None so the batch pipeline falls back to
+        # BP-only, which is the correct survey-pipeline behaviour for faint fields.
+        try:
+            import casatools as _cto
+            _tb = _cto.table()
+            _tb.open(p_table)
+            _p_flags = _tb.getcol("FLAG")   # shape: (n_pol, n_spw, n_rows) — booleans
+            _tb.close()
+            _p_flag_frac = float(_p_flags.sum()) / float(_p_flags.size)
+            log.info(
+                "Epoch gaincal [%s]: p.G flagged fraction = %.1f%%",
+                stem, _p_flag_frac * 100,
+            )
+            if _p_flag_frac > GAINCAL_FLAG_FRACTION_LIMIT:
+                log.warning(
+                    "Epoch gaincal [%s]: p.G flagged %.1f%% of solutions "
+                    "(limit %.0f%%) — SNR too low for reliable gain cal. "
+                    "Returning None; pipeline will apply bandpass-only.",
+                    stem, _p_flag_frac * 100, GAINCAL_FLAG_FRACTION_LIMIT * 100,
+                )
+                return None
+        except Exception as _frac_err:
+            log.warning(
+                "Epoch gaincal [%s]: could not read p.G flag fraction (%s) — "
+                "proceeding with ap solve",
+                stem, _frac_err,
+            )
 
         # Apply BP + precond (if present) + p.G before WSClean imaging
         apply_to_target(

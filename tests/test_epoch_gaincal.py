@@ -504,3 +504,70 @@ def test_rfi_flagging_falls_back_to_casa_when_aoflagger_unavailable():
         "tfcrop must be called as AOFlagger fallback"
     assert any(c.kwargs.get("mode") == "rflag" for c in flagdata_calls), \
         "rflag must be called as AOFlagger fallback"
+
+
+def test_gaincal_returns_none_when_p_table_heavily_flagged():
+    """calibrate_epoch() must return None when p.G has > 30% flagged solutions.
+
+    When the phase-only gain table has too many flagged solutions, the sky model
+    SNR was insufficient; proceeding to the ap.G solve would corrupt the bandpass
+    calibration rather than improve it.  The function should return None so the
+    batch pipeline applies bandpass-only calibration.
+    """
+    import tempfile
+    import numpy as np
+    from dsa110_continuum.calibration.epoch_gaincal import calibrate_epoch
+
+    fake_paths = [f"/fake/tile_{i:02d}.ms" for i in range(6)]
+    mock_sky = MagicMock()
+    mock_sky.Ncomponents = 5
+    mock_service = MagicMock()
+
+    # Build a mock casatools.table() that returns a FLAG array that is 35% True.
+    flags_35pct = np.zeros((2, 1, 100), dtype=bool)
+    flags_35pct[:, :, :35] = True   # 35 of 100 rows flagged per pol/spw
+
+    mock_tb = MagicMock()
+    mock_tb.getcol.return_value = flags_35pct
+
+    with tempfile.TemporaryDirectory() as work_dir:
+        meridian_ms = str(Path(work_dir) / "tile_03_meridian.ms")
+        ap_table    = str(Path(work_dir) / "tile_03.ap.G")
+        p_table     = str(Path(work_dir) / "tile_03.p.G")
+
+        def _exists(p: str) -> bool:
+            return str(p) not in (ap_table,)   # p.G "exists" after the solve
+
+        with patch(
+            "dsa110_continuum.calibration.epoch_gaincal.select_calibration_tile_from_ms",
+            return_value="/fake/tile_03.ms",
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal.phaseshift_ms",
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal.apply_to_target",
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal._read_ms_phase_center",
+            return_value=(44.89, 16.08),
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal.make_unified_skymodel",
+            return_value=mock_sky,
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal.predict_from_skymodel_wsclean",
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal._ms_flag_fraction",
+            return_value=0.25,
+        ), patch(
+            "dsa110_continuum.calibration.casa_service.CASAService",
+            return_value=mock_service,
+        ), patch(
+            "os.path.exists", side_effect=_exists,
+        ):
+            import sys as _sys
+            mock_casatools = MagicMock()
+            mock_casatools.table.return_value = mock_tb
+            with patch.dict(_sys.modules, {"casatools": mock_casatools}):
+                result = calibrate_epoch(fake_paths, "/fake/bp.b", work_dir)
+
+    assert result is None, (
+        "calibrate_epoch() must return None when p.G flagged fraction > 30%"
+    )
