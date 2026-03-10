@@ -31,10 +31,11 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-MOSAIC = "/stage/dsa110-contimg/images/mosaic_2026-01-25/full_mosaic.fits"
-MOSAIC_RMS = "/stage/dsa110-contimg/images/mosaic_2026-01-25/full_mosaic_rms.fits"
-CATALOG = "/stage/dsa110-contimg/images/mosaic_2026-01-25/sources.fits"
-OUT_CSV = "/stage/dsa110-contimg/photometry/2026-01-25_forced_phot.csv"
+DEFAULT_MOSAIC = "/stage/dsa110-contimg/images/mosaic_2026-01-25/full_mosaic.fits"
+MOSAIC = DEFAULT_MOSAIC
+MOSAIC_RMS = None   # derived from mosaic path in main()
+CATALOG = None      # derived from mosaic path in main()
+OUT_CSV = None      # derived from mosaic path in main()
 
 # NVSS is at 1.4 GHz; DSA-110 is at 1.35 GHz center.
 # Expected spectral index α ~ -0.7 → flux ratio = (1.35/1.4)^(-0.7) ≈ 1.03
@@ -169,6 +170,20 @@ def measure_forced_flux(
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Forced photometry on a DSA-110 mosaic.")
+    parser.add_argument(
+        "--mosaic", default=None, metavar="PATH",
+        help="Path to mosaic FITS file. Default: %(default)s",
+    )
+    args = parser.parse_args()
+
+    global MOSAIC, MOSAIC_RMS, CATALOG, OUT_CSV
+    MOSAIC = args.mosaic or DEFAULT_MOSAIC
+    stem = MOSAIC.replace(".fits", "")
+    MOSAIC_RMS = stem + "_rms.fits"
+    CATALOG = stem + "_sources.fits"
+    OUT_CSV = stem + "_forced_phot.csv"
     os.makedirs(os.path.dirname(OUT_CSV), exist_ok=True)
 
     # ── Load mosaic ────────────────────────────────────────────────────────────

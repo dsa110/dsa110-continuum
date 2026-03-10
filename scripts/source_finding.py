@@ -23,8 +23,9 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-MOSAIC = "/stage/dsa110-contimg/images/mosaic_2026-01-25/full_mosaic.fits"
-CATALOG_OUT = "/stage/dsa110-contimg/images/mosaic_2026-01-25/sources.fits"
+DEFAULT_MOSAIC = "/stage/dsa110-contimg/images/mosaic_2026-01-25/full_mosaic.fits"
+MOSAIC = DEFAULT_MOSAIC
+CATALOG_OUT = None  # derived from mosaic path in main()
 
 # BANE box size: ~50 beams is a good rule of thumb
 # Beam ~60" FWHM, pixel 6" → ~10 px/beam → 50 beams = 500 px
@@ -175,6 +176,18 @@ def check_catalog(catalog_path: str) -> bool:
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Source finding on a DSA-110 mosaic.")
+    parser.add_argument(
+        "--mosaic", default=None, metavar="PATH",
+        help="Path to mosaic FITS file. Default: %(default)s",
+    )
+    args = parser.parse_args()
+
+    global MOSAIC, CATALOG_OUT
+    MOSAIC = args.mosaic or DEFAULT_MOSAIC
+    CATALOG_OUT = MOSAIC.replace(".fits", "_sources.fits")
+
     if not os.path.exists(MOSAIC):
         log.error("Mosaic not found: %s — run mosaic_day.py first", MOSAIC)
         sys.exit(1)

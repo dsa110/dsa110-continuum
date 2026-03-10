@@ -56,6 +56,9 @@ import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
 
+from dsa110_continuum.photometry.epoch_qa import EpochQAResult, measure_epoch_qa
+from dsa110_continuum.photometry.epoch_qa_plot import plot_epoch_qa
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
@@ -72,6 +75,19 @@ STAGE_IMAGE_BASE = os.environ.get("DSA110_STAGE_IMAGE_BASE", "/stage/dsa110-cont
 PRODUCTS_BASE = os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-continuum/products/mosaics")
 CELL_ARCSEC = 6.0  # must match mosaic_day.py
 TILE_TIMEOUT_SEC = 1800  # 30 min max per tile before we kill & skip
+
+# QA summary CSV schema (expanded for three-gate epoch QA)
+QA_SUMMARY_CSV = os.environ.get(
+    "DSA110_QA_SUMMARY",
+    "/data/dsa110-continuum/products/qa_summary.csv",
+)
+QA_CSV_FIELDS = [
+    "date", "epoch_utc", "mosaic_path",
+    "n_catalog", "n_recovered", "completeness_frac",
+    "median_ratio", "ratio_gate", "completeness_gate",
+    "rms_gate", "mosaic_rms_mjy",
+    "qa_result", "gaincal_used",
+]
 
 
 def get_paths(date: str) -> dict:
@@ -274,6 +290,40 @@ def mosaic_stats(mosaic_path: str) -> tuple[float, float]:
     return peak, rms
 
 
+# ── QA summary CSV ────────────────────────────────────────────────────────────
+
+def write_qa_summary_row(
+    date: str,
+    epoch_label: str,
+    mosaic_path: str,
+    qa: EpochQAResult | None,
+    gaincal_status: str,
+) -> None:
+    """Append one row to the QA summary CSV, creating the file if needed."""
+    row = {
+        "date": date,
+        "epoch_utc": epoch_label,
+        "mosaic_path": mosaic_path,
+        "gaincal_used": gaincal_status,
+    }
+    if qa is not None:
+        row.update(qa.to_dict())
+    else:
+        for field in QA_CSV_FIELDS:
+            row.setdefault(field, "")
+
+    file_exists = os.path.isfile(QA_SUMMARY_CSV)
+    os.makedirs(os.path.dirname(QA_SUMMARY_CSV), exist_ok=True)
+    try:
+        with open(QA_SUMMARY_CSV, "a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=QA_CSV_FIELDS, extrasaction="ignore")
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(row)
+    except Exception as e:
+        log.warning("Could not write QA summary row: %s", e)
+
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 
 def print_summary(date: str, epoch_results: list[dict]) -> None:
@@ -283,7 +333,7 @@ def print_summary(date: str, epoch_results: list[dict]) -> None:
     print("=" * 88)
     hdr = (
         f"  {'Epoch':12s}  {'Tiles':>5}  {'GainCal':>8}"
-        f"  {'Peak(Jy/b)':>10}  {'RMS(mJy/b)':>10}  {'Sources':>7}  {'DSA/NVSS':>8}"
+        f"  {'Peak(Jy/b)':>10}  {'RMS(mJy/b)':>10}  {'Sources':>7}  {'DSA/NVSS':>8}  {'QA':>4}"
     )
     print(hdr)
     print("  " + "-" * 84)
@@ -307,9 +357,10 @@ def print_summary(date: str, epoch_results: list[dict]) -> None:
         if ratio is not None:
             all_ratios.append(ratio)
 
+        qa_str = r.get("qa_result") or "n/a"
         print(
             f"  {r['label']:12s}  {r['n_tiles']:>5}  {gcal_str:>8}"
-            f"  {peak_str:>10}  {rms_str:>10}  {src_str:>7}  {ratio_str:>8}"
+            f"  {peak_str:>10}  {rms_str:>10}  {src_str:>7}  {ratio_str:>8}  {qa_str:>4}"
         )
 
     print("  " + "-" * 84)
@@ -322,6 +373,14 @@ def print_summary(date: str, epoch_results: list[dict]) -> None:
     n_skipped = sum(1 for r in epoch_results if r.get("status") == "skipped")
     n_failed = sum(1 for r in epoch_results if r.get("status") == "failed")
     print(f"  Epochs: {n_epochs} total, {n_skipped} skipped, {n_failed} failed")
+    # QA aggregate counts (separate from execution success/failure)
+    qa_pass = sum(1 for r in epoch_results if r.get("qa_result") == "PASS")
+    qa_fail = sum(1 for r in epoch_results if r.get("qa_result") == "FAIL")
+    qa_none = n_epochs - qa_pass - qa_fail
+    qa_parts = [f"{qa_pass} QA-pass", f"{qa_fail} QA-fail"]
+    if qa_none:
+        qa_parts.append(f"{qa_none} QA-unavailable")
+    print(f"  QA:     {', '.join(qa_parts)}")
     print("=" * 78 + "\n")
 
 
@@ -499,6 +558,16 @@ def main() -> None:
         help="Retry each failed tile once (60s cool-down between attempts). "
              "Useful for transient CASA crashes or memory pressure.",
     )
+    parser.add_argument(
+        "--force-recal",
+        action="store_true",
+        default=False,
+        help=(
+            "Force full re-calibration and re-imaging of every tile, even when FITS outputs "
+            "already exist. Also clears the epoch_gaincal ap.G cache so the fallback check "
+            "runs fresh. Use when re-running a date after code changes (e.g. BP-only fallback)."
+        ),
+    )
     args = parser.parse_args()
 
     date = args.date
@@ -546,6 +615,22 @@ def main() -> None:
 
     os.makedirs(paths["stage_dir"], exist_ok=True)
     os.makedirs(paths["products_dir"], exist_ok=True)
+
+    # ── Migrate stale qa_summary.csv if schema doesn't match ─────────────────
+    if os.path.isfile(QA_SUMMARY_CSV):
+        try:
+            with open(QA_SUMMARY_CSV) as _f:
+                existing_header = _f.readline().strip()
+            expected_header = ",".join(QA_CSV_FIELDS)
+            if existing_header != expected_header:
+                archive_path = QA_SUMMARY_CSV + ".pre_phase0.bak"
+                if not os.path.exists(archive_path):
+                    shutil.copy2(QA_SUMMARY_CSV, archive_path)
+                    log.info("Archived old qa_summary.csv to %s", archive_path)
+                os.remove(QA_SUMMARY_CSV)
+                log.info("Removed stale qa_summary.csv (old schema)")
+        except Exception as e:
+            log.warning("Could not check/migrate qa_summary.csv: %s", e)
 
     # ── Import mosaic_day and patch constants for this date ───────────────────
     import mosaic_day as _md  # type: ignore  (scripts/ is on sys.path)
@@ -604,6 +689,28 @@ def main() -> None:
     epoch_gaincal_dir = os.path.join(paths["stage_dir"], "epoch_gaincal")
     os.makedirs(epoch_gaincal_dir, exist_ok=True)
 
+    # --force-recal: purge cached gaincal products so the solve runs fresh
+    if args.force_recal:
+        import glob as _glob
+        _cached_ap = _glob.glob(os.path.join(epoch_gaincal_dir, "*.ap.G"))
+        for _f in _cached_ap:
+            try:
+                import shutil
+                shutil.rmtree(_f) if os.path.isdir(_f) else os.remove(_f)
+                log.info("--force-recal: removed cached ap.G: %s", _f)
+            except Exception as _e:
+                log.warning("--force-recal: could not remove %s: %s", _f, _e)
+
+        # Purge stale per-tile *_meridian.ms intermediate Measurement Sets so
+        # that a corrupt MS cannot cause applycal to fail on the next run.
+        _stale_meridian = _glob.glob(os.path.join(MS_DIR, f"{date}*_meridian.ms"))
+        for _p in _stale_meridian:
+            try:
+                shutil.rmtree(_p)
+                log.info("--force-recal: removed stale meridian MS: %s", _p)
+            except Exception as _e:
+                log.warning("--force-recal: could not remove meridian MS %s: %s", _p, _e)
+
     _epoch_g_table: str | None = None
     if not args.skip_epoch_gaincal:
         log.info("=== Phase 0/3: Per-epoch gain calibration ===")
@@ -645,6 +752,14 @@ def main() -> None:
     retry_failed = args.retry_failed
     checkpoint_path = os.path.join(paths["stage_dir"], ".tile_checkpoint.json")
 
+    # --force-recal means "fresh rerun", so discard any old checkpoint state
+    if args.force_recal and os.path.exists(checkpoint_path):
+        try:
+            os.remove(checkpoint_path)
+            log.info("--force-recal: removed stale checkpoint: %s", checkpoint_path)
+        except Exception as e:
+            log.warning("--force-recal: could not remove checkpoint %s: %s", checkpoint_path, e)
+
     # Load completed tiles from a previous (crashed) run
     tile_fits: list[str] = []
     if os.path.exists(checkpoint_path):
@@ -667,7 +782,7 @@ def main() -> None:
         t0 = time.time()
         result = process_tile_safe(
             _md, ms_path, keep, tile_timeout, retry_failed,
-            force_recal=(_epoch_gaincal_status == "ok"),
+            force_recal=(args.force_recal or _epoch_gaincal_status == "ok"),
             g_table=_epoch_g_table,
             bp_table=_bp,
         )
@@ -726,9 +841,20 @@ def main() -> None:
 
         mosaic_path = epoch_mosaic_path(paths, date, hour)
         phot_csv_path = epoch_phot_path(paths, date, hour)
+        mosaic_fits_dst = Path(paths["products_dir"]) / Path(mosaic_path).name
 
-        # Skip if mosaic already exists
-        if os.path.exists(mosaic_path):
+        # --force-recal: remove stale epoch-level outputs before rebuilding
+        if args.force_recal:
+            for stale_path in (mosaic_path, phot_csv_path, str(mosaic_fits_dst)):
+                if os.path.exists(stale_path):
+                    try:
+                        os.remove(stale_path)
+                        log.info("  --force-recal: removed stale output %s", stale_path)
+                    except Exception as e:
+                        log.warning("  --force-recal: could not remove %s: %s", stale_path, e)
+
+        # Skip if mosaic already exists (unless --force-recal)
+        if os.path.exists(mosaic_path) and not args.force_recal:
             log.info("  Mosaic already exists — skipping epoch %s", label)
             epoch_results.append({"label": label, "status": "skipped", "n_tiles": len(epoch_tiles), "gaincal_status": _epoch_gaincal_status})
             continue
@@ -764,10 +890,49 @@ def main() -> None:
                         median_ratio = float(np.median(ratios))
                         log.info("  Median DSA/NVSS ratio: %.3f  (%d sources)", median_ratio, len(ratios))
 
+        # ── Epoch QA (three-gate) ──────────────────────────────────────────────
+        epoch_qa: EpochQAResult | None = None
+        try:
+            epoch_qa = measure_epoch_qa(mosaic_path)
+            log.info(
+                "  Epoch QA: ratio=%.3f [%s] | compl=%.1f%% [%s] | rms=%.1f mJy [%s] → %s",
+                epoch_qa.median_ratio, epoch_qa.ratio_gate,
+                epoch_qa.completeness_frac * 100, epoch_qa.completeness_gate,
+                epoch_qa.mosaic_rms_mjy, epoch_qa.rms_gate,
+                epoch_qa.qa_result,
+            )
+        except Exception as e:
+            log.warning("  Epoch QA failed: %s", e)
+
+        # ── Diagnostic PNG ────────────────────────────────────────────────────
+        if epoch_qa is not None:
+            diag_png = mosaic_path.replace(".fits", "_qa_diag.png")
+            try:
+                tile_rms_list = []
+                for tp in epoch_tiles:
+                    if os.path.exists(tp):
+                        _, trms = mosaic_stats(tp)
+                        tile_rms_list.append(trms * 1000.0)
+                plot_epoch_qa(
+                    epoch_qa,
+                    epoch_qa.ratios or [],
+                    tile_rms_list,
+                    diag_png,
+                    epoch_label=label,
+                )
+                log.info("  QA diagnostic PNG: %s", diag_png)
+            except Exception as e:
+                log.warning("  Could not generate QA PNG: %s", e)
+
+        # ── QA summary CSV row ────────────────────────────────────────────────
+        try:
+            write_qa_summary_row(date, label, mosaic_path, epoch_qa, _epoch_gaincal_status)
+        except Exception as e:
+            log.warning("  Could not write QA summary: %s", e)
+
         # Archive epoch mosaic FITS alongside CSV
         mosaic_fits_src = Path(mosaic_path)
-        mosaic_fits_dst = Path(paths["products_dir"]) / mosaic_fits_src.name
-        if mosaic_fits_src.exists() and not mosaic_fits_dst.exists():
+        if mosaic_fits_src.exists() and (not mosaic_fits_dst.exists() or args.force_recal):
             shutil.copy2(str(mosaic_fits_src), str(mosaic_fits_dst))
             log.info("Archived mosaic FITS: %s", mosaic_fits_dst)
 
@@ -783,6 +948,7 @@ def main() -> None:
             "median_ratio": median_ratio,
             "mosaic_path": mosaic_path,
             "gaincal_status": _epoch_gaincal_status,
+            "qa_result": epoch_qa.qa_result if epoch_qa else None,
         })
 
     # ── Print summary ─────────────────────────────────────────────────────────
@@ -797,8 +963,10 @@ def emit_run_summary(date: str, cal_date: str, epoch_results: list, wall_time_se
     from datetime import datetime as _dt
 
     epochs_list = epoch_results
-    n_pass = sum(1 for v in epoch_results if v.get("status") == "ok")
-    n_fail = sum(1 for v in epoch_results if v.get("status") != "ok")
+    n_exec_ok = sum(1 for v in epoch_results if v.get("status") == "ok")
+    n_exec_fail = sum(1 for v in epoch_results if v.get("status") != "ok")
+    n_qa_pass = sum(1 for v in epoch_results if v.get("qa_result") == "PASS")
+    n_qa_fail = sum(1 for v in epoch_results if v.get("qa_result") == "FAIL")
 
     payload = {
         "date": date,
@@ -806,8 +974,10 @@ def emit_run_summary(date: str, cal_date: str, epoch_results: list, wall_time_se
         "finished_at": _dt.utcnow().isoformat() + "Z",
         "wall_time_sec": round(wall_time_sec),
         "n_epochs": len(epoch_results),
-        "n_pass": n_pass,
-        "n_fail": n_fail,
+        "n_pass": n_exec_ok,
+        "n_fail": n_exec_fail,
+        "n_qa_pass": n_qa_pass,
+        "n_qa_fail": n_qa_fail,
         "epochs": epochs_list,
     }
 
@@ -816,9 +986,10 @@ def emit_run_summary(date: str, cal_date: str, epoch_results: list, wall_time_se
         _json.dump(payload, _f, indent=2)
 
     log.info(
-        "Run complete — date=%s cal=%s  epochs=%d  pass=%d  fail=%d  wall=%.0fm  → %s",
-        date, cal_date, len(epoch_results), n_pass, n_fail,
-        wall_time_sec / 60, summary_path,
+        "Run complete — date=%s cal=%s  epochs=%d  exec_ok=%d exec_fail=%d"
+        "  qa_pass=%d qa_fail=%d  wall=%.0fm  → %s",
+        date, cal_date, len(epoch_results), n_exec_ok, n_exec_fail,
+        n_qa_pass, n_qa_fail, wall_time_sec / 60, summary_path,
     )
 
     notify_url = os.environ.get("DSA_NOTIFY_URL")

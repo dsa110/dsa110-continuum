@@ -1,0 +1,342 @@
+\documentclass[twocolumn,11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{natbib}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{xspace}
+
+\newcommand{\dsa}{DSA-110\xspace}
+\newcommand{\wsclean}{\textsc{WSClean}\xspace}
+\newcommand{\casa}{\textsc{CASA}\xspace}
+\newcommand{\everybeam}{\textsc{EveryBeam}\xspace}
+\newcommand{\aoflagger}{\textsc{AOFlagger}\xspace}
+\newcommand{\jybeam}{Jy\,beam$^{-1}$\xspace}
+
+\title{A Continuum Imaging Pipeline for the DSA-110 Meridian Transit Array}
+\author{J.~T.~Faber}
+\date{2026 March}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We describe the continuum imaging pipeline developed for the Deep Synoptic
+Array 110-antenna station (\dsa) at the Owens Valley Radio Observatory.  The
+pipeline converts raw correlator output into calibrated wide-field images,
+constructs hourly epoch mosaics of the meridian drift strip, and performs
+forced photometry against catalog positions to produce daily light curves
+of $\sim\!10^{4}$ compact radio sources.  Because \dsa is a fixed meridian
+transit instrument observing at $1.31$--$1.50$\,GHz, the pipeline must
+accommodate a continuously drifting field of view, per-epoch gain
+calibration against catalog sky models, and automated quality control
+across $\sim\!100$ tiles per day.  We detail the design choices that follow
+from these instrument constraints and present the overall data flow from
+HDF5 visibilities to variability metrics.
+\end{abstract}
+
+
+% ----------------------------------------------------------------
+\section{Introduction}\label{sec:intro}
+
+The Deep Synoptic Array 110-antenna station \citep[\dsa;][]{hallinan2019}
+is an L-band radio interferometer at the Owens Valley Radio Observatory
+designed for the detection and localization of fast radio bursts and for
+commensal continuum science.  The array comprises 117 antennas of 4.65\,m
+diameter arranged in a core--outrigger configuration with baselines
+from $\sim\!13$\,m to $\sim\!4.5$\,km.  As a fixed meridian transit instrument,
+\dsa does not track sources; the sky instead drifts through the primary
+beam at the sidereal rate.  This observing mode yields a natural daily
+cadence well suited to monitoring flux variability on timescales of days
+to months---the regime of extreme scattering events
+\citep[ESEs;][]{fiedler1987}, refractive interstellar scintillation, and
+intrinsic AGN variability.
+
+The continuum pipeline described here was designed from the outset around
+the constraints of a drift-scan array: each $\sim\!5$-minute transit
+produces a single ``tile'' whose phase centre drifts in right ascension
+over 24 correlator integrations, so the data require rephasing before
+imaging; there is no dedicated calibrator scan, so gain calibration is
+bootstrapped from catalog sky models; and the wide $4.1^{\circ}$ primary
+beam demands direction-dependent beam correction.  The pipeline
+automates the full path from raw HDF5 correlator dumps to per-epoch
+forced-photometry light curves, with checkpoint recovery, flag-fraction
+monitoring, and multi-catalog quality assurance at each stage.
+
+
+% ----------------------------------------------------------------
+\section{Instrument and Observing Mode}\label{sec:instrument}
+
+Each correlator dump records 16 spectral windows (subbands) of 48
+channels each, spanning 1311.25--1498.75\,MHz (187.5\,MHz total
+bandwidth; channel width 244.14\,kHz).  The integration time is
+12.885\,s per field, and each observation cycles through 24 fields
+at successive meridian hour angles, producing a single tile of
+duration $\sim\!310$\,s.  At a declination of $16\fdg1$ the 24 fields
+span $\sim\!1\fdg5$ in right ascension, drifting at the sidereal rate
+of $15\farcs03\,\mathrm{s}^{-1}\cos\delta$.
+
+The primary beam full-width at half-maximum is approximately
+$4\fdg1$ at 1.4\,GHz for the 4.65\,m dishes, closely matching the
+image field of view adopted in the pipeline ($4800\times4800$ pixels
+at $3''$/pixel, or $4\fdg0$ on a side).  The synthesized beam is
+typically $60''\times34''$, set by the core--outrigger baseline
+distribution.
+
+
+% ----------------------------------------------------------------
+\section{Pipeline Architecture}\label{sec:pipeline}
+
+The pipeline proceeds in four stages: conversion, calibration, imaging,
+and mosaicking with photometry (Figure~\ref{fig:flowchart} %conceptual
+).  Each stage is
+described below, with emphasis on the design choices motivated by the
+transit observing mode.
+
+\subsection{Conversion: HDF5 to Measurement Set}\label{sec:conversion}
+
+Raw correlator output is stored as one HDF5 file per subband per
+timestamp.  The 16 subbands for each observation are clustered within a
+120\,s tolerance window and merged into a single Measurement Set (MS)
+via \textsc{pyuvdata} \citep{hazelton2017}.
+
+Three instrument-specific workarounds are required during conversion.
+First, the \texttt{uvw\_array} in DSA-110 HDF5 files is natively
+\texttt{float32}; it must be cast to \texttt{float64} before any
+accumulation to avoid precision loss in the $u$, $v$, $w$ coordinates.
+Second, the subbands arrive in \emph{descending} frequency order (sb00
+$=$ highest), but multi-frequency synthesis imaging requires ascending
+order; the pipeline sorts subbands and converts any negative channel
+widths to positive (upper-sideband convention).  Third, the MS
+\texttt{TELESCOPE\_NAME} must be set to \texttt{OVRO\_MMA} for \casa
+compatibility but must be toggled to \texttt{DSA\_110} before any
+\wsclean invocation so that \everybeam loads the correct Airy-disk beam
+model.  Failure to toggle this field produces no runtime error but
+introduces photometric errors of up to $\sim\!20\%$ near the primary
+beam edge.
+
+\subsection{Calibration}\label{sec:calibration}
+
+Because \dsa has no slewing capability, there is no dedicated calibrator
+scan.  Calibration is instead performed in two stages: a static bandpass
+derived from a bright source transit (currently 3C\,454.3 at
+$\sim\!12.5$\,\jybeam), and a per-epoch gain solution bootstrapped from
+a catalog sky model.
+
+\paragraph{Bandpass and static gain.}
+The bandpass is solved per-SPW (i.e.\ not combining spectral windows)
+because each of the 16 subbands exhibits a distinct instrumental
+response shape.  Key parameters are a minimum signal-to-noise ratio of
+5.0 per solution interval (elevated above the default of 3.0 to reject
+noise-dominated solutions), a fill-gap interpolation width of 3 channels
+($\sim\!730$\,kHz), and a minimum of 4 baselines per antenna.  An
+initial phase-only pre-solve at 60\,s intervals removes
+integration-timescale decorrelation before the bandpass fit.  Delay
+($K$) calibration is omitted: empirical tests show residual phase slopes
+$<3^{\circ}$ across the band, well within the tolerance for MFS imaging.
+
+Static gain solutions are obtained in amplitude-plus-phase mode at two
+timescales: a long solution interval (\texttt{solint=inf}, one solution
+per $\sim\!5$-minute scan) for instrumental effects and a short interval
+of 60\,s for atmospheric phase variations.  Application order is $B
+\rightarrow G_{\mathrm{long}} \rightarrow G_{\mathrm{short}}$.  The
+bandpass is valid for $\sim\!24$\,h, while gain solutions are valid for
+$\sim\!1$\,h.
+
+\paragraph{Per-epoch gain calibration.}
+For science-quality imaging beyond the bandpass-calibrator transit, the
+pipeline solves per-epoch gain tables against a unified catalog sky model
+(FIRST, RACS, NVSS, and VLASS sources above 5\,mJy within $0\fdg3$ of
+the field centre).  A preconditioner phase-only solve at 60\,s intervals
+(combining SPWs to boost SNR by $\sim\!4\times$) provides an initial
+estimate; a main solve then proceeds in two rounds: phase-only, then
+amplitude-plus-phase.  If more than 30\% of solutions are flagged (an
+indicator of insufficient SNR), the epoch falls back to the static daily
+gain table with bandpass-only correction.
+
+\subsection{Flagging}\label{sec:flagging}
+
+The flagging strategy is a mandatory two-stage process.  Stage~1 applies
+the \aoflagger \textsc{SumThreshold} algorithm via a custom Lua
+strategy tuned for the OVRO radio-frequency interference (RFI)
+environment: the base threshold is raised to 1.2 (from 1.0) with an
+additional iteration for heavy RFI, and the transient threshold factor
+is lowered to 0.8 for Starlink- and Iridium-band excision.  Stage~1
+alone reduces the data to $\sim\!1\%$ flagged, but the residual kurtosis
+remains $\sim\!536$ (far from Gaussian).  Stage~2 applies a $7\sigma$
+median-absolute-deviation (MAD) clip on cross-correlation amplitudes,
+bringing the total flagged fraction to $\sim\!2.4\%$ and the kurtosis
+to $\sim\!3$.  Omitting Stage~2 leaves outlier rates at $\sim\!4\times$
+the Gaussian expectation, which biases calibration solutions and
+produces imaging artifacts.
+
+\subsection{Imaging}\label{sec:imaging}
+
+Each tile is phaseshifted to the median meridian position (the median RA
+and Dec of the 24 fields, using a circular mean for RA to handle the
+$0^{\circ}/360^{\circ}$ wrap) and imaged with \wsclean
+\citep{offringa2014}.  The default imaging configuration uses Briggs
+weighting with robust$\,=0.5$, an auto-masking threshold of $5\sigma$,
+an auto-cleaning threshold of $1\sigma$, a major-cycle gain of 0.8, and
+a UV minimum of $1\,k\lambda$ to exclude short-baseline emission.
+Primary beam correction is applied post-imaging via \everybeam using an
+Airy-disk model for the 4.65\,m dishes, with a primary beam limit of
+0.2 (blanking pixels below 20\% of the peak response).
+
+For survey-mode imaging targeting daily variability monitoring, the
+configuration shifts to Briggs robust$\,=0.0$ (neutral weighting),
+multiscale deconvolution with scales of $[0, 5, 15, 45]$ pixels to
+recover both point and extended emission, and $n_{\mathrm{terms}}=2$
+spectral-index fitting across the 18\% fractional bandwidth.
+
+When the Image Domain Gridder \citep[IDG;][]{vandertol2018} is
+selected, the 16 spectral windows must first be merged into a single SPW
+(\casa \texttt{mstransform}).  This merge step resets the telescope name
+to \texttt{OVRO\_MMA}; the pipeline automatically patches it back to
+\texttt{DSA\_110} before each \wsclean invocation.
+
+Optionally, a catalog-driven FITS mask (60$''$ circular apertures around
+sources above a configurable flux threshold) is passed to \wsclean to
+seed the clean, reducing the number of major cycles by a factor of
+$2$--$4\times$.  When sky-model seeding is enabled, the catalog is
+rendered to MODEL\_DATA via \wsclean \texttt{-predict} before the
+imaging run.
+
+
+% ----------------------------------------------------------------
+\section{Mosaicking and Photometry}\label{sec:mosaic}
+
+\subsection{Epoch Mosaics}\label{sec:epoch_mosaic}
+
+Tiles are grouped into hourly epochs by UTC hour.  To ensure continuous
+sky coverage and smooth flux transitions across epoch boundaries, each
+epoch includes the last two tiles of the preceding hour and the first
+two of the following hour, producing $\sim\!20$\,min of overlap.  Two
+mosaicking tiers are available:
+
+\begin{itemize}
+  \item \textbf{Quicklook} (image-domain): pre-deconvolved tile FITS
+  images are regridded to a common WCS via nearest-neighbor
+  interpolation and coadded with weights
+  $w = w_{\mathrm{rms}} \times w_{\mathrm{PB}}^{2}$,
+  where $w_{\mathrm{PB}}$ is the Airy-disk primary beam response and
+  the PB$^{2}$ factor implements variance weighting.
+  Pixels below 10\% of the peak beam response are blanked.
+
+  \item \textbf{Science/Deep} (visibility-domain): all tile MS files are
+  phaseshifted to a common centre and jointly deconvolved with \wsclean
+  using IDG and A-projection (\texttt{-grid-with-beam}) for
+  direction-dependent beam correction.  This produces a properly
+  deconvolved wide-field mosaic at the cost of significantly longer
+  processing time.
+\end{itemize}
+
+\subsection{Forced Photometry and Variability}\label{sec:photometry}
+
+Flux densities are measured at NVSS catalog positions using a
+\citet{condon1997} matched-filter estimator: the PSF (a 2D Gaussian
+derived from the \wsclean restoring beam) is convolved with the image,
+and the weighted flux is
+\begin{equation}
+  S = \frac{\sum_{i} d_i\, K_i / \sigma_i^{2}}%
+           {\sum_{i} K_i^{2} / \sigma_i^{2}},
+\end{equation}
+where $d_i$ is the image pixel value, $K_i$ the PSF kernel, and
+$\sigma_i$ the local RMS from a background annulus or a BANE noise map.
+Cross-matching uses a 30$''$ radius ($\lesssim 0.5$ synthesized beams)
+and a minimum NVSS flux of 50\,mJy to ensure unconfused, high-SNR
+comparisons.
+
+Variability is quantified via the metrics of \citet{mooley2016}: the
+reduced $\chi^{2}$ statistic $\eta$, the significance metric $V_{s}$,
+and the modulation index $m$.  A source is flagged as a candidate
+variable or ESE when its light curve exceeds a configurable
+$\sigma$-threshold (default $5\sigma$, conservative).
+
+\subsection{Quality Assurance}\label{sec:qa}
+
+Automated QA operates at two levels.  Per-epoch, the pipeline checks
+noise consistency (requiring $\mathrm{RMS}_{\max}/\mathrm{RMS}_{\min}
+< 3$ across tiles) and gain-solution flag fractions ($<30\%$ for epoch
+gains).  Per-day, the \textsc{verify\_sources} module cross-matches
+DSA detections against NVSS and RACS catalogs and computes the median
+DSA-to-catalog flux ratio; an epoch passes QA if this ratio exceeds 0.80
+with at least three detections at $\mathrm{S/N}\geq3$.
+
+
+% ----------------------------------------------------------------
+\section{Automation and Fault Tolerance}\label{sec:automation}
+
+The batch pipeline processes an entire day's observations
+($\sim\!100$--200 tiles) through calibration, imaging, mosaicking, and
+photometry in a single invocation.  Per-tile processing is parallelized
+via Python's \texttt{ProcessPoolExecutor}, with a 30-minute timeout per
+tile enforced by Unix signal alarms (necessitating process-level rather
+than thread-level parallelism).  A JSON checkpoint file tracks completed
+tiles so that a crashed run resumes from the last successful tile rather
+than reprocessing the day.
+
+The epoch gain calibration includes an automatic fallback: if the
+catalog-bootstrapped gain solve yields more than 30\% flagged solutions,
+the pipeline reverts to the static daily bandpass-only calibration for
+that epoch, logging the fallback for downstream QA review.  Similarly,
+if the input MS is more than 60\% flagged (e.g.\ due to heavy RFI),
+self-calibration imaging is skipped and the catalog model is predicted
+directly into MODEL\_DATA.
+
+The end-to-end output is a set of hourly epoch mosaics, per-epoch
+forced-photometry CSVs, and a summary QA table
+(\texttt{qa\_summary.csv}) recording the median flux ratio, detection
+count, gain-calibration mode, and pass/warn/fail status for each epoch.
+
+
+% ----------------------------------------------------------------
+\section{Summary}\label{sec:summary}
+
+The \dsa continuum pipeline converts raw correlator output into
+calibrated, mosaicked images and forced-photometry light curves with
+daily cadence, targeting the detection of variable and transient compact
+radio sources.  Its design is driven by the instrument's meridian transit
+observing mode: catalog-bootstrapped gain calibration in lieu of
+dedicated calibrator scans, per-epoch solutions to track hourly gain
+drifts, automated rephasing of drifting field centres, and
+direction-dependent primary beam correction for the wide $4^{\circ}$
+field of view.  The pipeline has been validated on 3C\,454.3 commissioning
+data (peak flux $12.5$\,\jybeam, consistent with catalog) and is
+currently processing multi-day observing campaigns for ESE monitoring.
+
+
+% ----------------------------------------------------------------
+\bibliographystyle{aasjournal}
+\begin{thebibliography}{9}
+
+\bibitem[Condon(1997)]{condon1997}
+Condon, J.~J. 1997, PASP, 109, 166
+
+\bibitem[Fiedler et~al.(1987)]{fiedler1987}
+Fiedler, R.~L., Dennison, B., Johnston, K.~J., \& Hewish, A. 1987,
+Nature, 326, 675
+
+\bibitem[Hallinan et~al.(2019)]{hallinan2019}
+Hallinan, G., Ravi, V., Weinreb, S., et~al. 2019, BAAS, 51, 255
+
+\bibitem[Hazelton et~al.(2017)]{hazelton2017}
+Hazelton, B.~J., Jacobs, D.~C., Pober, J.~C., \& Beardsley, A.~P.
+2017, JOSS, 2, 140
+
+\bibitem[Mooley et~al.(2016)]{mooley2016}
+Mooley, K.~P., Hallinan, G., Bourber, S., et~al. 2016, ApJ, 818, 105
+
+\bibitem[Offringa et~al.(2014)]{offringa2014}
+Offringa, A.~R., McKinley, B., Hurley-Walker, N., et~al. 2014,
+MNRAS, 444, 606
+
+\bibitem[van~der~Tol et~al.(2018)]{vandertol2018}
+van~der~Tol, S., Veenboer, B., \& Offringa, A.~R. 2018, A\&A, 616,
+A27
+
+\end{thebibliography}
+
+\end{document}

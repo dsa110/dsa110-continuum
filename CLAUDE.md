@@ -1,9 +1,43 @@
-# Claude Code Instructions — dsa110-continuum
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What this is
 
 A clean continuum imaging pipeline for DSA-110 (Caltech), ported from dsa110-contimg.
 Only the verified science code lives here. No web infrastructure.
+
+## Python environment
+
+ALWAYS use the casa6 conda env — it has numpy, casacore, astropy, CASA, and all scientific deps:
+
+    /opt/miniforge/envs/casa6/bin/python
+
+Do NOT use system python3 (3.13, missing scientific deps). The `pip` command maps to
+system 3.8; if you need pip, use `/opt/miniforge/envs/casa6/bin/python -m pip`.
+
+## Build / Test / Lint
+
+    # Run all tests (40 tests, ~1 s)
+    /opt/miniforge/envs/casa6/bin/python -m pytest tests/ -q
+
+    # Run a single test file or test
+    /opt/miniforge/envs/casa6/bin/python -m pytest tests/test_verify_sources.py -q
+    /opt/miniforge/envs/casa6/bin/python -m pytest tests/test_verify_sources.py::test_measure_peak_box_returns_correct_flux -q
+
+    # Lint (ruff, configured in pyproject.toml — NumPy docstring convention, 100-char lines)
+    ruff check dsa110_continuum/ scripts/ tests/
+    ruff format --check dsa110_continuum/ scripts/ tests/
+
+    # Run a pipeline script
+    /opt/miniforge/envs/casa6/bin/python scripts/batch_pipeline.py --date 2026-01-25
+
+## Import architecture
+
+`dsa110_continuum/` is the new package but most runtime imports still reference the OLD
+`dsa110_contimg.core.*` package (installed from `/data/dsa110-contimg/backend/src`).
+The new package wraps and delegates to the old one. When adding new code, use
+`dsa110_continuum.*` imports; do not add new `dsa110_contimg` references.
 
 ## Verified working state
 

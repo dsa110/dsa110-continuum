@@ -107,6 +107,16 @@ def needs_calibration(ms_path: str) -> bool:
         return True
 
 
+def _ms_is_valid(path: str) -> bool:
+    """Return True only if path looks like a complete CASA Measurement Set."""
+    import glob as _g
+    return (
+        os.path.isdir(path)
+        and os.path.exists(os.path.join(path, "table.dat"))
+        and len(_g.glob(os.path.join(path, "table.f*"))) > 0
+    )
+
+
 def process_ms(ms_path: str, keep_intermediates: bool = False, force_recal: bool = False) -> str | None:
     """Phaseshift → applycal → image one MS. Returns path to pb-corrected FITS or None."""
     tag = Path(ms_path).stem  # e.g. 2026-01-25T21:17:33
@@ -126,9 +136,14 @@ def process_ms(ms_path: str, keep_intermediates: bool = False, force_recal: bool
             return image_fits
 
     # ── Step 1: Phaseshift ────────────────────────────────────────────────
-    if os.path.exists(meridian_ms):
+    if _ms_is_valid(meridian_ms):
         log.info("[%s] Meridian MS already exists", tag)
     else:
+        if os.path.isdir(meridian_ms):
+            log.warning(
+                "[%s] Corrupt or incomplete meridian MS detected — removing: %s", tag, meridian_ms
+            )
+            shutil.rmtree(meridian_ms)
         log.info("[%s] Phaseshifting to median meridian ...", tag)
         try:
             phaseshift_ms(
@@ -201,35 +216,95 @@ def process_ms(ms_path: str, keep_intermediates: bool = False, force_recal: bool
 
 # ── Mosaicking ────────────────────────────────────────────────────────────────
 
-def build_common_wcs(fits_paths: list[str], margin_deg: float = 0.5) -> tuple[WCS, int, int]:
-    """Compute a common RA/Dec WCS that covers all input FITS images."""
-    ra_min, ra_max, dec_min, dec_max = 360.0, 0.0, 90.0, -90.0
+def _get_tile_center_ra(path: str) -> float:
+    """Return the centre RA (deg) of a tile FITS image."""
+    with fits.open(path) as hdul:
+        hdr = hdul[0].header
+        wcs = WCS(hdr).celestial
+        ny, nx = hdul[0].data.squeeze().shape
+        center = wcs.pixel_to_world(nx / 2.0, ny / 2.0)
+        return center.ra.deg
 
+
+def group_tiles_by_ra(fits_paths: list[str], gap_deg: float = 10.0) -> list[list[str]]:
+    """Split tiles into contiguous RA strips.
+
+    Tiles are sorted by centre RA.  Wherever the gap between consecutive
+    tiles exceeds *gap_deg*, a new strip begins.  This prevents mosaicking
+    disjoint fields (e.g. 02h and 22h observations) into a single
+    oversized grid.
+    """
+    if not fits_paths:
+        return []
+    centers = [(p, _get_tile_center_ra(p)) for p in fits_paths]
+    centers.sort(key=lambda x: x[1])
+
+    groups: list[list[str]] = [[centers[0][0]]]
+    for i in range(1, len(centers)):
+        delta = centers[i][1] - centers[i - 1][1]
+        if delta > gap_deg:
+            groups.append([])
+        groups[-1].append(centers[i][0])
+
+    # Also check wrap-around gap (last → first across 0°/360°)
+    if len(groups) > 1:
+        wrap_gap = (centers[0][1] + 360.0) - centers[-1][1]
+        if wrap_gap < gap_deg:
+            # First and last groups are actually contiguous across the wrap
+            groups[0] = groups[-1] + groups[0]
+            groups.pop()
+
+    log.info("Grouped %d tiles into %d RA strip(s)", len(fits_paths), len(groups))
+    for i, g in enumerate(groups):
+        ras = [_get_tile_center_ra(p) for p in g]
+        log.info("  Strip %d: %d tiles, RA %.1f–%.1f deg", i, len(g), min(ras), max(ras))
+    return groups
+
+
+def build_common_wcs(fits_paths: list[str], margin_deg: float = 0.5) -> tuple[WCS, int, int]:
+    """Compute a common RA/Dec WCS that covers all input FITS images.
+
+    Handles RA wrap by shifting all corner RAs relative to their mean
+    before computing the bounding box, so tiles crossing 0°/360° produce
+    a compact footprint instead of a ~360° span.
+    """
+    all_ras: list[float] = []
+    dec_min, dec_max = 90.0, -90.0
+
+    tile_corners: list[tuple[list[float], list[float]]] = []
     for path in fits_paths:
         with fits.open(path) as hdul:
             hdr = hdul[0].header
             wcs = WCS(hdr).celestial
             ny, nx = hdul[0].data.squeeze().shape
-            # Sample corners
             corners = wcs.pixel_to_world(
                 [0, nx - 1, 0, nx - 1], [0, 0, ny - 1, ny - 1]
             )
             ras = [c.ra.deg for c in corners]
             decs = [c.dec.deg for c in corners]
-            ra_min = min(ra_min, min(ras))
-            ra_max = max(ra_max, max(ras))
+            all_ras.extend(ras)
             dec_min = min(dec_min, min(decs))
             dec_max = max(dec_max, max(decs))
 
-    ra_min -= margin_deg
-    ra_max += margin_deg
+    # ── RA wrap-safe bounding box ─────────────────────────────────────────
+    # Use circular mean (atan2 of unit-vector average) so that tiles
+    # crossing the 0°/360° boundary get a correct centre.  The arithmetic
+    # mean of [359°, 1°] is 180° (wrong); the circular mean is 0° (correct).
+    ra_rad = np.deg2rad(all_ras)
+    mean_ra = float(np.rad2deg(
+        np.arctan2(np.mean(np.sin(ra_rad)), np.mean(np.cos(ra_rad)))
+    )) % 360.0
+    shifted = np.array([(ra - mean_ra + 180.0) % 360.0 - 180.0 for ra in all_ras])
+    ra_min = mean_ra + float(shifted.min()) - margin_deg
+    ra_max = mean_ra + float(shifted.max()) + margin_deg
     dec_min -= margin_deg
     dec_max += margin_deg
 
-    pixel_scale_deg = CELL_ARCSEC / 3600.0
-    ra_center = (ra_min + ra_max) / 2.0
+    # Normalise center RA to [0, 360)
+    ra_center = ((ra_min + ra_max) / 2.0) % 360.0
     dec_center = (dec_min + dec_max) / 2.0
 
+    pixel_scale_deg = CELL_ARCSEC / 3600.0
     nx = int(np.ceil((ra_max - ra_min) / pixel_scale_deg))
     ny = int(np.ceil((dec_max - dec_min) / pixel_scale_deg))
     # Round to even for WSClean compatibility
@@ -243,8 +318,8 @@ def build_common_wcs(fits_paths: list[str], margin_deg: float = 0.5) -> tuple[WC
     out_wcs.wcs.ctype = ["RA---SIN", "DEC--SIN"]
 
     log.info(
-        "Common WCS: RA %.2f–%.2f deg, Dec %.2f–%.2f deg, %d×%d px",
-        ra_min, ra_max, dec_min, dec_max, nx, ny,
+        "Common WCS: RA %.2f–%.2f deg, Dec %.2f–%.2f deg, %d×%d px (center RA=%.2f)",
+        ra_min, ra_max, dec_min, dec_max, nx, ny, ra_center,
     )
     return out_wcs, ny, nx
 
@@ -320,9 +395,11 @@ def coadd_tiles(fits_paths: list[str], out_wcs: WCS, ny: int, nx: int) -> np.nda
     return mosaic
 
 
-def write_mosaic(mosaic: np.ndarray, out_wcs: WCS, fits_paths: list[str]) -> str:
+def write_mosaic(mosaic: np.ndarray, out_wcs: WCS, fits_paths: list[str],
+                  output_path: str | None = None) -> str:
     """Write mosaic to FITS using a representative header from the first tile."""
-    os.makedirs(os.path.dirname(MOSAIC_OUT), exist_ok=True)
+    out_path = output_path or MOSAIC_OUT
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with fits.open(fits_paths[0]) as ref:
         ref_hdr = ref[0].header.copy()
 
@@ -338,12 +415,12 @@ def write_mosaic(mosaic: np.ndarray, out_wcs: WCS, fits_paths: list[str]) -> str
         if key in ref_hdr:
             new_hdr[key] = ref_hdr[key]
     new_hdr.update(out_wcs.to_header())
-    new_hdr["HISTORY"] = f"Mosaic of {len(fits_paths)} DSA-110 tiles (2026-01-25)"
+    new_hdr["HISTORY"] = f"Mosaic of {len(fits_paths)} DSA-110 tiles ({DATE})"
 
     hdu = fits.PrimaryHDU(data=mosaic.astype(np.float32), header=new_hdr)
-    hdu.writeto(MOSAIC_OUT, overwrite=True)
-    log.info("Mosaic written: %s", MOSAIC_OUT)
-    return MOSAIC_OUT
+    hdu.writeto(out_path, overwrite=True)
+    log.info("Mosaic written: %s", out_path)
+    return out_path
 
 
 def check_mosaic_quality(mosaic_path: str) -> bool:
@@ -463,38 +540,75 @@ def main():
         log.error("Need at least 2 tile images to mosaic — aborting")
         sys.exit(1)
 
-    # ── Phase 2: Build mosaic ─────────────────────────────────────────────────
-    if os.path.exists(MOSAIC_OUT):
-        log.info("Mosaic already exists: %s", MOSAIC_OUT)
+    # ── Phase 2: Group tiles and build per-strip mosaics ────────────────────
+    strips = group_tiles_by_ra(tile_images)
+    mosaic_paths: list[str] = []
+
+    for strip_idx, strip_tiles in enumerate(strips):
+        if len(strip_tiles) < 2:
+            log.warning("Strip %d has only %d tile — skipping", strip_idx, len(strip_tiles))
+            continue
+
+        if len(strips) == 1:
+            strip_out = MOSAIC_OUT
+        else:
+            # Use circular mean for wrap-safe RA labelling
+            tile_ras = [_get_tile_center_ra(p) for p in strip_tiles]
+            ra_rad = np.deg2rad(tile_ras)
+            strip_ra = float(np.rad2deg(
+                np.arctan2(np.mean(np.sin(ra_rad)), np.mean(np.cos(ra_rad)))
+            )) % 360.0
+            strip_out = MOSAIC_OUT.replace(".fits", f"_ra{int(round(strip_ra)) % 360:03d}.fits")
+
+        if os.path.exists(strip_out):
+            log.info("Strip %d mosaic already exists: %s", strip_idx, strip_out)
+            mosaic_paths.append(strip_out)
+            continue
+
+        log.info("\n=== Building mosaic for strip %d (%d tiles) ===\n", strip_idx, len(strip_tiles))
+        out_wcs, ny, nx = build_common_wcs(strip_tiles)
+        mosaic = coadd_tiles(strip_tiles, out_wcs, ny, nx)
+        strip_path = write_mosaic(mosaic, out_wcs, strip_tiles, output_path=strip_out)
+        mosaic_paths.append(strip_path)
+
+    if not mosaic_paths:
+        log.error("No mosaics produced — aborting")
+        sys.exit(1)
+
+    # ── Phase 3: QA (per strip) ───────────────────────────────────────────────
+    all_passed = True
+    for mpath in mosaic_paths:
+        log.info("\n=== Mosaic QA: %s ===\n", Path(mpath).name)
+        passed = check_mosaic_quality(mpath)
+        all_passed = all_passed and passed
+
+        with fits.open(mpath) as hdul:
+            data = hdul[0].data.squeeze()
+            peak = np.nanmax(data)
+            finite = data[np.isfinite(data)]
+            rms = 1.4826 * np.nanmedian(np.abs(finite - np.nanmedian(finite)))
+            log.info("  Peak: %.4f Jy/beam", peak)
+            log.info("  RMS (MAD): %.4f Jy/beam", rms)
+            log.info("  Dynamic range: %.0f", peak / rms)
+
+    if all_passed:
+        print(f"\nSUCCESS: {len(mosaic_paths)} mosaic(s) in {IMAGE_DIR}")
+        for mp in mosaic_paths:
+            print(f"  {Path(mp).name}")
     else:
-        log.info("\n=== Building mosaic from %d tiles ===\n", len(tile_images))
-        out_wcs, ny, nx = build_common_wcs(tile_images)
-        mosaic = coadd_tiles(tile_images, out_wcs, ny, nx)
-        write_mosaic(mosaic, out_wcs, tile_images)
+        print(f"\nWARNING: One or more mosaic QA checks failed — check noise consistency")
+    if len(mosaic_paths) > 1:
+        log.info(
+            "Multiple RA strips produced — no single full_mosaic.fits. "
+            "Downstream scripts expecting full_mosaic.fits must be updated "
+            "to use per-strip products."
+        )
 
-    # ── Phase 3: QA ───────────────────────────────────────────────────────────
-    log.info("\n=== Mosaic QA ===\n")
-    passed = check_mosaic_quality(MOSAIC_OUT)
-
-    # Report peak flux
-    with fits.open(MOSAIC_OUT) as hdul:
-        data = hdul[0].data.squeeze()
-        peak = np.nanmax(data)
-        rms = 1.4826 * np.nanmedian(np.abs(data[np.isfinite(data)] - np.nanmedian(data[np.isfinite(data)])))
-        log.info("Mosaic peak: %.4f Jy/beam", peak)
-        log.info("Mosaic RMS (MAD): %.4f Jy/beam", rms)
-        log.info("Dynamic range: %.0f", peak / rms)
-
-    if passed:
-        print(f"\nSUCCESS: Mosaic at {MOSAIC_OUT}")
-    else:
-        print(f"\nWARNING: Mosaic QA failed — check noise consistency")
-
-    # ── Phase 4: Move finished mosaic to products/ ────────────────────────────
+    # ── Phase 4: Move finished mosaics to products/ ──────────────────────────
     if not keep:
         _move_mosaic_to_products()
 
-    return MOSAIC_OUT
+    return mosaic_paths[0] if len(mosaic_paths) == 1 else mosaic_paths
 
 
 def _move_mosaic_to_products() -> None:
@@ -503,11 +617,15 @@ def _move_mosaic_to_products() -> None:
     Source:      IMAGE_DIR  (/stage/dsa110-contimg/images/mosaic_{DATE}/)
     Destination: PRODUCTS_DIR  (/data/dsa110-continuum/products/mosaics/{DATE}/)
 
-    If PRODUCTS_DIR already exists (e.g. from a previous run), the move is
-    skipped and a warning is logged rather than overwriting science products.
+    Handles both single-strip (full_mosaic.fits) and multi-strip
+    (full_mosaic_ra*.fits) outputs.  If PRODUCTS_DIR already exists
+    (e.g. from a previous run), the move is skipped and a warning is
+    logged rather than overwriting science products.
     """
-    if not os.path.isfile(MOSAIC_OUT):
-        log.warning("Move skipped: mosaic file not found at %s", MOSAIC_OUT)
+    import glob as _g
+    mosaic_files = sorted(_g.glob(os.path.join(IMAGE_DIR, "full_mosaic*.fits")))
+    if not mosaic_files:
+        log.warning("Move skipped: no mosaic files found in %s", IMAGE_DIR)
         return
 
     if os.path.exists(PRODUCTS_DIR):
@@ -524,7 +642,9 @@ def _move_mosaic_to_products() -> None:
     try:
         shutil.move(IMAGE_DIR, PRODUCTS_DIR)
         log.info("Mosaic moved to products: %s", PRODUCTS_DIR)
-        print(f"\nMosaic archived to: {PRODUCTS_DIR}/full_mosaic.fits")
+        names = [Path(f).name for f in mosaic_files]
+        for name in names:
+            print(f"  Archived: {PRODUCTS_DIR}/{name}")
     except Exception as e:
         log.error("Failed to move mosaic to products: %s", e)
         print(f"\nERROR: Could not move mosaic to {PRODUCTS_DIR}: {e}")
