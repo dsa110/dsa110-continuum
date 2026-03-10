@@ -9,7 +9,7 @@ in a safe, logged environment. It handles:
 4. Command logging for debugging
 
 Usage:
-    from dsa110_contimg.core.calibration.casa_service import CASAService
+    from dsa110_continuum.calibration.casa_service import CASAService
 
     service = CASAService()
 
@@ -138,7 +138,7 @@ class CASAService:
             self.use_process_isolation = use_process_isolation
 
         if self.use_process_isolation:
-            from dsa110_contimg.core.calibration.casa_process import CASAProcessExecutor
+            from dsa110_continuum.calibration.casa_process import CASAProcessExecutor
 
             self.process_executor = CASAProcessExecutor()
             logger.info("CASAService initialized with process isolation ENABLED")

@@ -160,7 +160,7 @@ def _ensure_imaging_columns(ms_path: str) -> None:
     # which will raise CalibrationProtectionError if CORRECTED_DATA contains
     # valid calibration that would be destroyed.
     try:
-        from dsa110_contimg.core.calibration.casa_service import (
+        from dsa110_continuum.calibration.casa_service import (
             CalibrationProtectionError,
             CASAService,
         )
@@ -673,7 +673,7 @@ def write_point_model_with_ft(
         )
         return
 
-    from dsa110_contimg.core.calibration.casa_service import CASAService
+    from dsa110_continuum.calibration.casa_service import CASAService
 
     service = CASAService()
 
@@ -789,8 +789,8 @@ def write_image_model_with_ft(ms_path: str, image_path: str) -> None:
     image_path :
         Path to CASA image model
     """
-    from dsa110_contimg.core.calibration.casa_service import CASAService
-    from dsa110_contimg.core.calibration.runner import sync_reference_dir_with_phase_dir
+    from dsa110_continuum.calibration.casa_service import CASAService
+    from dsa110_continuum.calibration.runner import sync_reference_dir_with_phase_dir
 
     service = CASAService()
 
@@ -954,7 +954,7 @@ def _export_model_as_fits_tclean(
     """
     import logging
 
-    from dsa110_contimg.core.calibration.casa_service import CASAService
+    from dsa110_continuum.calibration.casa_service import CASAService
 
     service = CASAService()
 
@@ -1102,11 +1102,11 @@ def populate_model_from_catalog(
         If MODEL_DATA population fails
 
     """
-    from dsa110_contimg.core.calibration.catalogs import (
+    from dsa110_continuum.calibration.catalogs import (
         get_calibrator_radec,
         load_vla_catalog,
     )
-    from dsa110_contimg.core.calibration.skymodels import (
+    from dsa110_continuum.calibration.skymodels import (
         make_unified_skymodel,
         predict_from_skymodel_wsclean,
     )
@@ -1445,8 +1445,8 @@ def count_bright_sources_in_tile(
     int
         Number of sources above flux threshold within radius
     """
-    from dsa110_contimg.core.calibration.catalogs import query_catalog_sources
-    from dsa110_contimg.core.calibration.mosaic_constants import (
+    from dsa110_continuum.calibration.catalogs import query_catalog_sources
+    from dsa110_continuum.calibration.mosaic_constants import (
         EARTH_ROTATION_DEG_PER_SEC,
         INTEGRATION_TIME_SEC,
         N_FIELDS,
@@ -1559,8 +1559,8 @@ def select_sky_model_sources(pointing_ra_deg: float, pointing_dec_deg: float) ->
         List of source dictionaries with 'ra_deg', 'dec_deg', 'flux_mjy' keys.
         If fewer than MIN_SKYMODEL_SOURCES are found, returns only the brightest source.
     """
-    from dsa110_contimg.core.calibration.catalogs import query_catalog_sources
-    from dsa110_contimg.core.calibration.mosaic_constants import (
+    from dsa110_continuum.calibration.catalogs import query_catalog_sources
+    from dsa110_continuum.calibration.mosaic_constants import (
         EARTH_ROTATION_DEG_PER_SEC,
         INTEGRATION_TIME_SEC,
         MIN_SKYMODEL_SOURCES,

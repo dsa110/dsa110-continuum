@@ -135,8 +135,8 @@ class CalibrationSolveJob(Job):
 
     def execute(self) -> JobResult:
         """Execute the calibration solve job."""
-        from dsa110_contimg.core.calibration.caltables import discover_caltables
-        from dsa110_contimg.core.calibration.streaming import solve_calibration_for_ms
+        from dsa110_continuum.calibration.caltables import discover_caltables
+        from dsa110_continuum.calibration.streaming import solve_calibration_for_ms
 
         # Validate first
         is_valid, error = self.validate()
@@ -299,7 +299,7 @@ class CalibrationApplyJob(Job):
 
     def execute(self) -> JobResult:
         """Execute the calibration apply job."""
-        from dsa110_contimg.core.calibration.applycal import apply_to_target
+        from dsa110_continuum.calibration.applycal import apply_to_target
 
         # Validate first
         is_valid, error = self.validate()
@@ -446,7 +446,7 @@ class CalibrationValidateJob(Job):
 
     def execute(self) -> JobResult:
         """Execute the calibration validation job."""
-        from dsa110_contimg.core.calibration.refant_selection import (
+        from dsa110_continuum.calibration.refant_selection import (
             analyze_antenna_health_from_caltable,
         )
 
@@ -483,7 +483,7 @@ class CalibrationValidateJob(Job):
 
         if not caltable_paths:
             # Try to discover from MS path
-            from dsa110_contimg.core.calibration.caltables import discover_caltables
+            from dsa110_continuum.calibration.caltables import discover_caltables
 
             discovered = discover_caltables(self.ms_path)
             for cal_type, path in discovered.items():

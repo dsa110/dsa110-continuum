@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass
 
 from dsa110_contimg.workflow.pipeline import Job, JobResult, register_job
-from dsa110_contimg.core.mosaic.jobs import MosaicJobConfig
+from dsa110_continuum.mosaic.jobs import MosaicJobConfig
 from dsa110_contimg.workflow.dagster.jobs.science_mosaic import science_mosaic_workflow
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ class SciencePlanningJob(Job):
 
     def execute(self) -> JobResult:
         """Execute the planning job."""
-        from dsa110_contimg.core.mosaic.schema import ensure_mosaic_tables
+        from dsa110_continuum.mosaic.schema import ensure_mosaic_tables
 
         is_valid, error = self.validate()
         if not is_valid:

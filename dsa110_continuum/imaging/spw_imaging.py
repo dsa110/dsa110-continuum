@@ -27,7 +27,7 @@ try:
 except ImportError:
     table = None  # type: ignore[assignment, misc]
 
-from dsa110_contimg.core.imaging.cli_imaging import image_ms
+from dsa110_continuum.imaging.cli_imaging import image_ms
 
 LOG = logging.getLogger(__name__)
 
@@ -178,7 +178,7 @@ def image_spw(
     pbcor_casa = f"{imagename}.image.pbcor"
     if Path(pbcor_casa).exists():
         # Convert to FITS if needed
-        from dsa110_contimg.core.imaging.export import export_fits
+        from dsa110_continuum.imaging.export import export_fits
 
         casa_images = [pbcor_casa]
         exported = export_fits(casa_images)

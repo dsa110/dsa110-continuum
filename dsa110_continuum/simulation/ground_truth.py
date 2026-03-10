@@ -55,7 +55,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from dsa110_contimg.core.simulation.variability_models import (
+from dsa110_continuum.simulation.variability_models import (
     VariabilityModel,
     compute_flux_at_time,
 )
@@ -124,7 +124,7 @@ class GroundTruthSource:
         """Deserialize from dictionary."""
         var_model = None
         if "variability_model" in data:
-            from dsa110_contimg.core.simulation.variability_models import VariabilityModel
+            from dsa110_continuum.simulation.variability_models import VariabilityModel
 
             var_model = VariabilityModel.from_dict(data["variability_model"])
 
@@ -409,7 +409,7 @@ class GroundTruthRegistry:
         for row in cursor.fetchall():
             var_model = None
             if row["variability_model"]:
-                from dsa110_contimg.core.simulation.variability_models import VariabilityModel
+                from dsa110_continuum.simulation.variability_models import VariabilityModel
 
                 var_model = VariabilityModel.from_dict(json.loads(row["variability_model"]))
 

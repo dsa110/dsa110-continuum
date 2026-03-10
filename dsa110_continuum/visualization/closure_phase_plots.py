@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from dsa110_contimg.core.visualization.config import FigureConfig, PlotStyle
+from dsa110_continuum.visualization.config import FigureConfig, PlotStyle
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure

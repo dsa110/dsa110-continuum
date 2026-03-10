@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from matplotlib.figure import Figure
     from numpy.typing import NDArray
 
-from dsa110_contimg.core.visualization.config import FigureConfig, PlotStyle
+from dsa110_continuum.visualization.config import FigureConfig, PlotStyle
 
 logger = logging.getLogger(__name__)
 

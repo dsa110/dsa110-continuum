@@ -6,7 +6,7 @@ It serves as an Anti-Corruption Layer (ACL) to protect the core application doma
 from direct dependencies on the CASA 6 modular structure.
 
 Usage:
-    from dsa110_contimg.core.adapters.casa import casa_adapter
+    from dsa110_continuum.adapters.casa import casa_adapter
     
     # Get a tool instance
     qa = casa_adapter.quanta()

@@ -121,7 +121,7 @@ def load_photometry_report_data(
     else:
         # Try to measure from the FITS file directly
         try:
-            from dsa110_contimg.core.photometry.forced import measure_forced_peak
+            from dsa110_continuum.photometry.forced import measure_forced_peak
 
             result = measure_forced_peak(
                 fits_path=fits_path,

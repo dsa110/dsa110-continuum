@@ -252,7 +252,7 @@ def _search_registry(
     List[CalibrationCandidate]
         List of valid calibration candidates
     """
-    from dsa110_contimg.core.calibration.hardening import get_validity_hours_for_type
+    from dsa110_continuum.calibration.hardening import get_validity_hours_for_type
 
     candidates = []
 

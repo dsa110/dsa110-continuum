@@ -46,7 +46,7 @@ from astropy.time import Time
 from astropy import units as u
 from dsa110_contimg.common.utils.constants import DSA110_LOCATION, DSA110_LATITUDE, DSA110_LONGITUDE
 from dsa110_contimg.common.utils.time_utils import detect_casa_time_format, jd_to_mjd
-from dsa110_contimg.core.visualization.config import FigureConfig, PlotStyle
+from dsa110_continuum.visualization.config import FigureConfig, PlotStyle
 
 logger = logging.getLogger(__name__)
 

@@ -11,8 +11,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from dsa110_contimg.core.visualization.config import FigureConfig, PlotStyle
-from dsa110_contimg.core.visualization.plot_context import PlotContext, should_generate_interactive
+from dsa110_continuum.visualization.config import FigureConfig, PlotStyle
+from dsa110_continuum.visualization.plot_context import PlotContext, should_generate_interactive
 
 
 def _setup_matplotlib() -> None:
@@ -70,7 +70,7 @@ def plot_rfi_spectrum(
         >>> # Dual output
         >>> plot_rfi_spectrum(freqs, occ, "out.png", dual_output=True)
     """
-    from dsa110_contimg.core.visualization.plot_context import PerformanceLogger
+    from dsa110_continuum.visualization.plot_context import PerformanceLogger
 
     # Performance logging
     with PerformanceLogger("rfi_spectrum", output_path, context, interactive) as perf:
@@ -112,7 +112,7 @@ def _generate_rfi_spectrum_json(
     occupancy: np.ndarray :
 
     """
-    from dsa110_contimg.core.visualization.vega_specs import (
+    from dsa110_continuum.visualization.vega_specs import (
         create_rfi_spectrum_spec,
         save_vega_spec,
     )
@@ -225,7 +225,7 @@ def plot_rfi_waterfall(
     context: Optional[PlotContext] :
          (Default value = None)
     """
-    from dsa110_contimg.core.visualization.plot_context import PerformanceLogger
+    from dsa110_continuum.visualization.plot_context import PerformanceLogger
 
     # Performance logging
     with PerformanceLogger("rfi_waterfall", output_path, context, interactive) as perf:
@@ -272,7 +272,7 @@ def _generate_rfi_waterfall_json(
     """
     from astropy.time import Time
 
-    from dsa110_contimg.core.visualization.vega_specs import (
+    from dsa110_continuum.visualization.vega_specs import (
         create_rfi_waterfall_spec,
         save_vega_spec,
     )

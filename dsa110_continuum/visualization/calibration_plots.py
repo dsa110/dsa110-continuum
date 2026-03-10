@@ -20,9 +20,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from dsa110_contimg.core.visualization.config import FigureConfig, PlotStyle
-from dsa110_contimg.core.visualization.plot_context import PlotContext, should_generate_interactive
-from dsa110_contimg.core.visualization.vega_specs import save_vega_spec
+from dsa110_continuum.visualization.config import FigureConfig, PlotStyle
+from dsa110_continuum.visualization.plot_context import PlotContext, should_generate_interactive
+from dsa110_continuum.visualization.vega_specs import save_vega_spec
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure
@@ -450,7 +450,7 @@ def plot_kcal_delays(
 
     """
     _setup_matplotlib()
-    from dsa110_contimg.core.visualization.kcal_delay_plots import (
+    from dsa110_continuum.visualization.kcal_delay_plots import (
         plot_kcal_delays as _plot_kcal_delays,
     )
 
@@ -710,7 +710,7 @@ def plot_flagging_diagnostics(
     config: Optional[FigureConfig] :
          (Default value = None)
     """
-    from dsa110_contimg.core.qa.calibration_quality import compute_flag_statistics
+    from dsa110_continuum.qa.calibration_quality import compute_flag_statistics
 
     if config is None:
         config = FigureConfig(style=PlotStyle.QUICKLOOK)
@@ -867,7 +867,7 @@ def plot_gain_snr(
          (Default value = None)
 
     """
-    from dsa110_contimg.core.qa.calibration_quality import extract_gain_snr
+    from dsa110_continuum.qa.calibration_quality import extract_gain_snr
 
     if config is None:
         config = FigureConfig(style=PlotStyle.QUICKLOOK)
@@ -994,7 +994,7 @@ def plot_dterm_scatter(
          (Default value = None)
 
     """
-    from dsa110_contimg.core.qa.calibration_quality import extract_dterms
+    from dsa110_continuum.qa.calibration_quality import extract_dterms
 
     if config is None:
         config = FigureConfig(style=PlotStyle.QUICKLOOK)

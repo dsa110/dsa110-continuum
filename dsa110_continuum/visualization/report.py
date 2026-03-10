@@ -165,7 +165,7 @@ def _get_extra_css(sections: Sequence[ReportSection]) -> str:
         return ""
 
     try:
-        from dsa110_contimg.core.visualization.fits_viewer_templates import get_css_styles
+        from dsa110_continuum.visualization.fits_viewer_templates import get_css_styles
 
         return _strip_style_tags(get_css_styles())
     except Exception:
@@ -404,7 +404,7 @@ def _try_build_calibration_section(ms_path: Path, config: Any) -> ReportSection 
     for pattern in ["*.bcal", "*.gcal", "*.kcal", "*.B", "*.G", "*.K"]:
         for caltable in caltable_dir.glob(pattern):
             try:
-                from dsa110_contimg.core.visualization.calibration_plots import (
+                from dsa110_continuum.visualization.calibration_plots import (
                     plot_bandpass,
                     plot_gains,
                     plot_kcal_delays,
@@ -453,11 +453,11 @@ def _try_build_imaging_section(
     viewer_manager = None
     render_fits_image_block = None
     try:
-        from dsa110_contimg.core.visualization.fits_viewer import (
+        from dsa110_continuum.visualization.fits_viewer import (
             FITSViewerConfig,
             FITSViewerManager,
         )
-        from dsa110_contimg.core.visualization.fits_viewer_templates import (
+        from dsa110_continuum.visualization.fits_viewer_templates import (
             render_fits_image_block as _render_fits_image_block,
         )
 
@@ -477,7 +477,7 @@ def _try_build_imaging_section(
 
     for fits_file in image_dir.glob("*.fits"):
         try:
-            from dsa110_contimg.core.visualization.fits_plots import plot_fits_image
+            from dsa110_continuum.visualization.fits_plots import plot_fits_image
 
             fig = plot_fits_image(fits_file, config=config)
 
@@ -540,7 +540,7 @@ def create_diagnostic_report(
         Path to generated report
 
     """
-    from dsa110_contimg.core.visualization import (
+    from dsa110_continuum.visualization import (
         FigureConfig,
         PlotStyle,
     )

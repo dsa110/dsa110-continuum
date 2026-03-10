@@ -16,7 +16,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from dsa110_contimg.core.catalog.build_master import (
+from dsa110_continuum.catalog.build_master import (
     build_master,
     build_master_from_sqlite,
     build_master_union_from_sqlite,

@@ -21,7 +21,7 @@ import casacore.tables as casatables  # noqa: E402
 
 table = casatables.table  # noqa: N816
 
-from dsa110_contimg.core.calibration.schedule import DSA110_LOCATION  # noqa: E402
+from dsa110_continuum.calibration.schedule import DSA110_LOCATION  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

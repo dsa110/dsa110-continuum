@@ -34,7 +34,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.wcs.utils import proj_plane_pixel_scales
 
-from dsa110_contimg.core.calibration.catalog_registry import (
+from dsa110_continuum.calibration.catalog_registry import (
     CatalogName,
     query_catalog,
 )

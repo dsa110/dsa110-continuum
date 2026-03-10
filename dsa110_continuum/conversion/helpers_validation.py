@@ -10,10 +10,10 @@ from dsa110_contimg.common.utils.casa_init import ensure_casa_path
 ensure_casa_path()
 
 # Use the shared patchable table symbol from conversion.helpers to make unit tests simpler
-import dsa110_contimg.core.conversion.helpers as _helpers
+import dsa110_continuum.conversion.helpers as _helpers
 
 # Use canonical angular_separation with numba→astropy fallback chain
-from dsa110_contimg.core.conversion.helpers_coordinates import angular_separation
+from dsa110_continuum.conversion.helpers_coordinates import angular_separation
 
 logger = logging.getLogger("dsa110_contimg.conversion.helpers")
 

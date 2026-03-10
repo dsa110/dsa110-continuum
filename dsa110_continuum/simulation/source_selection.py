@@ -17,8 +17,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from dsa110_contimg.core.catalog.coverage import CATALOG_COVERAGE
-from dsa110_contimg.core.catalog.query import query_sources
+from dsa110_continuum.catalog.coverage import CATALOG_COVERAGE
+from dsa110_continuum.catalog.query import query_sources
 
 
 @dataclass(frozen=True)

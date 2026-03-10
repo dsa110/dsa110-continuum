@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from dsa110_contimg.core.calibration.casa_service import CASAService
+from dsa110_continuum.calibration.casa_service import CASAService
 
 # Ensure CASAPATH is set before importing CASA modules
 from dsa110_contimg.common.utils.casa_init import ensure_casa_path
@@ -374,7 +374,7 @@ def preflight_check_casa() -> dict[str, str]:
 
     # Check CASA availability via service
     try:
-        from dsa110_contimg.core.calibration.casa_service import CASAService
+        from dsa110_continuum.calibration.casa_service import CASAService
 
         service = CASAService()
         version = service.get_version()

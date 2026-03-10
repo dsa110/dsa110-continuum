@@ -322,7 +322,7 @@ def check_geometric_setup(
         (geometry_ok, metrics) tuple
 
     """
-    from dsa110_contimg.core.calibration.runner import _get_calibrator_position
+    from dsa110_continuum.calibration.runner import _get_calibrator_position
 
     # Get calibrator position
     try:
@@ -735,7 +735,7 @@ def _apply_recovery_fix(
         elif fix == "apply_prebandpass_phase":
             # Solve and apply pre-bandpass phase
             logger.info("  → Solving pre-bandpass phase calibration...")
-            from dsa110_contimg.core.calibration.calibration import solve_prebandpass_phase
+            from dsa110_continuum.calibration.calibration import solve_prebandpass_phase
 
             prebp_tables = solve_prebandpass_phase(
                 ms=ms_path,
@@ -781,7 +781,7 @@ def _apply_recovery_fix(
             # Run more aggressive RFI flagging
             logger.info("  → Running aggressive RFI flagging...")
             try:
-                from dsa110_contimg.core.calibration.flagging import flag_rfi_aoflagger
+                from dsa110_continuum.calibration.flagging import flag_rfi_aoflagger
 
                 flag_rfi_aoflagger(ms_path, datacolumn="data")
                 diagnostic_log.append(
@@ -962,7 +962,7 @@ def auto_recover_bandpass_calibration(
         if current_prebp is None and iteration == 0:
             logger.info("No pre-bandpass phase table provided. Solving one first...")
             try:
-                from dsa110_contimg.core.calibration.calibration import solve_prebandpass_phase
+                from dsa110_continuum.calibration.calibration import solve_prebandpass_phase
 
                 prebp_tables = solve_prebandpass_phase(
                     ms=ms_path,
@@ -995,7 +995,7 @@ def auto_recover_bandpass_calibration(
         # Step 2: Attempt bandpass solve
         logger.info("Attempting bandpass solve...")
         try:
-            from dsa110_contimg.core.calibration.calibration import solve_bandpass
+            from dsa110_continuum.calibration.calibration import solve_bandpass
 
             tables = solve_bandpass(
                 ms=ms_path,

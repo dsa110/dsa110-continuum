@@ -195,7 +195,7 @@ def _call_gaincal_guarded(**kwargs: Any) -> None:
         logger.debug("casatasks.gaincal unavailable; falling back to CASAService")
 
     try:
-        from dsa110_contimg.core.calibration.casa_service import CASAService
+        from dsa110_continuum.calibration.casa_service import CASAService
 
         CASAService().gaincal(**kwargs)
     except Exception as e:  # noqa: BLE001
@@ -216,7 +216,7 @@ def _call_applycal_guarded(**kwargs: Any) -> None:
         logger.debug("casatasks.applycal unavailable; falling back to CASAService")
 
     try:
-        from dsa110_contimg.core.calibration.casa_service import CASAService
+        from dsa110_continuum.calibration.casa_service import CASAService
 
         CASAService().applycal(**kwargs)
     except Exception as e:  # noqa: BLE001

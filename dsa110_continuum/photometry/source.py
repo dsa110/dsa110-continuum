@@ -21,7 +21,7 @@ from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
 try:
-    from dsa110_contimg.core.catalog.multiwavelength import (
+    from dsa110_continuum.catalog.multiwavelength import (
         check_all_services,
         check_atnf,
         check_first,
@@ -30,7 +30,7 @@ try:
         check_pulsarscraper,
         check_simbad,
     )
-    from dsa110_contimg.core.photometry.variability import (
+    from dsa110_continuum.photometry.variability import (
         calculate_eta_metric,
         calculate_m_metric,
         calculate_vs_metric,
@@ -523,7 +523,7 @@ class Source:
             Maximum number of neighbors to use (closest/brightest) (Default value = 20)
 
         """
-        from dsa110_contimg.core.photometry.variability import calculate_relative_flux
+        from dsa110_continuum.photometry.variability import calculate_relative_flux
 
         # 1. Find Neighbors
         neighbor_ids = self.find_stable_neighbors(

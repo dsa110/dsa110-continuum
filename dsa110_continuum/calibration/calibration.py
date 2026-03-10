@@ -12,11 +12,11 @@ from typing import Any
 
 from dsa110_contimg.common.utils import timed
 from dsa110_contimg.common.utils.casa_init import ensure_casa_path
-from dsa110_contimg.core.calibration.casa_service import CASAService
-from dsa110_contimg.core.calibration.validate import (
+from dsa110_continuum.calibration.casa_service import CASAService
+from dsa110_continuum.calibration.validate import (
     validate_caltables_for_use,
 )
-from dsa110_contimg.core.conversion.merge_spws import get_spw_count
+from dsa110_continuum.conversion.merge_spws import get_spw_count
 
 # Initialize CASA environment before importing CASA modules
 ensure_casa_path()
@@ -1201,7 +1201,7 @@ def solve_delay(
         # QA Check 1: General calibration table validation
         try:
             logger.info("→ QA Check 1: Table structure and reference antenna validation")
-            from dsa110_contimg.core.qa.pipeline_quality import check_calibration_quality
+            from dsa110_continuum.qa.pipeline_quality import check_calibration_quality
 
             check_calibration_quality(tables, ms_path=ms, alert_on_issues=True)
             logger.info("  ✓ Table structure valid")
@@ -1215,7 +1215,7 @@ def solve_delay(
             logger.info("  Expected: All delays within ±200 ns (geometric bounds)")
             logger.info("  Expected: At least 80% of antennas with valid solutions")
             logger.info("  Expected: Reference antenna delay = 0 ns")
-            from dsa110_contimg.core.qa.delay_validation import check_delay_solutions
+            from dsa110_continuum.qa.delay_validation import check_delay_solutions
 
             for ktable in tables:
                 if ktable.endswith(".k") or ktable.endswith(".2k"):
@@ -1957,7 +1957,7 @@ def _run_bandpass_diagnostics(
     report_path: str | None = None
 
     try:
-        from dsa110_contimg.core.calibration.bandpass_diagnostics import (
+        from dsa110_continuum.calibration.bandpass_diagnostics import (
             analyze_flagging_pattern,
             diagnose_bandpass_quality,
             extract_bandpass_flagging_stats,
@@ -2021,7 +2021,7 @@ def _run_bandpass_diagnostics(
         # Generate HTML report if requested
         if generate_report:
             try:
-                from dsa110_contimg.core.calibration.bandpass_report import generate_bandpass_report
+                from dsa110_continuum.calibration.bandpass_report import generate_bandpass_report
 
                 # Determine output directory
                 if report_output_dir is None:
@@ -2172,10 +2172,10 @@ def solve_bandpass(
     # Run comprehensive precondition checks before attempting bandpass calibration.
     # This prevents wasting compute on data that will inevitably fail.
     try:
-        from dsa110_contimg.core.calibration.guardrails import (
+        from dsa110_continuum.calibration.guardrails import (
             CalibrationGuardrails,
         )
-        from dsa110_contimg.core.calibration.preconditions import (
+        from dsa110_continuum.calibration.preconditions import (
             validate_bandpass_preconditions,
         )
 
@@ -2448,7 +2448,7 @@ def solve_bandpass(
     # Generate comprehensive HTML report with figures for every bandpass solve
     if generate_diagnostics_report:
         try:
-            from dsa110_contimg.core.calibration.bandpass_report import generate_bandpass_report
+            from dsa110_continuum.calibration.bandpass_report import generate_bandpass_report
 
             # Determine output directory
             output_dir = diagnostics_output_dir
@@ -2507,7 +2507,7 @@ def solve_bandpass(
 
     # QA validation of bandpass calibration tables
     try:
-        from dsa110_contimg.core.qa.pipeline_quality import check_calibration_quality
+        from dsa110_continuum.qa.pipeline_quality import check_calibration_quality
 
         check_calibration_quality(out, ms_path=ms, alert_on_issues=True)
     except Exception as e:
@@ -2906,7 +2906,7 @@ def solve_gains(
     logger.info("    - Time coverage matches MS")
     logger.info("    - No entirely flagged time ranges")
     try:
-        from dsa110_contimg.core.qa.pipeline_quality import check_calibration_quality
+        from dsa110_continuum.qa.pipeline_quality import check_calibration_quality
 
         check_calibration_quality(out, ms_path=ms, alert_on_issues=True)
         logger.info("  ✓ Pipeline quality validation passed")

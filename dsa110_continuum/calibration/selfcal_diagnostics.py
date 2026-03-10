@@ -6,7 +6,7 @@ completes. It integrates with the convergence_plots and closure_phase_plots
 visualization modules.
 
 Usage:
-    from dsa110_contimg.core.calibration.selfcal_diagnostics import (
+    from dsa110_continuum.calibration.selfcal_diagnostics import (
         generate_selfcal_diagnostics,
     )
 
@@ -55,7 +55,7 @@ def generate_selfcal_diagnostics(
     Dict[str, Path]
         Dictionary mapping plot name to output path.
     """
-    from dsa110_contimg.core.visualization.convergence_plots import (
+    from dsa110_continuum.visualization.convergence_plots import (
         ConvergenceData,
         plot_antenna_solution_quality,
         plot_chi_squared_improvement,
@@ -127,7 +127,7 @@ def generate_selfcal_diagnostics(
     # 4. Closure phases (if MS available and requested)
     if ms_path and include_closure_phases:
         try:
-            from dsa110_contimg.core.visualization.closure_phase_plots import (
+            from dsa110_continuum.visualization.closure_phase_plots import (
                 compute_closure_phases,
                 extract_closure_phases_from_ms,
                 plot_closure_phase_antenna_contribution,
@@ -195,12 +195,12 @@ def generate_observation_diagnostics(
         Dictionary mapping plot name to output path
 
     """
-    from dsa110_contimg.core.visualization.elevation_plots import (
+    from dsa110_continuum.visualization.elevation_plots import (
         extract_geometry_from_ms,
         plot_elevation_vs_time,
         plot_observation_summary,
     )
-    from dsa110_contimg.core.visualization.uv_plots import (
+    from dsa110_continuum.visualization.uv_plots import (
         extract_uv_from_ms,
         plot_uv_coverage,
     )

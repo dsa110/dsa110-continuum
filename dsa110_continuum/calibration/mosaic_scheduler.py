@@ -15,7 +15,7 @@ from typing import Any
 
 import numpy as np
 
-from dsa110_contimg.core.calibration.mosaic_constants import (
+from dsa110_continuum.calibration.mosaic_constants import (
     EARTH_ROTATION_DEG_PER_SEC,
     INTEGRATION_TIME_SEC,
     MOSAIC_TILE_COUNT,
@@ -227,7 +227,7 @@ class MosaicCalibrationManager:
         int
             Number of unique sources above flux threshold
         """
-        from dsa110_contimg.core.calibration.model import count_bright_sources_in_tile
+        from dsa110_continuum.calibration.model import count_bright_sources_in_tile
         
         return count_bright_sources_in_tile(
             pointing_ra_deg=pointing_ra_deg,
@@ -253,7 +253,7 @@ class MosaicCalibrationManager:
             Calibrator info with 'name', 'ra_deg', 'dec_deg', 'flux_jy', or None if not found
         """
         try:
-            from dsa110_contimg.core.calibration.catalogs import (
+            from dsa110_continuum.calibration.catalogs import (
                 load_vla_catalog,
             )
         except ImportError:

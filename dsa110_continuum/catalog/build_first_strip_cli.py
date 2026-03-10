@@ -6,7 +6,7 @@ Use the unified entry point instead:
   python -m dsa110_contimg.core.catalog.build_strip_cli first ...
 """
 
-from dsa110_contimg.core.catalog.build_strip_cli import main as unified_main
+from dsa110_continuum.catalog.build_strip_cli import main as unified_main
 
 
 def main(argv: list[str] | None = None) -> int:

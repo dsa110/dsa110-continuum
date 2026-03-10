@@ -399,6 +399,6 @@ def image_ms_with_params(ms_path: str, params: ImagingParams) -> None:
         >>> params = ImagingParams.for_standard("output_image")
         >>> image_ms_with_params("/data/obs.ms", params)
     """
-    from dsa110_contimg.core.imaging.cli_imaging import image_ms
+    from dsa110_continuum.imaging.cli_imaging import image_ms
 
     image_ms(ms_path, **params.to_dict())

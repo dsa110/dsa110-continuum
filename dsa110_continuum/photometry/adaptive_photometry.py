@@ -14,14 +14,14 @@ from pathlib import Path
 
 import numpy as np
 
-from dsa110_contimg.core.imaging.spw_imaging import get_spw_info, image_all_spws
-from dsa110_contimg.core.photometry.adaptive_binning import (
+from dsa110_continuum.imaging.spw_imaging import get_spw_info, image_all_spws
+from dsa110_continuum.photometry.adaptive_binning import (
     AdaptiveBinningConfig,
     Detection,
     adaptive_bin_channels,
     create_measure_fn_from_images,
 )
-from dsa110_contimg.core.photometry.forced import measure_forced_peak
+from dsa110_continuum.photometry.forced import measure_forced_peak
 from dsa110_contimg.common.utils.runtime_safeguards import (
     log_progress,
     progress_monitor,

@@ -394,7 +394,7 @@ def _query_radio_catalog(
     try:
         if catalog == "radio":
             # Use merged NVSS+FIRST catalog
-            from dsa110_contimg.core.calibration.catalogs import (
+            from dsa110_continuum.calibration.catalogs import (
                 query_merged_nvss_first_sources,
             )
 
@@ -406,7 +406,7 @@ def _query_radio_catalog(
                 max_sources=max_sources,
             )
         elif catalog == "nvss":
-            from dsa110_contimg.core.calibration.catalogs import query_nvss_sources
+            from dsa110_continuum.calibration.catalogs import query_nvss_sources
 
             return query_nvss_sources(
                 ra_deg=ra_deg,
@@ -416,7 +416,7 @@ def _query_radio_catalog(
                 max_sources=max_sources,
             )
         elif catalog == "first":
-            from dsa110_contimg.core.calibration.catalogs import query_first_sources
+            from dsa110_continuum.calibration.catalogs import query_first_sources
 
             return query_first_sources(
                 ra_deg=ra_deg,
@@ -427,7 +427,7 @@ def _query_radio_catalog(
             )
         else:
             logger.warning(f"Unknown catalog '{catalog}', falling back to NVSS")
-            from dsa110_contimg.core.calibration.catalogs import query_nvss_sources
+            from dsa110_continuum.calibration.catalogs import query_nvss_sources
 
             return query_nvss_sources(
                 ra_deg=ra_deg,

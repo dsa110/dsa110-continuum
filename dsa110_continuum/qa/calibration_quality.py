@@ -19,6 +19,7 @@ import numpy as np
 
 # Import wrap_phase_deg for angle wrapping
 from dsa110_contimg.common.utils.angles import wrap_phase_deg
+from dsa110_continuum.calibration.caltables import discover_caltables
 
 # casacore is only available inside the CASA / casa6 environment. Guard the
 # import so that running tests on plain runners (without CASA) doesn't fail at
@@ -38,6 +39,53 @@ except Exception:
 logger = logging.getLogger(__name__)
 
 
+def _get_expected_caltables(
+    ms_path: str,
+    caltable_dir: str | None = None,
+) -> dict[str, list[str]]:
+    """Return the expected K/B/G calibration table paths for an MS."""
+    ms_path_obj = Path(ms_path)
+    ms_stem = ms_path_obj.stem
+    base_dir = Path(caltable_dir) if caltable_dir else ms_path_obj.parent
+
+    expected = {
+        "k": [str(base_dir / f"{ms_stem}.kcal")],
+        "bp": [str(base_dir / f"{ms_stem}.bpcal")],
+        "g": [str(base_dir / f"{ms_stem}.gpcal")],
+    }
+    expected["all"] = expected["k"] + expected["bp"] + expected["g"]
+    return expected
+
+
+def _validate_caltables_exist(
+    ms_path: str,
+    caltable_dir: str | None = None,
+) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    """Validate K/B/G calibration table presence using local discovery only."""
+    discovered = discover_caltables(ms_path)
+    expected = _get_expected_caltables(ms_path, caltable_dir)
+    discovered_key_map = {"k": "K", "bp": "B", "g": "G"}
+    existing = {"all": [], "k": [], "bp": [], "g": []}
+    missing = {"all": [], "k": [], "bp": [], "g": []}
+
+    for cal_type in ["k", "bp", "g"]:
+        existing_path = next((p for p in expected[cal_type] if os.path.exists(p)), None)
+        if existing_path is None and caltable_dir is None:
+            discovered_path = discovered.get(discovered_key_map[cal_type])
+            if discovered_path and os.path.exists(discovered_path):
+                existing_path = discovered_path
+
+        if existing_path:
+            existing[cal_type].append(existing_path)
+            existing["all"].append(existing_path)
+        else:
+            missing_path = expected[cal_type][0]
+            missing[cal_type].append(missing_path)
+            missing["all"].append(missing_path)
+
+    return existing, missing
+
+
 def check_caltable_completeness(ms_path: str, caltable_dir: str | None = None) -> dict[str, Any]:
     """Check that all expected calibration tables exist for an MS.
 
@@ -48,49 +96,8 @@ def check_caltable_completeness(ms_path: str, caltable_dir: str | None = None) -
     caltable_dir : Optional[str]
         Directory containing caltables (default: same as MS)
     """
-    try:
-        from dsa110_contimg.core.calibration.caltable_paths import (
-            get_expected_caltables,
-            validate_caltables_exist,
-        )
-    except ImportError:
-        # Fallback if caltable_paths module is missing
-        from dsa110_contimg.core.calibration.caltables import discover_caltables
-
-        def get_expected_caltables(ms_path, caltable_dir=None):
-            ms_path_obj = Path(ms_path)
-            ms_stem = ms_path_obj.stem
-            base_dir = Path(caltable_dir) if caltable_dir else ms_path_obj.parent
-            expected = {
-                "k": [str(base_dir / f"{ms_stem}.kcal")],
-                "bp": [str(base_dir / f"{ms_stem}.bpcal")],
-                "g": [str(base_dir / f"{ms_stem}.gpcal")],
-            }
-            expected["all"] = expected["k"] + expected["bp"] + expected["g"]
-            return expected
-
-        def validate_caltables_exist(ms_path, caltable_dir=None):
-            discovered = discover_caltables(ms_path)
-            existing = {"all": [], "k": [], "bp": [], "g": []}
-            missing = {"all": [], "k": [], "bp": [], "g": []}
-
-            expected = get_expected_caltables(ms_path, caltable_dir)
-
-            for cal_type in ["k", "bp", "g"]:
-                path = discovered.get(cal_type)
-                if path and os.path.exists(path):
-                    existing[cal_type].append(path)
-                    existing["all"].append(path)
-                else:
-                    # Use the first expected path as the missing one
-                    missing_path = expected[cal_type][0]
-                    missing[cal_type].append(missing_path)
-                    missing["all"].append(missing_path)
-
-            return existing, missing
-
-    expected = get_expected_caltables(ms_path, caltable_dir)
-    existing, missing = validate_caltables_exist(ms_path, caltable_dir)
+    expected = _get_expected_caltables(ms_path, caltable_dir)
+    existing, missing = _validate_caltables_exist(ms_path, caltable_dir)
 
     n_expected = len(expected["all"])
     n_existing = len(existing["all"])
@@ -887,7 +894,7 @@ def flag_problematic_spws(
         - NRAO/VLBA calibration guides recommend flagging or excluding SPWs with
         consistently high flagging rates that cannot be effectively calibrated
     """
-    from dsa110_contimg.core.calibration.flagging import flag_manual
+    from dsa110_continuum.calibration.flagging import flag_manual
 
     # Analyze per-SPW flagging
     spw_stats = analyze_per_spw_flagging(
@@ -1468,7 +1475,7 @@ def verify_kcal_delays(
             else:
                 logger.info("No existing K-calibration table found. Creating one...")
                 print("No existing K-calibration table found. Creating one...")
-                from dsa110_contimg.core.calibration.calibration import solve_delay
+                from dsa110_continuum.calibration.calibration import solve_delay
 
                 if cal_field is None:
                     cal_field = "0"  # Default to field 0

@@ -32,7 +32,7 @@ def blacklist_atnf_pulsars(
         int
         Number of pulsars blacklisted
     """
-    from dsa110_contimg.core.catalog.calibrator_registry import blacklist_source
+    from dsa110_continuum.catalog.calibrator_registry import blacklist_source
 
     # Query ATNF pulsar catalog
     pulsars = _query_atnf_pulsars()
@@ -164,7 +164,7 @@ def blacklist_wise_agn(
         int
         Number of AGN blacklisted
     """
-    from dsa110_contimg.core.catalog.calibrator_registry import blacklist_source
+    from dsa110_continuum.catalog.calibrator_registry import blacklist_source
 
     # Query WISE AGN catalog
     agn = _query_wise_agn(min_variability=min_variability)
@@ -327,7 +327,7 @@ def manual_blacklist_source(
         bool
         True if successful
     """
-    from dsa110_contimg.core.catalog.calibrator_registry import blacklist_source
+    from dsa110_continuum.catalog.calibrator_registry import blacklist_source
 
     return blacklist_source(
         source_name=source_name,

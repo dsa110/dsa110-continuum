@@ -11,7 +11,7 @@ import pandas as pd
 from astropy.coordinates import Angle, SkyCoord
 from astropy.time import Time
 
-from dsa110_contimg.core.calibration.beam_model import (
+from dsa110_continuum.calibration.beam_model import (
     BeamConfig,
     primary_beam_response,
 )
@@ -231,7 +231,7 @@ def read_first_catalog(
         DataFrame with FIRST catalog data
 
     """
-    from dsa110_contimg.core.catalog.build_master import _read_table
+    from dsa110_continuum.catalog.build_master import _read_table
 
     # If explicit path provided, use it directly
     if first_catalog_path:
@@ -256,7 +256,7 @@ def read_first_catalog(
 
     # Try to download from Vizier
     try:
-        from dsa110_contimg.core.catalog.download import download_first
+        from dsa110_continuum.catalog.download import download_first
         logger.info("Attempting to download FIRST catalog from Vizier...")
         downloaded_path = download_first(cache_dir=cache_dir)
         if downloaded_path and downloaded_path.exists():
@@ -298,7 +298,7 @@ def read_rax_catalog(
     RAX catalog is DSA-110 specific and not available via Vizier.
     Provide the path manually or ensure the catalog is cached in the cache_dir.
     """
-    from dsa110_contimg.core.catalog.build_master import _read_table
+    from dsa110_continuum.catalog.build_master import _read_table
 
     # If explicit path provided, use it directly
     if rax_catalog_path:
@@ -323,7 +323,7 @@ def read_rax_catalog(
 
     # Try to download RACS from Vizier
     try:
-        from dsa110_contimg.core.catalog.download import download_racs
+        from dsa110_continuum.catalog.download import download_racs
         logger.info("Attempting to download RACS catalog from Vizier...")
         downloaded_path = download_racs(cache_dir=cache_dir)
         if downloaded_path and downloaded_path.exists():
@@ -362,7 +362,7 @@ def read_vlass_catalog(
         DataFrame with VLASS catalog data
 
     """
-    from dsa110_contimg.core.catalog.build_master import _read_table
+    from dsa110_continuum.catalog.build_master import _read_table
 
     # If explicit path provided, use it directly
     if vlass_catalog_path:
@@ -388,7 +388,7 @@ def read_vlass_catalog(
 
     # Try to download from Vizier
     try:
-        from dsa110_contimg.core.catalog.download import download_vlass
+        from dsa110_continuum.catalog.download import download_vlass
         logger.info("Attempting to download VLASS catalog from Vizier...")
         downloaded_path = download_vlass(cache_dir=cache_dir)
         if downloaded_path and downloaded_path.exists():
@@ -1236,7 +1236,7 @@ def query_nvss_sources(
                     # Auto-regenerate the corrupted strip if requested
                     if auto_regenerate and corrupted_db_path is not None:
                         try:
-                            from dsa110_contimg.core.catalog.builders import regenerate_nvss_strip_db
+                            from dsa110_continuum.catalog.builders import regenerate_nvss_strip_db
 
                             dec_str = corrupted_db_path.stem.replace("nvss_dec", "")
                             dec_center = float(dec_str)
@@ -1774,7 +1774,7 @@ def query_rax_sources(
                 df_full = read_rax_catalog()
 
                 # Normalize column names for RAX
-                from dsa110_contimg.core.catalog.build_master import _normalize_columns
+                from dsa110_continuum.catalog.build_master import _normalize_columns
 
                 RAX_CANDIDATES = {
                     "ra": ["ra", "ra_deg", "raj2000", "ra_hms"],
@@ -2039,7 +2039,7 @@ def query_vlass_sources(
                 )
                 # Fallback to CSV (slower but always works)
                 # VLASS catalog reading - need to implement read_vlass_catalog or use generic reader
-                from dsa110_contimg.core.catalog.build_master import _read_table
+                from dsa110_continuum.catalog.build_master import _read_table
 
                 # Try to find cached VLASS catalog
                 cache_dir = ".cache/catalogs"
@@ -2065,7 +2065,7 @@ def query_vlass_sources(
                 df_full = _read_table(vlass_path)
 
                 # Normalize column names for VLASS
-                from dsa110_contimg.core.catalog.build_master import _normalize_columns
+                from dsa110_continuum.catalog.build_master import _normalize_columns
 
                 VLASS_CANDIDATES = {
                     "ra": ["ra", "ra_deg", "raj2000"],

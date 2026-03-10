@@ -11,7 +11,7 @@ from pyuvdata.utils.phasing import calc_uvw as _PU_CALC_UVW
 from pyuvdata.utils.phasing import calc_app_coords as _calc_app_coords
 from pyuvdata.utils.phasing import calc_frame_pos_angle as _calc_frame_pos_angle
 
-from dsa110_contimg.core.conversion.helpers_antenna import (
+from dsa110_continuum.conversion.helpers_antenna import (
     _ensure_antenna_diameters,
     set_antenna_positions,
 )

@@ -864,7 +864,7 @@ def _query_catalog_for_image(
     ra_center, dec_center = wcs.pixel_to_world_values(*center_pix)
 
     # Query catalog
-    from dsa110_contimg.core.calibration.catalog_registry import query_catalog
+    from dsa110_continuum.calibration.catalog_registry import query_catalog
 
     catalog_sources = query_catalog(
         catalog=catalog,

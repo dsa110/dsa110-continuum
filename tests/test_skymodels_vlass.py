@@ -20,7 +20,7 @@ def test_make_unified_skymodel_queries_vlass():
         return pd.DataFrame(columns=["ra_deg", "dec_deg", "flux_mjy"])
 
     with patch(
-        "dsa110_contimg.core.catalog.query.query_sources",
+        "dsa110_continuum.catalog.query.query_sources",
         side_effect=fake_query,
     ):
         sky = make_unified_skymodel(10.0, 30.0, 1.0, min_mjy=50.0)
@@ -41,7 +41,7 @@ def test_make_unified_skymodel_vlass_deduplication():
         return pd.DataFrame(columns=["ra_deg", "dec_deg", "flux_mjy"])
 
     with patch(
-        "dsa110_contimg.core.catalog.query.query_sources",
+        "dsa110_continuum.catalog.query.query_sources",
         side_effect=fake_query,
     ):
         sky = make_unified_skymodel(10.0, 30.0, 1.0, min_mjy=50.0)

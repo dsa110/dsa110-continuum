@@ -16,7 +16,7 @@ import numpy as np
 
 table = casatables.table  # noqa: N816
 
-from dsa110_contimg.core.qa.calibration_quality import (
+from dsa110_continuum.qa.calibration_quality import (
     CalibrationQualityMetrics,
     check_corrected_data_quality,
     validate_caltable_quality,

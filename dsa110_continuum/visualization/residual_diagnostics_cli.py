@@ -154,9 +154,9 @@ def main():
             sys.exit(1)
 
     try:
-        from dsa110_contimg.core.visualization.config import FigureConfig, PlotStyle
-        from dsa110_contimg.core.visualization.plot_context import PlotContext
-        from dsa110_contimg.core.visualization.residual_diagnostics import (
+        from dsa110_continuum.visualization.config import FigureConfig, PlotStyle
+        from dsa110_continuum.visualization.plot_context import PlotContext
+        from dsa110_continuum.visualization.residual_diagnostics import (
             compute_residual_statistics,
             extract_residuals_from_ms,
             plot_residual_amplitude_vs_baseline,
@@ -253,7 +253,7 @@ def main():
             logger.info(f"Saved statistics: {stats_path}")
 
         # Print quality assessment
-        from dsa110_contimg.core.visualization.residual_diagnostics import _assess_residual_quality
+        from dsa110_continuum.visualization.residual_diagnostics import _assess_residual_quality
 
         assessment = _assess_residual_quality(stats)
         print("\n" + "=" * 60)

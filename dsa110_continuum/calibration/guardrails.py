@@ -10,7 +10,7 @@ This module provides guardrails that can be used at the pipeline level to:
 4. Track and report calibration quality metrics
 
 Usage:
-    from dsa110_contimg.core.calibration.guardrails import (
+    from dsa110_continuum.calibration.guardrails import (
         CalibrationGuardrails,
         QualityAction,
         get_quality_action,

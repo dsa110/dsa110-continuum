@@ -42,7 +42,7 @@ def setup_logging(verbose: bool = False) -> None:
 
 def cmd_calibrate(args: argparse.Namespace) -> int:
     """Run full calibration sequence."""
-    from dsa110_contimg.core.calibration.runner import run_calibrator
+    from dsa110_continuum.calibration.runner import run_calibrator
 
     setup_logging(args.verbose)
 
@@ -79,7 +79,7 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
 
 def cmd_phaseshift(args: argparse.Namespace) -> int:
     """Phaseshift calibrator field to calibrator position."""
-    from dsa110_contimg.core.calibration.runner import phaseshift_ms
+    from dsa110_continuum.calibration.runner import phaseshift_ms
 
     setup_logging(args.verbose)
 
@@ -113,7 +113,7 @@ def cmd_phaseshift(args: argparse.Namespace) -> int:
 
 def cmd_flag_diagnostics(args: argparse.Namespace) -> int:
     """Generate flagging diagnostics for a calibration table."""
-    from dsa110_contimg.core.visualization.calibration_plots import plot_flagging_diagnostics
+    from dsa110_continuum.visualization.calibration_plots import plot_flagging_diagnostics
 
     setup_logging(args.verbose)
     outputs = plot_flagging_diagnostics(
@@ -128,7 +128,7 @@ def cmd_flag_diagnostics(args: argparse.Namespace) -> int:
 
 def cmd_plot_dterms(args: argparse.Namespace) -> int:
     """Plot D-term leakage diagnostics."""
-    from dsa110_contimg.core.visualization.calibration_plots import plot_dterm_scatter
+    from dsa110_continuum.visualization.calibration_plots import plot_dterm_scatter
 
     setup_logging(args.verbose)
     outputs = plot_dterm_scatter(args.caltable, output=args.output)
@@ -139,8 +139,8 @@ def cmd_plot_dterms(args: argparse.Namespace) -> int:
 
 def cmd_compare_gains(args: argparse.Namespace) -> int:
     """Compare two calibration tables."""
-    from dsa110_contimg.core.calibration.qa_compare import compare_caltables
-    from dsa110_contimg.core.visualization.calibration_plots import plot_gain_comparison
+    from dsa110_continuum.calibration.qa_compare import compare_caltables
+    from dsa110_continuum.visualization.calibration_plots import plot_gain_comparison
 
     setup_logging(args.verbose)
     outputs = plot_gain_comparison(args.caltable_a, args.caltable_b, output=args.output)
@@ -154,7 +154,7 @@ def cmd_compare_gains(args: argparse.Namespace) -> int:
 
 def cmd_plot_snr(args: argparse.Namespace) -> int:
     """Plot SNR diagnostics for a calibration table."""
-    from dsa110_contimg.core.visualization.calibration_plots import plot_gain_snr
+    from dsa110_continuum.visualization.calibration_plots import plot_gain_snr
 
     setup_logging(args.verbose)
     outputs = plot_gain_snr(args.caltable, output=args.output)
@@ -165,28 +165,28 @@ def cmd_plot_snr(args: argparse.Namespace) -> int:
 
 def cmd_flux_bootstrap(args: argparse.Namespace) -> int:
     """Bootstrap flux scale from primary to secondary calibrator."""
-    from dsa110_contimg.core.calibration.fluxscale import cli_flux_bootstrap
+    from dsa110_continuum.calibration.fluxscale import cli_flux_bootstrap
 
     return cli_flux_bootstrap(args)
 
 
 def cmd_setjy(args: argparse.Namespace) -> int:
     """Set MODEL_DATA for primary flux calibrator."""
-    from dsa110_contimg.core.calibration.fluxscale import cli_setjy
+    from dsa110_continuum.calibration.fluxscale import cli_setjy
 
     return cli_setjy(args)
 
 
 def cmd_list_flux_calibrators(args: argparse.Namespace) -> int:
     """List primary flux calibrators."""
-    from dsa110_contimg.core.calibration.fluxscale import cli_list_primary_calibrators
+    from dsa110_continuum.calibration.fluxscale import cli_list_primary_calibrators
 
     return cli_list_primary_calibrators(args)
 
 
 def cmd_check_flux_calibrator(args: argparse.Namespace) -> int:
     """Check if a source is a primary flux calibrator."""
-    from dsa110_contimg.core.calibration.fluxscale import (
+    from dsa110_continuum.calibration.fluxscale import (
         get_primary_calibrator_info,
         is_primary_flux_calibrator,
     )

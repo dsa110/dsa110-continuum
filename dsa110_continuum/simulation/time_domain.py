@@ -64,12 +64,12 @@ from pathlib import Path
 import numpy as np
 from astropy.time import Time
 
-from dsa110_contimg.core.simulation.source_selection import (
+from dsa110_continuum.simulation.source_selection import (
     CatalogRegion,
     SourceSelector,
     SyntheticSource,
 )
-from dsa110_contimg.core.simulation.variability_models import (
+from dsa110_continuum.simulation.variability_models import (
     VariabilityModel,
     compute_flux_at_time,
 )
@@ -181,14 +181,14 @@ def generate_multi_epoch_uvh5(
 
     logger.debug("[DEBUG] time module imported")
 
-    from dsa110_contimg.core.simulation.make_synthetic_uvh5 import (
+    from dsa110_continuum.simulation.make_synthetic_uvh5 import (
         CONFIG_DIR,
         PYUVSIM_DIR,
         build_uvdata_from_scratch,
         load_reference_layout,
         load_telescope_config,
     )
-    from dsa110_contimg.core.simulation.uvdata_writer import write_uvdata_to_subbands
+    from dsa110_continuum.simulation.uvdata_writer import write_uvdata_to_subbands
 
     logger.debug("[DEBUG] make_synthetic_uvh5 imports complete")
 
@@ -325,7 +325,7 @@ def generate_multi_epoch_uvh5(
             # Use pyuvsim for high-precision visibility simulation
             logger.debug("[DEBUG] Using pyuvsim for visibility simulation...")
             try:
-                from dsa110_contimg.core.simulation.pyuvsim_adapter import (
+                from dsa110_continuum.simulation.pyuvsim_adapter import (
                     check_pyuvsim_available,
                     simulate_visibilities,
                 )
@@ -344,7 +344,7 @@ def generate_multi_epoch_uvh5(
 
             # Add noise if requested (use shared visibility_models for consistency)
             if add_noise:
-                from dsa110_contimg.core.simulation.visibility_models import add_thermal_noise as add_thermal_noise_vis
+                from dsa110_continuum.simulation.visibility_models import add_thermal_noise as add_thermal_noise_vis
 
                 rng = np.random.default_rng(seed + epoch_idx)
                 mean_freq_hz = (

@@ -10,7 +10,7 @@ This prevents redundant work when calibration retries occur, saving
 10+ minutes per retry.
 
 Usage:
-    from dsa110_contimg.core.calibration.checkpoints import CalibrationCheckpoint
+    from dsa110_continuum.calibration.checkpoints import CalibrationCheckpoint
 
     checkpoint = CalibrationCheckpoint(ms_path)
 

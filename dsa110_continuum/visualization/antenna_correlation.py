@@ -15,7 +15,7 @@ Key visualizations:
 - Anomaly detection (identifying unusually correlated antenna pairs)
 
 Usage:
-    from dsa110_contimg.core.visualization.antenna_correlation import (
+    from dsa110_continuum.visualization.antenna_correlation import (
         extract_gains_from_caltable,
         compute_gain_correlation_matrix,
         plot_gain_correlation_matrix,
@@ -46,7 +46,7 @@ if TYPE_CHECKING:
     from matplotlib.figure import Figure
     from numpy.typing import NDArray
 
-from dsa110_contimg.core.visualization.config import FigureConfig, PlotStyle
+from dsa110_continuum.visualization.config import FigureConfig, PlotStyle
 
 logger = logging.getLogger(__name__)
 

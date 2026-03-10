@@ -8,8 +8,8 @@ for observations that actually contain the calibrator transit.
 import argparse
 import sys
 
-from dsa110_contimg.core.calibration.catalogs import load_vla_catalog_from_sqlite
-from dsa110_contimg.core.calibration.transit import find_transits_for_source
+from dsa110_continuum.calibration.catalogs import load_vla_catalog_from_sqlite
+from dsa110_continuum.calibration.transit import find_transits_for_source
 from dsa110_contimg.infrastructure.database.unified import get_pipeline_db_path
 
 

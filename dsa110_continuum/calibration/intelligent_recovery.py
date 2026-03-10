@@ -334,7 +334,7 @@ class CalibrationRecoveryManager:
 
         try:
             # Import here to avoid circular dependency
-            from dsa110_contimg.core.calibration.refant_selection import (
+            from dsa110_continuum.calibration.refant_selection import (
                 recommend_refants_from_ms,
             )
 

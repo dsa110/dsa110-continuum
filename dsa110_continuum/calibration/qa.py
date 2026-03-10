@@ -373,7 +373,7 @@ def assess_calibration_quality(
 
     # Discover caltables if not provided
     if caltables is None:
-        from dsa110_contimg.core.calibration.caltables import discover_caltables
+        from dsa110_continuum.calibration.caltables import discover_caltables
 
         caltables = discover_caltables(ms_path)
 

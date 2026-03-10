@@ -11,7 +11,7 @@ complete, enabling:
 Usage:
     These hooks are called automatically by pipeline stages. For manual use:
 
-    from dsa110_contimg.core.qa.pipeline_hooks import (
+    from dsa110_continuum.qa.pipeline_hooks import (
         hook_calibration_complete,
         ingest_calibration_metrics,
     )
@@ -140,7 +140,7 @@ def extract_calibration_metrics(
         CalibrationMetricsRecord
         Object containing extracted calibration metrics.
     """
-    from dsa110_contimg.core.calibration.qa import compute_calibration_metrics
+    from dsa110_continuum.calibration.qa import compute_calibration_metrics
     from dsa110_contimg.common.utils import get_ms_mid_mjd
 
     # Get observation time

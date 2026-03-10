@@ -605,7 +605,7 @@ def _add_map_args(p: argparse.ArgumentParser, prefix: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    from dsa110_contimg.core.catalog.build_master_cli import main as unified_main
+    from dsa110_continuum.catalog.build_master_cli import main as unified_main
 
     argv = [] if argv is None else list(argv)
     return unified_main(["files", *argv])
@@ -688,7 +688,7 @@ def build_master_from_sqlite(
         >>> db_path = build_master_from_sqlite()
         >>> print(f"Built master catalog at {db_path}")
     """
-    from dsa110_contimg.core.catalog.builders import (
+    from dsa110_continuum.catalog.builders import (
         get_first_full_db_path,
         get_nvss_full_db_path,
         get_rax_full_db_path,
@@ -1188,7 +1188,7 @@ def build_master_union_from_sqlite(
     """
     import sqlite3
 
-    from dsa110_contimg.core.catalog.builders import (
+    from dsa110_continuum.catalog.builders import (
         get_first_full_db_path,
         get_nvss_full_db_path,
         get_rax_full_db_path,

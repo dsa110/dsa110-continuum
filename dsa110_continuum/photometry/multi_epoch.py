@@ -566,7 +566,7 @@ def calc_two_epoch_pair_metrics(
         list of dict
         List of pair metric dicts with vs_int, vs_peak, m_int, m_peak
     """
-    from dsa110_contimg.core.photometry.variability import calculate_m_metric, calculate_vs_metric
+    from dsa110_continuum.photometry.variability import calculate_m_metric, calculate_vs_metric
 
     if len(measurements) < 2:
         return []

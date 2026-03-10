@@ -26,7 +26,7 @@ from astropy.time import Time
 import astropy.constants as const
 from pyuvdata import UVData
 
-from dsa110_contimg.core.simulation.source_selection import (
+from dsa110_continuum.simulation.source_selection import (
     CatalogRegion,
     SourceSelector,
     SyntheticSource,
@@ -80,7 +80,7 @@ def load_reference_layout(path: Path, columns: list[str] | None = None) -> dict[
     dict
         Reference layout dictionary
     """
-    from dsa110_contimg.core.simulation.config.parquet_io import load_reference_layout_parquet
+    from dsa110_continuum.simulation.config.parquet_io import load_reference_layout_parquet
     return load_reference_layout_parquet(path, columns=columns)
 
 
@@ -208,7 +208,7 @@ def build_uvw(
         UVW array with shape (nbls * ntimes, 3)
 
     """
-    from dsa110_contimg.core.simulation.fast_uvw import fast_build_uvw_grid
+    from dsa110_continuum.simulation.fast_uvw import fast_build_uvw_grid
 
     nbls = len(ant1_array)
 
@@ -694,7 +694,7 @@ def write_subband_uvh5(
 
     if simulator == "matvis":
         # matvis: matrix-based, OOM faster; unpolarized Stokes I (XX/YY set equal)
-        from dsa110_contimg.core.simulation.matvis_adapter import (
+        from dsa110_continuum.simulation.matvis_adapter import (
             check_matvis_available,
             simulate_visibilities_matvis,
         )
@@ -705,8 +705,8 @@ def write_subband_uvh5(
             ) from None
         _sky = sky_model
         if _sky is None and not sources and amplitude_jy > 0:
-            from dsa110_contimg.core.simulation.pyuvsim_adapter import sources_to_skymodel
-            from dsa110_contimg.core.simulation.source_selection import SyntheticSource
+            from dsa110_continuum.simulation.pyuvsim_adapter import sources_to_skymodel
+            from dsa110_continuum.simulation.source_selection import SyntheticSource
             _sky = sources_to_skymodel([
                 SyntheticSource(
                     source_id="synthetic_point_source",
@@ -732,7 +732,7 @@ def write_subband_uvh5(
             raise RuntimeError(f"matvis simulation failed: {e}") from e
     elif sources:
         # Use pyuvsim for high-precision visibility simulation
-        from dsa110_contimg.core.simulation.pyuvsim_adapter import (
+        from dsa110_continuum.simulation.pyuvsim_adapter import (
             check_pyuvsim_available,
             simulate_visibilities,
         )
@@ -798,7 +798,7 @@ def write_subband_uvh5(
         # pyuvsim is required for all visibility simulation
         # Use pre-computed sky_model from main when provided; otherwise create point source once per subband
         if amplitude_jy > 0:
-            from dsa110_contimg.core.simulation.pyuvsim_adapter import (
+            from dsa110_continuum.simulation.pyuvsim_adapter import (
                 check_pyuvsim_available,
                 simulate_visibilities,
             )
@@ -822,7 +822,7 @@ def write_subband_uvh5(
                 # Pre-computed in main; avoid creating SyntheticSource 16 times
                 sources_for_sim: list = []
             else:
-                from dsa110_contimg.core.simulation.source_selection import SyntheticSource
+                from dsa110_continuum.simulation.source_selection import SyntheticSource
 
                 sources_for_sim = [
                     SyntheticSource(
@@ -881,7 +881,7 @@ def write_subband_uvh5(
 
     # Add thermal noise if requested
     if add_noise:
-        from dsa110_contimg.core.simulation.visibility_models import add_thermal_noise
+        from dsa110_continuum.simulation.visibility_models import add_thermal_noise
 
         # Get integration time and channel width
         int_time = config.integration_time_sec
@@ -905,7 +905,7 @@ def write_subband_uvh5(
 
     # Add calibration errors if requested
     if add_cal_errors:
-        from dsa110_contimg.core.simulation.visibility_models import (
+        from dsa110_continuum.simulation.visibility_models import (
             add_calibration_errors,
             apply_calibration_errors_to_visibilities,
         )
@@ -959,7 +959,7 @@ def _validate_outputs_parallel(
     paths: list[Path], max_workers: int
 ) -> tuple[bool, list[tuple[Path, bool, list[str]]]]:
     """Run validate_uvh5_file over paths in parallel. Returns (all_valid, [(path, is_valid, errors), ...])."""
-    from dsa110_contimg.core.simulation.validate_synthetic import validate_uvh5_file
+    from dsa110_continuum.simulation.validate_synthetic import validate_uvh5_file
 
     if not paths:
         return True, []
@@ -1376,7 +1376,7 @@ def main() -> None:
         rng = np.random.default_rng()
 
     # Pre-compute SkyModel and BeamList for efficiency
-    from dsa110_contimg.core.simulation.pyuvsim_adapter import (
+    from dsa110_continuum.simulation.pyuvsim_adapter import (
         sources_to_skymodel,
         create_dsa110_beam,
     )
@@ -1387,7 +1387,7 @@ def main() -> None:
         sky_model = sources_to_skymodel(selected_sources)
     elif args.flux_jy > 0:
         # Create single point source for SkyModel
-        from dsa110_contimg.core.simulation.source_selection import SyntheticSource
+        from dsa110_continuum.simulation.source_selection import SyntheticSource
         point_source = SyntheticSource(
             source_id="synthetic_point_source",
             ra_deg=config.phase_ra.to_value(u.deg),
@@ -1514,7 +1514,7 @@ def main() -> None:
 
     # Create synthetic catalog if requested
     if args.create_catalog:
-        from dsa110_contimg.core.simulation.synthetic_catalog import (
+        from dsa110_continuum.simulation.synthetic_catalog import (
             create_synthetic_catalog_from_uvh5,
         )
 

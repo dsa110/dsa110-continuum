@@ -13,11 +13,11 @@ from pathlib import Path
 
 import numpy as np
 
-from dsa110_contimg.core.photometry.scoring import (
+from dsa110_continuum.photometry.scoring import (
     calculate_composite_score,
     get_confidence_level,
 )
-from dsa110_contimg.core.photometry.scoring import (
+from dsa110_continuum.photometry.scoring import (
     calculate_composite_score,
     get_confidence_level,
 )
@@ -233,7 +233,7 @@ def detect_ese_candidates(
         # Hook: Update ESE candidate dashboard after detection
         if detected:
             try:
-                from dsa110_contimg.core.qa.pipeline_hooks import hook_ese_detection_complete
+                from dsa110_continuum.qa.pipeline_hooks import hook_ese_detection_complete
 
                 hook_ese_detection_complete()
             except Exception as e:
@@ -270,7 +270,7 @@ def _recompute_variability_stats(conn: sqlite3.Connection) -> None:
     }
 
     # Updated internal logic to use ese_pipeline
-    from dsa110_contimg.core.photometry.ese_pipeline import update_variability_stats_for_source
+    from dsa110_continuum.photometry.ese_pipeline import update_variability_stats_for_source
 
     if "photometry" not in tables:
         logger.warning("photometry table not found - cannot recompute stats")

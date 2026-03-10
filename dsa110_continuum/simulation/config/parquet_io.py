@@ -5,11 +5,11 @@ replacing the previous JSON format with ~10x size reduction and ~20x faster load
 
 Example usage:
     # Write (one-time migration)
-    from dsa110_contimg.core.simulation.config.parquet_io import write_reference_layout_parquet
+    from dsa110_continuum.simulation.config.parquet_io import write_reference_layout_parquet
     write_reference_layout_parquet(json_data, Path("reference_layout.parquet"))
 
     # Read
-    from dsa110_contimg.core.simulation.config.parquet_io import load_reference_layout_parquet
+    from dsa110_continuum.simulation.config.parquet_io import load_reference_layout_parquet
     layout = load_reference_layout_parquet(Path("reference_layout.parquet"))
     
     # Selective column loading

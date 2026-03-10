@@ -20,7 +20,7 @@ import numpy as np
 from astropy.time import Time
 from pyuvdata import UVData
 
-from dsa110_contimg.core.simulation.pyuvsim_adapter import create_dsa110_beam, sources_to_skymodel
+from dsa110_continuum.simulation.pyuvsim_adapter import create_dsa110_beam, sources_to_skymodel
 
 logger = logging.getLogger(__name__)
 

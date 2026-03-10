@@ -14,7 +14,7 @@ from astropy.coordinates import Angle
 
 table = casatables.table  # noqa: N816
 
-from dsa110_contimg.core.calibration import BeamConfig, primary_beam_response
+from dsa110_continuum.calibration import BeamConfig, primary_beam_response
 
 from .catalogs import (
     load_vla_catalog,

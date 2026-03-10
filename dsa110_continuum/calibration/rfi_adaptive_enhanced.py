@@ -43,7 +43,7 @@ from typing import Any
 
 import numpy as np
 
-from dsa110_contimg.core.calibration.flagging import (
+from dsa110_continuum.calibration.flagging import (
     flag_rfi,
     flag_zeros,
 )
@@ -342,7 +342,7 @@ def _create_flag_checkpoint(ms: str, checkpoint_name: str) -> bool:
     ----------
     """
     try:
-        from dsa110_contimg.core.calibration.casa_service import CASAService
+        from dsa110_continuum.calibration.casa_service import CASAService
         from dsa110_contimg.common.utils.casa_init import ensure_casa_path
 
         ensure_casa_path()
@@ -370,7 +370,7 @@ def _restore_flag_checkpoint(ms: str, checkpoint_name: str) -> bool:
     ----------
     """
     try:
-        from dsa110_contimg.core.calibration.casa_service import CASAService
+        from dsa110_continuum.calibration.casa_service import CASAService
         from dsa110_contimg.common.utils.casa_init import ensure_casa_path
 
         ensure_casa_path()
@@ -631,7 +631,7 @@ def flag_rfi_adaptive_enhanced(
 
             # Run SPW-specific analysis and apply safeguards
             try:
-                from dsa110_contimg.core.calibration.spw_safeguards import (
+                from dsa110_continuum.calibration.spw_safeguards import (
                     SPWThresholds,
                     apply_spw_safeguards,
                 )

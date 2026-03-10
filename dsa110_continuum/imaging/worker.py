@@ -40,7 +40,7 @@ from dsa110_contimg.common.utils.gpu_safety import (
     is_gpu_available,
     memory_safe,
 )
-from dsa110_contimg.core.conversion.ms_utils import (
+from dsa110_continuum.conversion.ms_utils import (
     configure_ms_for_imaging,
     inject_provenance_metadata,
 )
@@ -56,7 +56,7 @@ initialize_gpu_safety()
 
 # Check if GPU gridding is available
 try:
-    from dsa110_contimg.core.imaging.gpu_gridding import (
+    from dsa110_continuum.imaging.gpu_gridding import (
         GriddingConfig,
         cpu_grid_visibilities,
         gpu_grid_visibilities,
@@ -316,7 +316,7 @@ def _submit_imaging_tasks(
         Radius in arcseconds for circular masks around catalog sources (default: 60.0)
     """
     # Lazy import to avoid triggering casatools auto-update at module import time
-    from dsa110_contimg.core.imaging.cli import image_ms
+    from dsa110_continuum.imaging.cli import image_ms
     from dsa110_contimg.core.imaging.fast_imaging import run_fast_imaging
 
     # Configure catalog masking parameters for image_ms
@@ -437,7 +437,7 @@ def _apply_and_image(
     _setup_temp_environment(out_dir)
 
     try:
-        from dsa110_contimg.core.calibration.applycal import apply_to_target
+        from dsa110_continuum.calibration.applycal import apply_to_target
 
         apply_to_target(ms_path, field="", gaintables=gaintables, calwt=True)
         imgroot = out_dir / (Path(ms_path).stem + ".img")

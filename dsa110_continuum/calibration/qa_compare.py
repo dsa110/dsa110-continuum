@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from dsa110_contimg.core.qa.calibration_quality import validate_caltable_quality
+from dsa110_continuum.qa.calibration_quality import validate_caltable_quality
 
 logger = logging.getLogger(__name__)
 

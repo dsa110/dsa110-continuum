@@ -12,11 +12,11 @@ import time
 from pathlib import Path
 
 from dsa110_contimg.infrastructure.database import ensure_pipeline_db
-from dsa110_contimg.core.photometry.caching import (
+from dsa110_continuum.photometry.caching import (
     invalidate_cache,
 )
-from dsa110_contimg.core.photometry.ese_detection import detect_ese_candidates
-from dsa110_contimg.core.photometry.metrics import (
+from dsa110_continuum.photometry.ese_detection import detect_ese_candidates
+from dsa110_continuum.photometry.metrics import (
     calculate_weighted_mean,
     calculate_eta_metric,
     calculate_v_metric,

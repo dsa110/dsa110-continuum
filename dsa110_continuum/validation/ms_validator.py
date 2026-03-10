@@ -9,7 +9,7 @@ Consolidates all MS validation functionality:
 - Data integrity (non-zero data, flagging)
 
 Usage:
-    from dsa110_contimg.core.validation.ms_validator import MSValidator
+    from dsa110_continuum.validation.ms_validator import MSValidator
 
     validator = MSValidator("/path/to/file.ms")
     report = validator.validate_all()

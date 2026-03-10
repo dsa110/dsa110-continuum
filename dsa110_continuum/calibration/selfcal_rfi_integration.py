@@ -18,12 +18,12 @@ from typing import Any
 
 import numpy as np
 
-from dsa110_contimg.core.calibration.rfi_adaptive_enhanced import (
+from dsa110_continuum.calibration.rfi_adaptive_enhanced import (
     AdaptiveRFIResult,
     RFIQAThresholds,
     flag_rfi_adaptive_enhanced,
 )
-from dsa110_contimg.core.calibration.spw_safeguards import (
+from dsa110_continuum.calibration.spw_safeguards import (
     SPWSafeguardsResult,
     SPWThresholds,
     apply_spw_safeguards,

@@ -37,7 +37,7 @@ from typing import Any
 
 import numpy as np
 
-from dsa110_contimg.core.imaging.gpu_gridding import (
+from dsa110_continuum.imaging.gpu_gridding import (
     DegridConfig,
     DegridResult,
     gpu_degrid_visibilities,
@@ -414,7 +414,7 @@ class CatalogSourceAdapter:
 
                 if flux_L and flux_C and flux_L > 0 and flux_C > 0:
                     # α = log(S2/S1) / log(ν2/ν1)
-                    from dsa110_contimg.core.catalog.spectral_index import (
+                    from dsa110_continuum.catalog.spectral_index import (
                         calculate_spectral_index,
                     )
 

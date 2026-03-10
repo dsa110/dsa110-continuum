@@ -8,7 +8,7 @@ This module provides the orchestration layer for:
 - Storing baselines for regression comparison
 
 Usage:
-    from dsa110_contimg.core.evaluation import run_evaluation, create_evaluation_dataset
+    from dsa110_continuum.evaluation import run_evaluation, create_evaluation_dataset
 
     # Create dataset from fixtures
     create_evaluation_dataset(

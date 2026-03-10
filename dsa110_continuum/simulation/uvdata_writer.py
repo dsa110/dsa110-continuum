@@ -10,8 +10,8 @@ import numpy as np
 from astropy.time import Time
 from pyuvdata import UVData
 
-from dsa110_contimg.core.simulation.make_synthetic_uvh5 import TelescopeConfig
-from dsa110_contimg.core.simulation.source_selection import SyntheticSource
+from dsa110_continuum.simulation.make_synthetic_uvh5 import TelescopeConfig
+from dsa110_continuum.simulation.source_selection import SyntheticSource
 
 
 def write_uvdata_to_subbands(

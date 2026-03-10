@@ -25,8 +25,8 @@ ensure_casa_path()
 # CASA import moved to function level to prevent logs in workspace root
 # See: docs/dev-notes/analysis/casa_log_handling_investigation.md
 
-from dsa110_contimg.core.calibration.casa_service import CASAService
-from dsa110_contimg.core.calibration.validate import (
+from dsa110_continuum.calibration.casa_service import CASAService
+from dsa110_continuum.calibration.validate import (
     validate_caltables_for_use,
 )
 from dsa110_contimg.common.utils import timed
@@ -46,7 +46,7 @@ initialize_gpu_safety()
 
 # Check if GPU calibration is available
 try:
-    from dsa110_contimg.core.calibration.gpu_calibration import (
+    from dsa110_continuum.calibration.gpu_calibration import (
         ApplyCalResult,
         apply_gains,
     )

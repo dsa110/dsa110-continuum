@@ -7,7 +7,7 @@ The DSA-110 array has a maximum baseline of ~2707 m. UVW values should never
 exceed this physical limit.
 
 Usage:
-    from dsa110_contimg.core.qa.uvw_validation import validate_uvw_geometry
+    from dsa110_continuum.qa.uvw_validation import validate_uvw_geometry
 
     result = validate_uvw_geometry("/path/to/ms")
     if not result.is_valid:

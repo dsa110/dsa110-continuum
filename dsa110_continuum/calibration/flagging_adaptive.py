@@ -20,7 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, TypedDict
 
-from dsa110_contimg.core.calibration.flagging import (
+from dsa110_continuum.calibration.flagging import (
     flag_rfi,
     flag_zeros,
     reset_flags,
@@ -138,7 +138,7 @@ def _apply_gpu_flagging(
 
     """
     try:
-        from dsa110_contimg.core.rfi import RFIDetectionConfig, gpu_rfi_detection
+        from dsa110_continuum.rfi import RFIDetectionConfig, gpu_rfi_detection
 
         config = RFIDetectionConfig(
             threshold=5.0 / strategy.threshold_scale,
@@ -562,8 +562,8 @@ def _try_gpu_flagging(
 
     """
     try:
-        from dsa110_contimg.core.rfi import RFIDetectionConfig, gpu_rfi_detection
-        from dsa110_contimg.core.rfi.gpu_detection import CUPY_AVAILABLE
+        from dsa110_continuum.rfi import RFIDetectionConfig, gpu_rfi_detection
+        from dsa110_continuum.rfi.gpu_detection import CUPY_AVAILABLE
 
         if not CUPY_AVAILABLE:
             logger.debug("CuPy not available, skipping GPU RFI detection")

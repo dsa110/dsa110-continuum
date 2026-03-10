@@ -14,7 +14,7 @@ from astropy.coordinates import AltAz, SkyCoord
 from astropy.time import Time
 
 from dsa110_contimg.common.utils.constants import DSA110_LOCATION
-from dsa110_contimg.core.pointing.monitor import predict_calibrator_transit_by_coords
+from dsa110_continuum.pointing.monitor import predict_calibrator_transit_by_coords
 
 logger = logging.getLogger(__name__)
 

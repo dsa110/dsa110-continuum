@@ -13,7 +13,7 @@ from typing import Any
 from astropy.io import fits
 from astropy.wcs import WCS
 
-from dsa110_contimg.core.catalog.query import query_sources
+from dsa110_continuum.catalog.query import query_sources
 
 logger = logging.getLogger(__name__)
 

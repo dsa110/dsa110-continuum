@@ -5,7 +5,7 @@ This module provides the calibration configuration for DSA-110. There is ONE
 configuration optimized for maximum precision based on empirical validation.
 
 Usage:
-    from dsa110_contimg.core.calibration.presets import CalibrationPreset, DEFAULT_PRESET
+    from dsa110_continuum.calibration.presets import CalibrationPreset, DEFAULT_PRESET
 
     # Use the default preset
     params = DEFAULT_PRESET.to_dict()

@@ -14,14 +14,14 @@ import casacore.tables as casatables
 
 table = casatables.table  # noqa: N816
 
-from dsa110_contimg.core.imaging.masks import (
+from dsa110_continuum.imaging.masks import (
     beam_shape_erode,
     minimum_absolute_clip,
 )
 
 LOG = logging.getLogger(__name__)
 
-from dsa110_contimg.core.imaging.masks import (  # noqa: E402
+from dsa110_continuum.imaging.masks import (  # noqa: E402
     prepare_cleaning_mask,
 )
 

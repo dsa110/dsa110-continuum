@@ -61,7 +61,7 @@ def preflag_rfi(
     if backend == "aoflagger":
         # Use AOFlagger (preferred, faster)
         try:
-            from dsa110_contimg.core.calibration.flagging import flag_rfi
+            from dsa110_continuum.calibration.flagging import flag_rfi
 
             flag_rfi(
                 ms_path,
@@ -76,7 +76,7 @@ def preflag_rfi(
     if backend == "gpu":
         # Use GPU-accelerated RFI detection
         try:
-            from dsa110_contimg.core.rfi import RFIDetectionConfig, gpu_rfi_detection
+            from dsa110_continuum.rfi import RFIDetectionConfig, gpu_rfi_detection
 
             threshold = 4.0 if aggressive else 5.0
             config = RFIDetectionConfig(
@@ -200,15 +200,15 @@ def preflag_rfi_adaptive(
         import casacore.tables as casatables
         import numpy as np
 
-        from dsa110_contimg.core.calibration.rfi_adaptive_enhanced import (
+        from dsa110_continuum.calibration.rfi_adaptive_enhanced import (
             AdaptiveRFIConfig,
             RFIQAThresholds,
             flag_rfi_adaptive_enhanced,
         )
-        from dsa110_contimg.core.calibration.spw_safeguards import (
+        from dsa110_continuum.calibration.spw_safeguards import (
             SPWThresholds,
         )
-        from dsa110_contimg.core.calibration.spw_safeguards import (
+        from dsa110_continuum.calibration.spw_safeguards import (
             apply_spw_safeguards as apply_spw_analysis,
         )
 

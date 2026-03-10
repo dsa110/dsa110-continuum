@@ -13,13 +13,13 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from dsa110_contimg.core.catalog.builders import (
+from dsa110_continuum.catalog.builders import (
     build_atnf_strip_db,
     build_first_strip_db,
     build_nvss_strip_db,
     build_rax_strip_db,
 )
-from dsa110_contimg.core.pointing.utils import load_pointing
+from dsa110_continuum.pointing.utils import load_pointing
 
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:

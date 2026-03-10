@@ -328,7 +328,7 @@ def main(argv: list | None = None) -> None:
 
         # Provenance Injection for Manual CLI Runs
         try:
-            from dsa110_contimg.core.conversion.ms_utils import inject_provenance_metadata
+            from dsa110_continuum.conversion.ms_utils import inject_provenance_metadata
             from dsa110_contimg.infrastructure.tracking.provenance import ProvenanceTracker
             import uuid
             import time
@@ -394,7 +394,7 @@ def main(argv: list | None = None) -> None:
     elif args.cmd == "export":
         from glob import glob
 
-        from dsa110_contimg.core.imaging.export import (
+        from dsa110_continuum.imaging.export import (
             _find_casa_images,
             export_fits,
             save_png_from_fits,
@@ -431,7 +431,7 @@ def main(argv: list | None = None) -> None:
                 save_png_from_fits(fits_paths)
 
     elif args.cmd == "create-mask":
-        from dsa110_contimg.core.imaging.catalog_tools import create_catalog_mask
+        from dsa110_continuum.imaging.catalog_tools import create_catalog_mask
 
         out_path = create_catalog_mask(
             image_path=args.image,
@@ -444,7 +444,7 @@ def main(argv: list | None = None) -> None:
         print(f"Wrote mask: {out_path}")
 
     elif args.cmd == "create-overlay":
-        from dsa110_contimg.core.imaging.catalog_tools import create_catalog_overlay
+        from dsa110_continuum.imaging.catalog_tools import create_catalog_overlay
 
         create_catalog_overlay(
             image_path=args.image,

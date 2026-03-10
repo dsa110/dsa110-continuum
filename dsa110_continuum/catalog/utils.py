@@ -9,7 +9,7 @@ import sqlite3
 from typing import List, Optional, Tuple
 
 import numpy as np
-from dsa110_contimg.core.calibration.catalogs import (
+from dsa110_continuum.calibration.catalogs import (
     read_vla_parsed_catalog_csv,
     read_vla_parsed_catalog_with_flux,
 )

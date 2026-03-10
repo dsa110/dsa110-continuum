@@ -51,7 +51,7 @@ def exportfits(*args, **kwargs):
     *args :
     **kwargs :
     """
-    from dsa110_contimg.core.calibration.casa_service import CASAService
+    from dsa110_continuum.calibration.casa_service import CASAService
 
     return CASAService().exportfits(*args, **kwargs)
 
@@ -64,7 +64,7 @@ def tclean(*args, **kwargs):
     *args :
     **kwargs :
     """
-    from dsa110_contimg.core.calibration.casa_service import CASAService
+    from dsa110_continuum.calibration.casa_service import CASAService
 
     return CASAService().tclean(*args, **kwargs)
 
@@ -81,8 +81,8 @@ try:
 except ImportError:  # pragma: no cover - defensive import
     prepare_temp_environment = None  # type: ignore
 
-from dsa110_contimg.core.imaging.cli_utils import default_cell_arcsec, detect_datacolumn  # noqa: E402
-from dsa110_contimg.core.imaging.fov import derive_extent_deg  # noqa: E402
+from dsa110_continuum.imaging.cli_utils import default_cell_arcsec, detect_datacolumn  # noqa: E402
+from dsa110_continuum.imaging.fov import derive_extent_deg  # noqa: E402
 from dsa110_contimg.common.unified_config import settings  # noqa: E402
 from dsa110_contimg.common.utils.error_context import format_ms_error_with_suggestions  # noqa: E402
 from dsa110_contimg.common.utils.gpu_utils import (  # noqa: E402
@@ -164,7 +164,7 @@ def run_wsclean(
 
     # Prepare mask if needed
     if mask_path or target_mask or galvin_clip_mask or erode_beam_shape:
-        from dsa110_contimg.core.imaging.cli_utils import prepare_cleaning_mask
+        from dsa110_continuum.imaging.cli_utils import prepare_cleaning_mask
 
         # If we have advanced masking options but no base mask_path, we need to decide what to do.
         # For WSClean, we typically start with a base mask.
@@ -193,7 +193,7 @@ def run_wsclean(
     # Ensure TELESCOPE_NAME is DSA_110 for EveryBeam beam model compatibility
     # (merge_spws may have set it to OVRO_MMA for CASA listobs compatibility)
     try:
-        from dsa110_contimg.core.conversion.helpers_telescope import set_ms_telescope_name
+        from dsa110_continuum.conversion.helpers_telescope import set_ms_telescope_name
 
         set_ms_telescope_name(ms_path, "DSA_110")
     except Exception as e:
@@ -699,7 +699,7 @@ def image_ms(
         )  # 10x safety margin
 
         # CRITICAL: Check disk space (fatal check for imaging operations)
-        from dsa110_contimg.core.mosaic.error_handling import check_disk_space
+        from dsa110_continuum.mosaic.error_handling import check_disk_space
 
         _, space_msg = check_disk_space(
             imagename,
@@ -902,7 +902,7 @@ def image_ms(
             d_dec = float(calib_dec_deg) - dec0_deg
             sep_deg = float(math.hypot(d_ra, d_dec))
             if sep_deg <= radius_deg * 1.05:
-                from dsa110_contimg.core.calibration.skymodels import (
+                from dsa110_continuum.calibration.skymodels import (
                     make_point_skymodel,
                     predict_from_skymodel_wsclean,
                 )
@@ -985,7 +985,7 @@ def image_ms(
                     unicat_min_mjy,
                     unicat_radius_deg,
                 )
-                from dsa110_contimg.core.calibration.skymodels import make_unified_wsclean_list
+                from dsa110_continuum.calibration.skymodels import make_unified_wsclean_list
 
                 make_unified_wsclean_list(
                     ra0_deg,
@@ -1229,7 +1229,7 @@ def image_ms(
 
             else:
                 # Non-wsclean imager (tclean, etc.): use unified skymodel + wsclean -predict
-                from dsa110_contimg.core.calibration.skymodels import (
+                from dsa110_continuum.calibration.skymodels import (
                     make_unified_skymodel,
                     predict_from_skymodel_wsclean,
                 )
@@ -1260,7 +1260,7 @@ def image_ms(
             # Export MODEL_DATA as FITS image if requested
             if export_model_image:
                 try:
-                    from dsa110_contimg.core.calibration.model import export_model_as_fits
+                    from dsa110_continuum.calibration.model import export_model_as_fits
 
                     output_path = f"{imagename}.nvss_model"
                     LOG.info("Exporting NVSS model image to %s.fits...", output_path)
@@ -1314,7 +1314,7 @@ def image_ms(
     ):
         if ra0_deg is not None and dec0_deg is not None:
             try:
-                from dsa110_contimg.core.imaging.catalog_tools import create_catalog_fits_mask
+                from dsa110_continuum.imaging.catalog_tools import create_catalog_fits_mask
 
                 mask_path = create_catalog_fits_mask(
                     catalog="unicat",
@@ -1354,7 +1354,7 @@ def image_ms(
         if _n_spws > 1:
             from pathlib import Path as _P
 
-            from dsa110_contimg.core.conversion.merge_spws import merge_spws
+            from dsa110_continuum.conversion.merge_spws import merge_spws
 
             _idg_merged_ms = str(
                 _P(ms_path).parent / f"{_P(ms_path).stem}_idg_merged.ms"
@@ -1407,7 +1407,7 @@ def image_ms(
     else:
         # Prepare mask if needed for tclean
         if mask_path or target_mask or galvin_clip_mask or erode_beam_shape:
-            from dsa110_contimg.core.imaging.cli_utils import prepare_cleaning_mask
+            from dsa110_continuum.imaging.cli_utils import prepare_cleaning_mask
 
             if mask_path:
                 try:
@@ -1489,7 +1489,7 @@ def image_ms(
 
     # QA validation of image products
     try:
-        from dsa110_contimg.core.qa.pipeline_quality import check_image_quality
+        from dsa110_continuum.qa.pipeline_quality import check_image_quality
 
         if backend == "wsclean":
             # WSClean output naming: "-MFS-" only when -channels-out is used (nterms > 1)

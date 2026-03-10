@@ -8,7 +8,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 
-from dsa110_contimg.core.visualization.config import FigureConfig, PlotStyle
+from dsa110_continuum.visualization.config import FigureConfig, PlotStyle
 
 
 def _setup_matplotlib() -> None:

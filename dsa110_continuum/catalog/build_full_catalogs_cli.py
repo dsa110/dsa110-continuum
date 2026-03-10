@@ -35,7 +35,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from dsa110_contimg.core.catalog.builders import (
+from dsa110_continuum.catalog.builders import (
     atnf_full_db_exists,
     # ATNF
     build_atnf_full_db,

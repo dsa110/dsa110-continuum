@@ -58,7 +58,7 @@ from typing import Any
 
 import numpy as np
 
-from dsa110_contimg.core.calibration.casa_service import CASAService
+from dsa110_continuum.calibration.casa_service import CASAService
 from dsa110_contimg.common.utils.casa_init import ensure_casa_path
 
 ensure_casa_path()
@@ -582,7 +582,7 @@ def bootstrap_flux_scale(
         FluxBootstrapResult with derived flux and calibration tables
 
     """
-    from dsa110_contimg.core.calibration.model import populate_model_from_catalog
+    from dsa110_continuum.calibration.model import populate_model_from_catalog
 
     # Validate primary calibrator
     primary_info = get_primary_calibrator_info(primary_name)
@@ -1435,7 +1435,7 @@ def cli_flux_bootstrap(args) -> int:
 
 
     """
-    from dsa110_contimg.core.calibration.cli import setup_logging
+    from dsa110_continuum.calibration.cli import setup_logging
 
     setup_logging(args.verbose)
 
@@ -1532,7 +1532,7 @@ def cli_setjy(args) -> int:
 
 
     """
-    from dsa110_contimg.core.calibration.cli import setup_logging
+    from dsa110_continuum.calibration.cli import setup_logging
 
     setup_logging(args.verbose)
 

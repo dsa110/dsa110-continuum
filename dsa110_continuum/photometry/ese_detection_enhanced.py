@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 # Import original function
-from dsa110_contimg.core.photometry.ese_detection import detect_ese_candidates as _detect_ese_candidates
+from dsa110_continuum.photometry.ese_detection import detect_ese_candidates as _detect_ese_candidates
 from dsa110_contimg.workflow.pipeline.caching import (
     get_cached_variability_stats,
 )

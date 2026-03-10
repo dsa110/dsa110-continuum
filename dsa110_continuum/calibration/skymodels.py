@@ -7,12 +7,12 @@ prediction, providing better sky model management, support for multiple catalog
 formats, and advanced spectral modeling capabilities.
 
 **Usage (Multi-source models):**
-  from dsa110_contimg.core.calibration.skymodels import predict_from_skymodel_wsclean, make_unified_skymodel
+  from dsa110_continuum.calibration.skymodels import predict_from_skymodel_wsclean, make_unified_skymodel
   sky = make_unified_skymodel(ra_deg, dec_deg, radius_deg=1.0, min_mjy=2.0)
   predict_from_skymodel_wsclean('/path/to/obs.ms', sky, field='0')
 
 **Usage (Single point source):**
-  from dsa110_contimg.core.calibration.skymodels import make_point_skymodel, predict_from_skymodel_wsclean
+  from dsa110_continuum.calibration.skymodels import make_point_skymodel, predict_from_skymodel_wsclean
   sky = make_point_skymodel('0834+555', ra_deg, dec_deg, flux_jy=2.3)
   predict_from_skymodel_wsclean('/path/to/obs.ms', sky, field='0')
 """
@@ -141,7 +141,7 @@ def make_nvss_skymodel(
     from astropy.coordinates import SkyCoord
 
     # Use SQLite-first query function (falls back to CSV if needed)
-    from dsa110_contimg.core.catalog.query import query_sources  # type: ignore
+    from dsa110_continuum.catalog.query import query_sources  # type: ignore
 
     df = query_sources(
         catalog_type=catalog,
@@ -246,7 +246,7 @@ def make_unified_skymodel(
     import pandas as pd
     from astropy.coordinates import SkyCoord
 
-    from dsa110_contimg.core.catalog.query import query_sources
+    from dsa110_continuum.catalog.query import query_sources
 
     # Helper to standardize DataFrame
     def fetch_catalog(ctype: str) -> pd.DataFrame:
@@ -673,7 +673,7 @@ def predict_from_skymodel_wsclean(
             if "MODEL_DATA" not in cols or "CORRECTED_DATA" not in cols:
                 # Need to create columns - use clearcal with protection
                 try:
-                    from dsa110_contimg.core.calibration.casa_service import (
+                    from dsa110_continuum.calibration.casa_service import (
                         CalibrationProtectionError,
                         CASAService,
                     )

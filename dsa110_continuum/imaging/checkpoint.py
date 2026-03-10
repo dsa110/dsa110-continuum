@@ -12,7 +12,7 @@ Key Features:
 - Automatic cleanup of stale checkpoints
 
 Usage:
-    from dsa110_contimg.core.imaging.checkpoint import ImagingCheckpoint
+    from dsa110_continuum.imaging.checkpoint import ImagingCheckpoint
 
     checkpoint = ImagingCheckpoint(ms_path, output_dir)
 

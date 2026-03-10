@@ -427,7 +427,7 @@ class MosaicOrchestrator:
             Path to mosaic FITS file
         """
         try:
-            from dsa110_contimg.core.photometry import run_photometry
+            from dsa110_continuum.photometry import run_photometry
 
             result = run_photometry(
                 image_path=Path(mosaic_path),

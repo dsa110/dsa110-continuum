@@ -24,7 +24,7 @@ table = casatables.table  # noqa: N816
 from dsa110_contimg.common.utils.runtime_safeguards import require_casa6_python
 
 # Use canonical angular_separation with numba→astropy fallback chain
-from dsa110_contimg.core.conversion.helpers_coordinates import angular_separation
+from dsa110_continuum.conversion.helpers_coordinates import angular_separation
 
 
 @require_casa6_python
@@ -117,7 +117,7 @@ def merge_spws(
         )
 
     # Use CASAService for mstransform
-    from dsa110_contimg.core.calibration.casa_service import CASAService
+    from dsa110_continuum.calibration.casa_service import CASAService
 
     service = CASAService()
     try:

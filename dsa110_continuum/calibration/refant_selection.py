@@ -11,7 +11,7 @@ Key Concepts:
     - CASA automatically falls back through refant chain if first fails
 
 Usage:
-    from dsa110_contimg.core.calibration.refant_selection import (
+    from dsa110_continuum.calibration.refant_selection import (
         get_default_outrigger_refants,
         select_best_outrigger_refant,
     )

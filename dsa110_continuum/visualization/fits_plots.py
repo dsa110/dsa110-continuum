@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
 from dsa110_contimg.common.utils.fits_utils import get_2d_data_and_wcs as _get_2d_data_and_wcs
-from dsa110_contimg.core.visualization.config import FigureConfig, PlotStyle
+from dsa110_continuum.visualization.config import FigureConfig, PlotStyle
 
 logger = logging.getLogger(__name__)
 

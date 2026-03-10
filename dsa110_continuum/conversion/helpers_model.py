@@ -12,7 +12,7 @@ ensure_casa_path()
 import casacore.tables as casatables  # type: ignore
 import numpy as np
 
-from dsa110_contimg.core.calibration import BeamConfig, primary_beam_response
+from dsa110_continuum.calibration import BeamConfig, primary_beam_response
 
 table = casatables.table  # noqa: N816
 

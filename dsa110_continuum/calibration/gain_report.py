@@ -80,7 +80,7 @@ def load_gain_report_data(
     GainReportData
         Data container for report generation
     """
-    from dsa110_contimg.core.qa.calibration_quality import extract_gain_snr
+    from dsa110_continuum.qa.calibration_quality import extract_gain_snr
 
     report = GainReportData(
         ms_path=ms_path,

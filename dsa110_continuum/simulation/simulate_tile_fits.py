@@ -45,7 +45,7 @@ from astropy.io import fits
 from astropy.time import Time
 from astropy.wcs import WCS
 
-from dsa110_contimg.core.simulation.tile_specs import STANDARD_TILE, TileSpecification
+from dsa110_continuum.simulation.tile_specs import STANDARD_TILE, TileSpecification
 
 logger = logging.getLogger(__name__)
 

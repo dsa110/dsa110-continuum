@@ -271,7 +271,7 @@ def predict_calibrator_transit_by_coords(
         Observatory location (default: DSA-110)
 
     """
-    from dsa110_contimg.core.calibration.transit import next_transit_time
+    from dsa110_continuum.calibration.transit import next_transit_time
 
     if location is None:
         location = DSA110_LOCATION

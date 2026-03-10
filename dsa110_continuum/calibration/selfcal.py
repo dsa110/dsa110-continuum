@@ -46,7 +46,7 @@ from typing import Any
 
 import numpy as np
 
-from dsa110_contimg.core.calibration.casa_service import CASAService
+from dsa110_continuum.calibration.casa_service import CASAService
 from dsa110_contimg.common.utils.casa_init import ensure_casa_path
 
 logger = logging.getLogger(__name__)
@@ -910,7 +910,7 @@ def _apply_calibration(
 
     """
     try:
-        from dsa110_contimg.core.calibration.applycal import apply_to_target
+        from dsa110_continuum.calibration.applycal import apply_to_target
 
         apply_to_target(
             ms_path,
@@ -955,7 +955,7 @@ def _run_imaging(
     """
     try:
         if config.backend == "wsclean":
-            from dsa110_contimg.core.imaging.cli_imaging import image_ms
+            from dsa110_continuum.imaging.cli_imaging import image_ms
 
             # Build galvin_clip_mask argument if enabled and image provided
             galvin_clip_mask = None
@@ -1516,7 +1516,7 @@ def selfcal_ms(
     result_dict = _result_to_dict(result)
     if config.generate_diagnostics:
         try:
-            from dsa110_contimg.core.calibration.selfcal_diagnostics import (
+            from dsa110_continuum.calibration.selfcal_diagnostics import (
                 generate_selfcal_diagnostics,
             )
 

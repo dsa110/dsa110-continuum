@@ -41,7 +41,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd  # type: ignore[import-untyped]
 
-from dsa110_contimg.core.simulation.ground_truth import GroundTruthRegistry
+from dsa110_continuum.simulation.ground_truth import GroundTruthRegistry
 
 logger = logging.getLogger(__name__)
 

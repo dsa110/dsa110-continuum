@@ -19,7 +19,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
-from dsa110_contimg.core.catalog.builders import (
+from dsa110_continuum.catalog.builders import (
     CATALOG_COVERAGE_LIMITS,
     check_catalog_database_exists,
 )

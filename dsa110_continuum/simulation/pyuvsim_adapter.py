@@ -48,7 +48,7 @@ from pyradiosky import SkyModel
 from pyuvdata import AiryBeam, GaussianBeam, UVData
 
 if TYPE_CHECKING:
-    from dsa110_contimg.core.simulation.source_selection import SyntheticSource
+    from dsa110_continuum.simulation.source_selection import SyntheticSource
 
 logger = logging.getLogger(__name__)
 

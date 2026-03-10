@@ -50,11 +50,11 @@ def solve_calibration_for_ms(
 
     """
     try:
-        from dsa110_contimg.core.calibration.runner import run_calibrator
-        from dsa110_contimg.core.calibration.refant_selection import (
+        from dsa110_continuum.calibration.runner import run_calibrator
+        from dsa110_continuum.calibration.refant_selection import (
             get_default_outrigger_refants,
         )
-        from dsa110_contimg.core.calibration.selection import select_bandpass_from_catalog
+        from dsa110_continuum.calibration.selection import select_bandpass_from_catalog
 
         # Auto-detect calibrator field if not provided
         if cal_field is None:
@@ -101,7 +101,7 @@ def solve_calibration_for_ms(
 
         # Issue #8: Pre-calibration RFI flagging
         try:
-            from dsa110_contimg.core.calibration.hardening import preflag_rfi
+            from dsa110_continuum.calibration.hardening import preflag_rfi
 
             preflag_rfi(ms_path, backend="aoflagger")
             logger.info(f"Pre-calibration RFI flagging complete for {ms_path}")
@@ -132,7 +132,7 @@ def solve_calibration_for_ms(
         # Issue #5: Automated QA assessment of calibration solutions
         qa_warnings: list[str] = []
         try:
-            from dsa110_contimg.core.calibration.qa import assess_calibration_quality
+            from dsa110_continuum.calibration.qa import assess_calibration_quality
 
             for caltable in caltables:
                 qa_result = assess_calibration_quality(

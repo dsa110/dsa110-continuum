@@ -110,7 +110,7 @@ def primary_beam_response(
     # Priority 1: Try Docker-based EveryBeam if MS path provided and Docker available
     if config.use_docker and config.ms_path is not None:
         try:
-            from dsa110_contimg.core.calibration.beam_docker import (
+            from dsa110_continuum.calibration.beam_docker import (
                 _check_docker_available,
                 _check_image_available,
                 evaluate_beam_docker,

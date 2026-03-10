@@ -820,7 +820,7 @@ def build_calibrator_registry_from_catalog(
         Number of calibrators added to registry
     """
     # Import here to avoid circular dependency
-    from dsa110_contimg.core.catalog.query import query_sources
+    from dsa110_continuum.catalog.query import query_sources
 
     # Ensure registry exists
     if db_path is None:

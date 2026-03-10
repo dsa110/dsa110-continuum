@@ -88,7 +88,7 @@ def _query_local_catalog(
 ) -> dict[str, u.Quantity]:
     """Helper to query local SQLite catalogs."""
     try:
-        from dsa110_contimg.core.calibration.catalogs import query_catalog_sources
+        from dsa110_continuum.calibration.catalogs import query_catalog_sources
 
         # query_catalog_sources expects degrees
         df = query_catalog_sources(

@@ -5,9 +5,9 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from dsa110_contimg.core.qa.image_metrics import get_center_cutout
-from dsa110_contimg.core.visualization.config import FigureConfig, PlotStyle
-from dsa110_contimg.core.visualization.plot_context import PlotContext, should_generate_interactive
+from dsa110_continuum.qa.image_metrics import get_center_cutout
+from dsa110_continuum.visualization.config import FigureConfig, PlotStyle
+from dsa110_continuum.visualization.plot_context import PlotContext, should_generate_interactive
 
 
 def _setup_matplotlib() -> None:
@@ -56,7 +56,7 @@ def plot_psf_correlation(
     psf_data: np.ndarray :
 
     """
-    from dsa110_contimg.core.visualization.plot_context import PerformanceLogger
+    from dsa110_continuum.visualization.plot_context import PerformanceLogger
 
     # Get cutouts
     source_cutout = get_center_cutout(dirty_data, cutout_size)
@@ -117,7 +117,7 @@ def _generate_psf_correlation_json(
     source_norm: np.ndarray :
 
     """
-    from dsa110_contimg.core.visualization.vega_specs import (
+    from dsa110_continuum.visualization.vega_specs import (
         create_scatter_spec,
         save_vega_spec,
     )
@@ -216,7 +216,7 @@ def plot_residual_histogram(
     residual_data: np.ndarray :
 
     """
-    from dsa110_contimg.core.visualization.plot_context import PerformanceLogger
+    from dsa110_continuum.visualization.plot_context import PerformanceLogger
 
     flat = residual_data.flatten()
 
@@ -258,7 +258,7 @@ def _generate_residual_histogram_json(
     flat: np.ndarray :
 
     """
-    from dsa110_contimg.core.visualization.vega_specs import (
+    from dsa110_continuum.visualization.vega_specs import (
         create_residual_histogram_spec,
         save_vega_spec,
     )

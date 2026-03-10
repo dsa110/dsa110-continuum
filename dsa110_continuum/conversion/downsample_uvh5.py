@@ -13,7 +13,7 @@ Averaging strategy:
 - UVW: Linear average (valid for short time spans)
 
 Usage:
-    from dsa110_contimg.core.conversion.downsample_uvh5 import downsample_uvh5
+    from dsa110_continuum.conversion.downsample_uvh5 import downsample_uvh5
 
     downsample_uvh5(
         input_path="/path/to/input.hdf5",

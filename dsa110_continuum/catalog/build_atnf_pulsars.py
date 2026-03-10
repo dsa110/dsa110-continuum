@@ -176,7 +176,7 @@ def build_atnf_pulsar_db(
         Exception
         If download or database creation fails
     """
-    from dsa110_contimg.core.catalog.builders import _acquire_db_lock, _release_db_lock
+    from dsa110_continuum.catalog.builders import _acquire_db_lock, _release_db_lock
 
     # Resolve output path
     if output_path is None:

@@ -254,7 +254,7 @@ def _get_calibrator_position(calibrator_name: str) -> tuple:
     """
     import sqlite3
 
-    from dsa110_contimg.core.calibration.catalogs import resolve_vla_catalog_path
+    from dsa110_continuum.calibration.catalogs import resolve_vla_catalog_path
 
     catalog_path = resolve_vla_catalog_path()
 
@@ -495,7 +495,7 @@ def phaseshift_ms(
     import astropy.units as u
     from astropy.coordinates import SkyCoord
 
-    from dsa110_contimg.core.calibration.casa_service import CASAService
+    from dsa110_continuum.calibration.casa_service import CASAService
 
     service = CASAService()
 
@@ -854,7 +854,7 @@ def phaseshift_ms(
     # This catches the chgcentre bug where UVW values exceed physical baseline limits
     if validate_uvw:
         try:
-            from dsa110_contimg.core.qa.uvw_validation import check_uvw_after_phaseshift
+            from dsa110_continuum.qa.uvw_validation import check_uvw_after_phaseshift
 
             logger.info("Validating UVW geometry after phaseshift...")
             uvw_result = check_uvw_after_phaseshift(
@@ -1058,13 +1058,13 @@ def run_calibrator(
     logger.info("Running MODIFIED run_calibrator from local workspace!")
     logger.info("************************************************************")
 
-    from dsa110_contimg.core.calibration.calibration import (
+    from dsa110_continuum.calibration.calibration import (
         solve_bandpass,
         solve_delay,
         solve_gains,
         solve_prebandpass_phase,
     )
-    from dsa110_contimg.core.calibration.model import populate_model_from_catalog
+    from dsa110_continuum.calibration.model import populate_model_from_catalog
 
     ms_file = str(ms_path)
     caltables: list[str] = []
@@ -1087,7 +1087,7 @@ def run_calibrator(
     # Step 0: Pre-calibration flagging (optional)
     if do_flagging:
         try:
-            from dsa110_contimg.core.calibration.casa_service import CASAService
+            from dsa110_continuum.calibration.casa_service import CASAService
 
             service = CASAService()
 
@@ -1097,7 +1097,7 @@ def run_calibrator(
             # RFI flagging with AOFlagger (critical for bandpass!)
             logger.info("Running AOFlagger RFI flagging...")
             try:
-                from dsa110_contimg.core.calibration.flagging import flag_rfi
+                from dsa110_continuum.calibration.flagging import flag_rfi
 
                 flag_rfi(ms_file, backend="aoflagger")
                 logger.info(" AOFlagger RFI flagging complete")
@@ -1422,7 +1422,7 @@ def run_calibrator(
             "Calibration produced NO tables. Generating synthetic dummy tables to allow pipeline completion."
         )
         try:
-            from dsa110_contimg.core.calibration.casa_service import CASAService
+            from dsa110_continuum.calibration.casa_service import CASAService
 
             service = CASAService()
 

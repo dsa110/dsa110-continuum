@@ -15,7 +15,7 @@ Architecture:
 - CatalogPreloader: Background builds catalog strip databases
 
 Usage:
-    from dsa110_contimg.core.calibration.precompute import PointingTracker, get_pointing_tracker
+    from dsa110_continuum.calibration.precompute import PointingTracker, get_pointing_tracker
 
     tracker = PointingTracker()
 
@@ -42,7 +42,7 @@ import numpy as np
 
 # Import shared pointing utilities
 from dsa110_contimg.common.utils.env_utils import get_env_path
-from dsa110_contimg.core.pointing.utils import (
+from dsa110_continuum.pointing.utils import (
     detect_dec_change,
     read_uvh5_dec_fast,
 )
@@ -337,10 +337,10 @@ class PointingTracker:
             Minimum flux at 20 cm in Jy (default is MIN_FLUX_JY_20CM)
 
         """
-        from dsa110_contimg.core.catalog.calibrator_integration import (
+        from dsa110_continuum.catalog.calibrator_integration import (
             rank_calibrators_near_position,
         )
-        from dsa110_contimg.core.pointing.monitor import predict_calibrator_transit_by_coords
+        from dsa110_continuum.pointing.monitor import predict_calibrator_transit_by_coords
 
         now = datetime.utcnow()
 
@@ -418,7 +418,7 @@ class PointingTracker:
             Declination for catalog strips
 
         """
-        from dsa110_contimg.core.catalog.builders import (
+        from dsa110_continuum.catalog.builders import (
             CATALOG_COVERAGE_LIMITS,
             check_catalog_database_exists,
         )
@@ -469,7 +469,7 @@ class PointingTracker:
 
         """
         try:
-            from dsa110_contimg.core.catalog.builders import (
+            from dsa110_continuum.catalog.builders import (
                 build_first_strip_db,
                 build_nvss_strip_db,
                 build_vlass_strip_db,
@@ -616,7 +616,7 @@ async def precompute_all_transits(
     """
     import sqlite3
 
-    from dsa110_contimg.core.pointing.monitor import predict_calibrator_transit_by_coords
+    from dsa110_continuum.pointing.monitor import predict_calibrator_transit_by_coords
 
     now = datetime.utcnow()
     end_time = now + timedelta(hours=hours_ahead)
@@ -705,7 +705,7 @@ def ensure_catalogs_for_dec(
         Maximum wait time in seconds (default is 300.0)
 
     """
-    from dsa110_contimg.core.catalog.builders import check_catalog_database_exists
+    from dsa110_continuum.catalog.builders import check_catalog_database_exists
 
     catalog_types = catalog_types or DEFAULT_CATALOG_TYPES
     results: dict[str, Path | None] = {}

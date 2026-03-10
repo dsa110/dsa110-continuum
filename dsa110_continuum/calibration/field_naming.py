@@ -143,7 +143,7 @@ def rename_calibrator_fields_from_catalog(
         - Handles all-meridian drift-scan mode correctly (checks all 24 fields)
         - Silently returns None if no calibrator found (logs warning)
     """
-    from dsa110_contimg.core.calibration.selection import select_bandpass_from_catalog
+    from dsa110_continuum.calibration.selection import select_bandpass_from_catalog
 
     try:
         _, _, _, cal_info, peak_field = select_bandpass_from_catalog(

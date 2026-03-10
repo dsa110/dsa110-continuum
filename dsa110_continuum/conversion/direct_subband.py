@@ -17,7 +17,7 @@ import astropy.units as u
 import numpy as np
 from astropy.time import Time
 
-from dsa110_contimg.core.conversion.helpers import (
+from dsa110_continuum.conversion.helpers import (
     _ensure_antenna_diameters,
     cleanup_casa_file_handles,
     phase_to_meridian,
@@ -139,7 +139,7 @@ class DirectSubbandWriter(MSWriter):
         mp_ctx = multiprocessing.get_context(mp_method)
         logger.info(f"Using '{mp_method}' multiprocessing context (synthetic={is_synthetic})")
 
-        from dsa110_contimg.core.calibration.casa_service import CASAService
+        from dsa110_continuum.calibration.casa_service import CASAService
 
         service = CASAService()
 
@@ -334,7 +334,7 @@ class DirectSubbandWriter(MSWriter):
         #   sb15 = lowest frequency (~1311 MHz)
         # For MFS imaging, we need ASCENDING frequency order (low to high).
         # Therefore, we must REVERSE the subband number sort.
-        from dsa110_contimg.core.conversion.conversion_orchestrator import (
+        from dsa110_continuum.conversion.conversion_orchestrator import (
             _extract_subband_code,
         )
 
@@ -522,7 +522,7 @@ class DirectSubbandWriter(MSWriter):
                 # which causes CASA msmetadata.timesforscans() to fail with
                 # "No matching scans found" - breaking calibration and imaging.
                 try:
-                    from dsa110_contimg.core.conversion.ms_utils import (
+                    from dsa110_continuum.conversion.ms_utils import (
                         _ensure_state_table_valid,
                         _fix_observation_time_range,
                     )
@@ -558,7 +558,7 @@ class DirectSubbandWriter(MSWriter):
                     # Enhanced cleanup and retry
                     if ms_stage_path.exists():
                         shutil.rmtree(ms_stage_path, ignore_errors=True)
-                    from dsa110_contimg.core.conversion.helpers_telescope import (
+                    from dsa110_continuum.conversion.helpers_telescope import (
                         casa_operation,
                     )
 
@@ -570,7 +570,7 @@ class DirectSubbandWriter(MSWriter):
                 raise
 
         if not concat_success:
-            from dsa110_contimg.core.conversion.helpers_telescope import casa_operation
+            from dsa110_continuum.conversion.helpers_telescope import casa_operation
 
             with casa_operation():
                 # Final cleanup attempt - automatic cleanup
@@ -581,7 +581,7 @@ class DirectSubbandWriter(MSWriter):
 
         # Explicit cleanup verification after concat
         # Use context manager for guaranteed cleanup
-        from dsa110_contimg.core.conversion.helpers_telescope import casa_operation
+        from dsa110_continuum.conversion.helpers_telescope import casa_operation
 
         with casa_operation():
             # Cleanup happens automatically
@@ -629,7 +629,7 @@ class DirectSubbandWriter(MSWriter):
         # Merge SPWs into a single SPW if requested
         if self.merge_spws:
             try:
-                from dsa110_contimg.core.conversion.merge_spws import (
+                from dsa110_continuum.conversion.merge_spws import (
                     get_spw_count,
                     merge_spws,
                 )

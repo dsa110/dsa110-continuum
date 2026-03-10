@@ -41,7 +41,7 @@ def generate_bandpass_plots(
 
     # Helper to call plotbandpass with CASA log environment protection
     def _call_plotbandpass(**kwargs):
-        from dsa110_contimg.core.calibration.casa_service import CASAService
+        from dsa110_continuum.calibration.casa_service import CASAService
 
         service = CASAService()
         return service.plotbandpass(**kwargs)
@@ -165,7 +165,7 @@ def generate_gain_plots(
 
     # Helper to call plotcal with CASA log environment protection
     def _call_plotcal(**kwargs):
-        from dsa110_contimg.core.calibration.casa_service import CASAService
+        from dsa110_continuum.calibration.casa_service import CASAService
 
         service = CASAService()
         return service.plotcal(**kwargs)

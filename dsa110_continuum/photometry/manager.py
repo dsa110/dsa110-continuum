@@ -30,9 +30,9 @@ from dsa110_contimg.infrastructure.database.data_registry import (
     ensure_data_registry_db,
     link_photometry_to_data,
 )
-from dsa110_contimg.core.photometry.ese_pipeline import auto_detect_ese_for_new_measurements
-from dsa110_contimg.core.photometry.forced import ForcedPhotometryResult, measure_many
-from dsa110_contimg.core.photometry.helpers import (
+from dsa110_continuum.photometry.ese_pipeline import auto_detect_ese_for_new_measurements
+from dsa110_continuum.photometry.forced import ForcedPhotometryResult, measure_many
+from dsa110_continuum.photometry.helpers import (
     query_sources_for_fits,
     query_sources_for_mosaic,
 )

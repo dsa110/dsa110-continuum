@@ -12,7 +12,7 @@ import argparse
 import sqlite3
 from pathlib import Path
 
-from dsa110_contimg.core.catalog.build_master import (
+from dsa110_continuum.catalog.build_master import (
     backfill_master_provenance_from_sqlite,
     build_master_union_from_sqlite,
 )

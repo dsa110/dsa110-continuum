@@ -11,11 +11,11 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from dsa110_contimg.core.qa.calibration_quality import (
+from dsa110_continuum.qa.calibration_quality import (
     check_caltable_completeness,
     validate_caltable_quality,
 )
-from dsa110_contimg.core.qa.image_metrics import (
+from dsa110_continuum.qa.image_metrics import (
     calculate_dynamic_range,
     calculate_psf_correlation,
     calculate_residual_stats,

@@ -17,7 +17,7 @@ import argparse
 import json
 import sys
 
-from dsa110_contimg.core.calibration.presets import (
+from dsa110_continuum.calibration.presets import (
     PRESETS,
     get_preset,
     list_presets,

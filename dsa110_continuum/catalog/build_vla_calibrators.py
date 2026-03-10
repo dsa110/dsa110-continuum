@@ -44,7 +44,7 @@ from astropy.coordinates import SkyCoord
 
 import numpy as np
 
-from dsa110_contimg.core.calibration.beam_model import (
+from dsa110_continuum.calibration.beam_model import (
     BeamConfig,
     _airy_primary_beam_response,
 )

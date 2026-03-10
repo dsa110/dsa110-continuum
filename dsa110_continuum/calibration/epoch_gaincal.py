@@ -244,7 +244,7 @@ def calibrate_epoch(
             log.info("Epoch gaincal [%s]: flagging autocorrelations", stem)
             _svc.flagdata(vis=meridian_ms, autocorr=True, flagbackup=False)
             try:
-                from dsa110_contimg.core.calibration.flagging import flag_rfi as _flag_rfi
+                from dsa110_continuum.calibration.flagging import flag_rfi as _flag_rfi
                 log.info("Epoch gaincal [%s]: AOFlagger RFI flagging", stem)
                 _flag_rfi(meridian_ms, backend="aoflagger")
                 log.info("Epoch gaincal [%s]: AOFlagger complete", stem)

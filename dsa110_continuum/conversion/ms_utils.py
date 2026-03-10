@@ -65,7 +65,7 @@ def _ensure_imaging_columns_exist(ms_path: str) -> None:
     # In conversion context (new MS), no calibration has been applied yet,
     # so we can safely disable protection.
     try:
-        from dsa110_contimg.core.calibration.casa_service import CASAService
+        from dsa110_continuum.calibration.casa_service import CASAService
 
         service = CASAService()
         logger.info(f"Creating imaging columns using clearcal: {ms_path}")
@@ -367,7 +367,7 @@ def _initialize_weights(ms_path: str) -> None:
     ----------
     """
     try:
-        from dsa110_contimg.core.calibration.casa_service import CASAService
+        from dsa110_continuum.calibration.casa_service import CASAService
 
         service = CASAService()
 
@@ -442,8 +442,8 @@ def _fix_field_phase_centers_from_times(ms_path: str) -> None:
         import astropy.units as u  # type: ignore
         import numpy as _np
         
-        from dsa110_contimg.core.adapters.casa import casa_adapter
-        from dsa110_contimg.core.conversion.helpers_coordinates import get_meridian_coords
+        from dsa110_continuum.adapters.casa import casa_adapter
+        from dsa110_continuum.conversion.helpers_coordinates import get_meridian_coords
         from dsa110_contimg.common.utils.time_utils import detect_casa_time_format
         
         if not casa_adapter.is_available:
@@ -1309,7 +1309,7 @@ def configure_ms_for_imaging(
     # Auto-detect and rename calibrator fields (recommended for drift-scan observations)
     if rename_calibrator_fields:
         try:
-            from dsa110_contimg.core.calibration.field_naming import (
+            from dsa110_continuum.calibration.field_naming import (
                 rename_calibrator_fields_from_catalog,
             )
 
@@ -1373,7 +1373,7 @@ def inject_provenance_metadata(ms_path: str, job_id: str, config_hash: str) -> N
     config_hash : str
         SHA-256 hash of the pipeline configuration
     """
-    from dsa110_contimg.core.adapters.casa import casa_adapter
+    from dsa110_continuum.adapters.casa import casa_adapter
     
     if not casa_adapter.is_available:
         return
@@ -1441,7 +1441,7 @@ def get_provenance_metadata(ms_path: str) -> dict[str, str]:
     dict
         Dictionary containing 'job_id' and 'config_hash' if found.
     """
-    from dsa110_contimg.core.adapters.casa import casa_adapter
+    from dsa110_continuum.adapters.casa import casa_adapter
     
     metadata = {}
     

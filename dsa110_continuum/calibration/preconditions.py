@@ -15,7 +15,7 @@ The validation gate checks:
 6. UVW geometry: Values within physical baseline limits
 
 Usage:
-    from dsa110_contimg.core.calibration.preconditions import (
+    from dsa110_continuum.calibration.preconditions import (
         validate_bandpass_preconditions,
         ValidationGateResult,
     )
@@ -741,7 +741,7 @@ def _check_uvw_geometry(
         Result of the UVW geometry check.
     """
     try:
-        from dsa110_contimg.core.qa.uvw_validation import validate_uvw_geometry
+        from dsa110_continuum.qa.uvw_validation import validate_uvw_geometry
 
         result = validate_uvw_geometry(
             ms_path,

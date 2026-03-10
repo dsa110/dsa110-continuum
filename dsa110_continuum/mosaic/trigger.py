@@ -17,7 +17,7 @@ Key features:
 - Single active dec-band: DSA-110 observes at fixed dec per session
 
 Usage:
-    from dsa110_contimg.core.mosaic.trigger import SlidingWindowTrigger
+    from dsa110_continuum.mosaic.trigger import SlidingWindowTrigger
 
     trigger = SlidingWindowTrigger(db_path=Path("pipeline.sqlite3"))
 

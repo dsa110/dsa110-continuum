@@ -32,11 +32,11 @@ from dsa110_contimg.common.utils.exceptions import (
     wrap_exception,
 )
 from dsa110_contimg.common.utils.logging import log_context, log_exception
-from dsa110_contimg.core.conversion.file_validator import (
+from dsa110_continuum.conversion.file_validator import (
     MissingInputFilesError,
     RollingFileValidator,
 )
-from dsa110_contimg.core.conversion.writers import get_writer
+from dsa110_continuum.conversion.writers import get_writer
 from dsa110_contimg.infrastructure.database.hdf5_index import (
     parse_subband_filename,
     query_subband_groups,

@@ -189,7 +189,7 @@ class CalibratorMSGenerator:
         RuntimeError
             If no matching calibrator found
         """
-        from dsa110_contimg.core.catalog.build_vla_calibrators import (
+        from dsa110_continuum.catalog.build_vla_calibrators import (
             get_best_vla_calibrator,
             query_calibrators_by_dec,
         )
@@ -261,7 +261,7 @@ class CalibratorMSGenerator:
         list[Time]
             List of transit times
         """
-        from dsa110_contimg.core.calibration.transit import transit_times
+        from dsa110_continuum.calibration.transit import transit_times
 
         return transit_times(
             ra_deg=calibrator.ra_deg,
@@ -366,7 +366,7 @@ class CalibratorMSGenerator:
         list[Path]
             Paths to created MS files
         """
-        from dsa110_contimg.core.conversion import convert_subband_groups_to_ms
+        from dsa110_continuum.conversion import convert_subband_groups_to_ms
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
         ms_paths = []
@@ -438,7 +438,7 @@ class CalibratorMSGenerator:
         tuple[bool, int | None]
             (is_present, peak_field_index)
         """
-        from dsa110_contimg.core.calibration.selection import (
+        from dsa110_continuum.calibration.selection import (
             select_bandpass_from_catalog,
         )
 

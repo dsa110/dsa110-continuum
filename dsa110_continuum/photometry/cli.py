@@ -37,12 +37,12 @@ from astropy.io import fits  # type: ignore[reportMissingTypeStubs]
 from astropy.wcs import WCS  # type: ignore[reportMissingTypeStubs]
 from matplotlib.colors import Normalize
 
-from dsa110_contimg.core.catalog.query import query_sources
+from dsa110_continuum.catalog.query import query_sources
 from dsa110_contimg.infrastructure.database import (
     ensure_pipeline_db,
     photometry_insert,
 )
-from dsa110_contimg.core.photometry.ese_detection import detect_ese_candidates
+from dsa110_continuum.photometry.ese_detection import detect_ese_candidates
 
 from .adaptive_binning import AdaptiveBinningConfig
 from .adaptive_photometry import measure_with_adaptive_binning
@@ -518,7 +518,7 @@ def cmd_adaptive(args: argparse.Namespace) -> int:
 
 def cmd_ese_detect(args: argparse.Namespace) -> int:
     """Detect ESE candidates from variability statistics."""
-    from dsa110_contimg.core.photometry.thresholds import get_threshold_preset
+    from dsa110_continuum.photometry.thresholds import get_threshold_preset
 
     products_db = _get_pipeline_db_path(getattr(args, "products_db", None))
 

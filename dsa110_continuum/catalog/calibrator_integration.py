@@ -11,7 +11,7 @@ import math
 from astropy.coordinates import SkyCoord
 import astropy.units as u
 
-from dsa110_contimg.core.calibration.catalogs import (
+from dsa110_continuum.calibration.catalogs import (
     load_vla_catalog_from_sqlite,
     resolve_vla_catalog_path,
 )

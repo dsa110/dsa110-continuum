@@ -32,8 +32,8 @@ if TYPE_CHECKING:
     from matplotlib.figure import Figure
     from numpy.typing import NDArray
 
-from dsa110_contimg.core.visualization.config import FigureConfig, PlotStyle
-from dsa110_contimg.core.visualization.plot_context import (
+from dsa110_continuum.visualization.config import FigureConfig, PlotStyle
+from dsa110_continuum.visualization.plot_context import (
     PlotContext,
     should_generate_interactive,
 )
@@ -526,7 +526,7 @@ def plot_residual_amplitude_vs_baseline(
     use_interactive = should_generate_interactive(context, interactive)
 
     if use_interactive:
-        from dsa110_contimg.core.visualization.vega_specs import save_vega_spec
+        from dsa110_continuum.visualization.vega_specs import save_vega_spec
 
         # Subsample for interactive (Vega-Lite can be slow with many points)
         max_points = 5000
@@ -712,7 +712,7 @@ def plot_residual_phase_vs_time(
     use_interactive = should_generate_interactive(context, interactive)
 
     if use_interactive:
-        from dsa110_contimg.core.visualization.vega_specs import save_vega_spec
+        from dsa110_continuum.visualization.vega_specs import save_vega_spec
 
         # Subsample for interactive
         max_points = 5000
@@ -870,7 +870,7 @@ def plot_residual_histogram(
     use_interactive = should_generate_interactive(context, interactive)
 
     if use_interactive:
-        from dsa110_contimg.core.visualization.vega_specs import (
+        from dsa110_continuum.visualization.vega_specs import (
             create_residual_histogram_spec,
             save_vega_spec,
         )
@@ -1024,7 +1024,7 @@ def plot_residual_complex_scatter(
     use_interactive = should_generate_interactive(context, interactive)
 
     if use_interactive:
-        from dsa110_contimg.core.visualization.vega_specs import (
+        from dsa110_continuum.visualization.vega_specs import (
             create_scatter_spec,
             save_vega_spec,
         )
@@ -1157,7 +1157,7 @@ def plot_residual_per_antenna(
     use_interactive = should_generate_interactive(context, interactive)
 
     if use_interactive:
-        from dsa110_contimg.core.visualization.vega_specs import save_vega_spec
+        from dsa110_continuum.visualization.vega_specs import save_vega_spec
 
         values = [
             {

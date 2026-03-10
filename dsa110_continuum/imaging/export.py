@@ -38,7 +38,7 @@ def export_fits(
         List of exported FITS file paths
 
     """
-    from dsa110_contimg.core.calibration.casa_service import CASAService
+    from dsa110_continuum.calibration.casa_service import CASAService
 
     service = CASAService()
 
