@@ -1,0 +1,230 @@
+---
+title: "Pipeline Overview"
+---
+
+> **Status**: Verified against repo commit `2fa6944` (2026-03-09)
+> **See also**: [Epoch QA](epoch-qa.qmd) | [Outputs and Artifacts](outputs-and-artifacts.qmd)
+
+## What this pipeline does
+
+The DSA-110 continuum imaging pipeline converts raw drift-scan HDF5 visibilities
+into calibrated images, mosaics, forced photometry catalogs, and (eventually)
+multi-epoch light curves. It targets transient and variable source detection at
+1.4 GHz using the 110-antenna Deep Synoptic Array at OVRO.
+
+This repository (`dsa110-continuum`) is a clean reimplementation of the older
+`dsa110-contimg` codebase. As of Phase 1 (2026-03-10), 450 `dsa110_contimg.core.*`
+imports across 136 module files have been replaced with `dsa110_continuum.*` imports.
+The remaining ~80 stale references are intentionally preserved in `__init__.py`
+re-export layers (prevents double job-type registration from the old package's
+bootstrap chain). One inline import in `imaging/worker.py` has no local equivalent.
+New development uses `dsa110_continuum.*` imports exclusively.
+
+---
+
+## Pipeline stages
+
+The main production path runs through `batch_pipeline.py`, which processes a
+single date end-to-end. `mosaic_day.py` is an alternative standalone script
+that produces full-day mosaics grouped by RA strip rather than 1-hour epochs.
+
+```{mermaid}
+flowchart TD
+    subgraph Input
+        HDF5[/"Raw HDF5 files\n/data/incoming/"/]
+        DB[("Pipeline SQLite DB")]
+    end
+
+    subgraph "Conversion (old CLI)"
+        IDX["Index into DB"]
+        CONV["HDF5 → MS"]
+    end
+
+    subgraph "Per-tile processing (mosaic_day.py)"
+        PS["Phaseshift to\nmedian meridian"]
+        CAL["Apply B + G\ncalibration"]
+        IMG["WSClean imaging\n(pbcor)"]
+    end
+
+    subgraph "Epoch assembly (batch_pipeline.py)"
+        GCAL["Epoch gaincal\n(optional)"]
+        BIN["Bin tiles into\n1-hour epochs"]
+        COADD["Noise-weighted\nmosaic"]
+    end
+
+    subgraph "Per-epoch analysis"
+        PHOT["Forced photometry\n(NVSS, ≥ 10 mJy)"]
+        QA["Three-gate\nepoch QA\n(NVSS, ≥ 50 mJy)"]
+        PNG["Diagnostic PNG"]
+    end
+
+    subgraph "Downstream (standalone scripts)"
+        SF["Source finding\n(BANE + Aegean)"]
+        LC["Light curve stacking\n+ variability metrics"]
+    end
+
+    HDF5 --> IDX --> DB --> CONV
+    CONV --> PS --> CAL --> IMG
+    IMG --> GCAL --> BIN --> COADD
+    COADD --> PHOT
+    COADD --> QA --> PNG
+    PHOT --> LC
+    QA -->|QA-FAIL| REJECT["Epoch logged,\nnot used downstream"]
+
+    style QA fill:#2d4a22,stroke:#4ec9b0
+    style REJECT fill:#4a2222,stroke:#e74c3c
+```
+
+::: {.callout-note}
+- Forced photometry and epoch QA run independently on each epoch mosaic — they are not sequential.
+- Source finding (BANE + Aegean) is a separate standalone step, not wired into `batch_pipeline.py`.
+- Light curve stacking scripts exist but have not been run on multi-epoch data *(Planned)*.
+:::
+
+---
+
+## Stage details
+
+### 1. Conversion (HDF5 → Measurement Set)
+
+- **Script**: `dsa110 convert` (old CLI) / `dsa110_continuum/conversion/`
+- **Input**: Raw UVH5 HDF5 files in `/data/incoming/`, grouped by timestamp and subband (16 subbands per observation)
+- **Output**: One Measurement Set per observation timestamp in `/stage/dsa110-contimg/ms/`
+- **Key detail**: New dates must be indexed into the pipeline SQLite DB first via `dsa110 index add`
+
+### 2. Phaseshift
+
+- **Code**: `mosaic_day.py:process_ms()` → `phaseshift_ms(mode="median_meridian")`
+- **Input**: Raw MS
+- **Output**: `*_meridian.ms` (phase-rotated to the median meridian of the drift scan)
+- **Cleanup**: Meridian MS is deleted after successful imaging unless `--keep-intermediates` is set
+- **Silent failure risk**: `FIELD::PHASE_DIR` not updated by `chgcentre` — must be explicitly patched (see [Silent failure risks](#known-silent-failure-risks) below)
+
+### 3. Calibration
+
+- **Code**: `mosaic_day.py:process_ms()` → `apply_to_target()`
+- **Input**: Meridian MS + bandpass table (`.b`) + gain table (`.g`)
+- **Output**: `CORRECTED_DATA` column populated in the meridian MS
+- **Interpolation**: bandpass = `nearest`, gain = `linear`
+- **Skip logic**: Calibration is skipped if `CORRECTED_DATA` already exists and its amplitude ratio to `DATA` exceeds 5.0
+- **Cal tables**: Currently only Dec ≈ +16° strip has validated tables (from 2026-01-25). Other dates must symlink to these
+- **Dec-strip guard**: `batch_pipeline.py` aborts if observed Dec differs from expected cal-table strip by > 5°. Cross-strip application is confirmed to produce near-zero flux (median ratio ≈ 0.06)
+
+**Epoch gaincal** *(Verified)*: When run via `batch_pipeline.py`, a per-epoch gain calibration step optionally precedes tile processing. It runs a short-timescale phase solve (`solint='60s'`) as a pre-conditioner, then a full amplitude+phase solve. If the gain table flagging fraction exceeds 30% (`GAINCAL_FLAG_FRACTION_LIMIT`), the pipeline falls back to the static bandpass-only calibration. Controlled by `--skip-epoch-gaincal`.
+
+### 4. Imaging
+
+- **Code**: `mosaic_day.py:process_ms()` → `image_ms()` (WSClean backend)
+- **Input**: Calibrated meridian MS
+- **Output**: Per-tile FITS images: `*-image-pb.fits` (primary-beam-corrected, canonical), `*-image.fits` (uncorrected, fallback), `*-beam-0.fits` (beam model)
+- **Parameters**: 2400×2400 px, 6″ pixels, Briggs robust=0.5, niter=1000, threshold=5 mJy, `gridder="wgridder"`, `pbcor=True`
+- **Silent failure risk**: `TELESCOPE_NAME` must be `DSA_110` before each WSClean run; SPW-merge resets it to `OVRO_MMA`. The wrong beam model causes ~20% photometric error at field edges. Handled automatically inside `run_wsclean()` but must be preserved if the imaging workflow is modified
+
+### 5. Mosaicking
+
+Two modes exist:
+
+| Mode | Script | Grouping | Output |
+|------|--------|----------|--------|
+| **Batch (primary)** | `batch_pipeline.py` | 1-hour epochs by UTC hour, ±2 tile overlap between adjacent epochs | `{date}T{HH}00_mosaic.fits` |
+| **Standalone** | `mosaic_day.py` | RA strips (10° gap threshold, circular-mean RA) | `full_mosaic.fits` or `full_mosaic_ra{NNN}.fits` |
+
+Both modes share the same underlying functions (`build_common_wcs`, `coadd_tiles`):
+
+- **WCS construction**: Circular-mean RA (via `atan2`) to handle the 0°/360° wrap correctly
+- **Coaddition**: Noise-weighted (`1/σ²`) using `reproject_interp` onto the common grid
+- **PB cutoff**: Pixels where the WSClean beam model is below 20% of peak response are blanked before coadd
+
+::: {.callout-warning}
+**Current limitation**: `reproject_interp` allocates a full output-grid array per tile (~500 Mpx), making mosaicking slow (~15 min/tile on large grids). A fix using `reproject_and_coadd` with lazy footprints is planned (Phase 1 in `TODOS.md`).
+:::
+
+### 6. Epoch QA
+
+- **Module**: `dsa110_continuum/photometry/epoch_qa.py`
+- **Input**: Epoch mosaic FITS + NVSS SQLite catalog
+- **Output**: `EpochQAResult` dataclass, diagnostic PNG, row appended to `products/qa_summary.csv`
+- **Detail**: See [Epoch QA](epoch-qa.qmd) for gate definitions, thresholds, and constants
+
+### 7. Source finding
+
+- **Script**: `scripts/source_finding.py` (standalone, not wired into batch pipeline)
+- **Tools**: BANE (background estimation, 600 px box, 300 px step) + Aegean (7σ detection, 6σ flood-fill)
+- **Output**: Source catalog FITS (`*_sources.fits`), background map, RMS map
+- **Status**: *Verified* — works on single mosaics
+
+### 8. Forced photometry
+
+Two implementations exist:
+
+| Implementation | Script | Min flux | Purpose |
+|---------------|--------|----------|---------|
+| **Batch inline** | `batch_pipeline.py` → `measure_forced_peak()` | 10 mJy | Per-epoch flux catalog |
+| **Standalone** | `scripts/forced_photometry.py` | 50 mJy | Cross-match with Aegean detections |
+
+A third path inside `epoch_qa.py` uses NVSS ≥ 50 mJy sources — see [Epoch QA](epoch-qa.qmd).
+
+### 9. Source verification
+
+- **Script**: `scripts/verify_sources.py`
+- **Catalogs**: `master_sources.sqlite3`, `nvss_full.sqlite3`, `atnf_full.sqlite3` (with deduplication)
+- **QA verdict**: PASS (median ratio ≥ 0.80), WARN (≥ 0.70), FAIL (< 0.70 or < 3 detections)
+
+### 10. Light curve extraction *(Planned)*
+
+- **Scripts**: `scripts/stack_lightcurves.py`, `scripts/variability_metrics.py`
+- **Status**: Scripts exist but have not been run on multi-epoch data. Blocked on multi-epoch production (Phase 2 in `TODOS.md`)
+
+---
+
+## Known silent-failure risks
+
+These produce no runtime error but yield incorrect science output. All three are
+documented in `CLAUDE.md` and must be preserved in any refactoring.
+
+| # | Issue | Guard function | Symptom if missing |
+|---|-------|---------------|--------------------|
+| 1 | `FIELD::PHASE_DIR` not updated by `chgcentre` | `update_phase_dir_to_target()` | Smeared/offset sources |
+| 2 | `FIELD::REFERENCE_DIR` out of sync with `PHASE_DIR` | `sync_reference_dir_with_phase_dir()` | Self-cal divergence, wrong sky model position |
+| 3 | `TELESCOPE_NAME` reset to `OVRO_MMA` by SPW-merge | `set_ms_telescope_name("DSA_110")` inside `run_wsclean()` | Wrong EveryBeam model, ~20% photometry error at field edges |
+
+---
+
+## What is implemented vs planned
+
+| Component | Status |
+|-----------|--------|
+| Conversion (HDF5 → MS) | *Verified* — uses old `dsa110_contimg` CLI |
+| Per-tile calibrate + image | *Verified* — single-date, Dec +16° strip |
+| Epoch gaincal with BP-only fallback | *Verified* — `GAINCAL_FLAG_FRACTION_LIMIT=0.30` |
+| Epoch mosaicking (1-hour bins) | *Verified* — slow (performance fix planned) |
+| Full-day mosaicking (RA strips) | *Verified* — `mosaic_day.py` standalone |
+| Three-gate epoch QA | *Verified* — tested on 2026-01-25; not yet run at scale |
+| Source finding (BANE + Aegean) | *Verified* — single mosaic |
+| Forced photometry (single epoch) | *Verified* — both inline and standalone |
+| Source verification (`verify_sources.py`) | *Verified* |
+| Canary regression test | *Verified* — `run_canary.sh` |
+| Multi-epoch batch processing | *Exists* — `batch_run_all_dates.sh` skeleton, not production-tested |
+| Per-date calibration automation | *Not started* — manual symlink only (Phase 2) |
+| Light curve stacking | *Exists* — scripts written, not yet run at scale |
+| Variability metrics | *Exists* — scripts written, not yet run at scale |
+| Dec +33° / +54° strip calibration | *Not started* — blocked on cal-table derivation |
+| Import rename (`dsa110_contimg` → `dsa110_continuum`) | *Complete (Phase 1)* — 450 replaced; ~80 intentionally preserved in `__init__.py` layers |
+
+---
+
+## Entry points
+
+| Script | Purpose | Typical invocation |
+|--------|---------|-------------------|
+| `scripts/batch_pipeline.py` | **Primary**: tiles → epoch mosaics → QA → photometry | `python scripts/batch_pipeline.py --date 2026-01-25 --cal-date 2026-01-25` |
+| `scripts/mosaic_day.py` | Full-day mosaic by RA strip | `python scripts/mosaic_day.py --date 2026-01-25` |
+| `scripts/run_pipeline.py` | Single hardcoded tile (3C454.3, 2026-01-25) | `python scripts/run_pipeline.py` |
+| `scripts/run_canary.sh` | Quick regression test (< 1 min) | `bash scripts/run_canary.sh` |
+| `scripts/source_finding.py` | BANE + Aegean on a mosaic | `python scripts/source_finding.py --mosaic /path/to.fits` |
+| `scripts/forced_photometry.py` | Forced photometry with Aegean cross-match | `python scripts/forced_photometry.py --mosaic /path/to.fits` |
+| `scripts/verify_sources.py` | Catalog-driven source verification | `python scripts/verify_sources.py --fits /path/to.fits` |
+| `scripts/validate_pipeline.py` | Post-run validation report | `python scripts/validate_pipeline.py --date 2026-01-25` |
+| `scripts/inventory.py` | Data inventory (HDF5 + MS census) | `python scripts/inventory.py` |
+
+All scripts require `/opt/miniforge/envs/casa6/bin/python`. Do **not** use system `python3`.

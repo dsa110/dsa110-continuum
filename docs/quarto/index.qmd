@@ -1,0 +1,63 @@
+---
+title: "DSA-110 Continuum Pipeline"
+---
+
+::: {.callout-note}
+**Draft docs.** Content was converted from `docs/drafts/` and reflects the
+repo state as of 2026-03-09. Quarto has not been installed on H17, so the
+rendered site has not been validated. The `.qmd` files are syntactically
+well-formed but no browser preview has been confirmed.
+:::
+
+This site documents the DSA-110 continuum imaging pipeline as it currently
+exists. All pages are written against verified repo state; planned or
+in-progress work is labelled explicitly.
+
+New agents and collaborators should start with
+[Agent Onboarding](agent-onboarding.qmd) before diving into the deeper pipeline
+pages.
+
+**Audience**: Operators running the pipeline on H17, and developers
+extending or debugging it.
+
+## Pages
+
+| Page | What it covers |
+|------|---------------|
+| [Agent Onboarding](agent-onboarding.qmd) | How a new AI tool or collaborator should acquire trustworthy pipeline context |
+| [Pipeline Overview](pipeline-overview.qmd) | Stages, entry points, calibration, imaging, mosaicking, known silent-failure risks |
+| [Epoch QA](epoch-qa.qmd) | Three-gate QA system, thresholds, canary tile, diagnostic PNG |
+| [Outputs and Artifacts](outputs-and-artifacts.qmd) | Directory layout, file schemas, debugging guide |
+
+## Quick-start
+
+```bash
+# All scripts require the casa6 conda env
+PYTHON=/opt/miniforge/envs/casa6/bin/python
+
+# Single-date end-to-end run (tiles → epoch mosaics → QA → photometry)
+$PYTHON scripts/batch_pipeline.py --date 2026-01-25 --cal-date 2026-01-25
+
+# Fast regression test (< 1 min, canary tile only)
+bash scripts/run_canary.sh
+
+# Full-day mosaic by RA strip (standalone)
+$PYTHON scripts/mosaic_day.py --date 2026-01-25
+```
+
+## Status summary
+
+| Phase | Status |
+|-------|--------|
+| M1 — Mosaic correctness | Implemented — open performance issues remain |
+| M2 — Phase 0 QA infrastructure | Implemented — validated on limited epochs |
+| M3 — Reliability hardening | Not started |
+| M4 — Multi-epoch production | Not started |
+| M5 — Science products (light curves) | Not started |
+
+See `TODOS.md` in the repository root for the detailed task list.
+
+## Environment note
+
+Do **not** use system `python3` (3.13, missing scientific dependencies).
+Always use `/opt/miniforge/envs/casa6/bin/python`.

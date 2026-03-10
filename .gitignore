@@ -11,5 +11,9 @@ products/
 # Cache and scratch
 .cache/
 
+# Quarto render output (source .qmd files are tracked, not the built site)
+docs/quarto/_site/
+docs/quarto/.quarto/
+
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md

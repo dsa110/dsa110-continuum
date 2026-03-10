@@ -1,0 +1,179 @@
+---
+title: "Epoch QA"
+---
+
+> **Status**: Verified against `dsa110_continuum/photometry/epoch_qa.py` and `batch_pipeline.py` (2026-03-09)
+> **See also**: [Pipeline Overview](pipeline-overview.qmd) | [Outputs and Artifacts](outputs-and-artifacts.qmd)
+
+## Purpose
+
+Each hourly epoch mosaic must pass quality checks before its photometry is
+trusted for multi-epoch light curve analysis. The epoch QA answers one question:
+
+> **Is this epoch's flux scale, source recovery, and noise level good enough to
+> produce reliable forced photometry?**
+
+Epochs that fail QA are logged in `products/qa_summary.csv` but excluded from
+downstream science products. This prevents corrupted calibration, excessive RFI,
+or missing data from silently contaminating light curves.
+
+---
+
+## Three-gate structure
+
+All non-SKIP gates must pass for the epoch to receive a QA-PASS verdict.
+
+```{mermaid}
+flowchart TD
+    MOSAIC[/"Epoch mosaic FITS"/]
+    NVSS[("NVSS catalog\n≥ 50 mJy")]
+
+    MOSAIC & NVSS --> M["measure_epoch_qa()"]
+
+    M --> G1{"Flux scale\nratio in\n[0.8, 1.2]?"}
+    M --> G2{"Completeness\n≥ 60%\nrecovered?"}
+    M --> G3{"Noise floor\nRMS ≤ 17.1\nmJy/beam?"}
+
+    G1 & G2 & G3 --> V{"All active\ngates PASS?"}
+
+    V -->|Yes| PASS["QA-PASS"]
+    V -->|No| FAIL["QA-FAIL"]
+
+    PASS & FAIL --> OUT["qa_summary.csv +\ndiagnostic PNG"]
+
+    style PASS fill:#2d4a22,stroke:#4ec9b0
+    style FAIL fill:#4a2222,stroke:#e74c3c
+```
+
+---
+
+## Gate details
+
+### Gate 1: Flux scale
+
+| | |
+|-|-|
+| **Metric** | Median of (DSA peak flux / NVSS catalog flux) across recovered sources |
+| **Pass** | `0.8 ≤ median_ratio ≤ 1.2` and at least 3 detections |
+| **Fail** | Ratio outside range, `NaN`, or fewer than 3 S/N ≥ 5 detections |
+| **Catches** | Miscalibrated bandpass, wrong cal-table applied, cross-strip calibration mismatch |
+
+*Observed failure mode*: Applying Dec +16° cal tables to a Dec +33° observation produces median ratio ≈ 0.06.
+
+### Gate 2: Detection completeness
+
+| | |
+|-|-|
+| **Metric** | Fraction of NVSS sources ≥ 50 mJy in the mosaic footprint recovered above 5σ local RMS |
+| **Pass** | `completeness ≥ 60%` |
+| **SKIP** | Fewer than 5 NVSS sources in footprint (avoids spurious failures on sparse fields) |
+| **Fail** | Completeness below 60% with ≥ 5 catalog sources |
+| **Catches** | Imaging failures, excessive flagging, phase corruption that smears sources below detection |
+
+**Recovery definition**: A source is "recovered" when the peak pixel in a **3×3-pixel box** (`_peak_in_box(half=1)`) centered on the NVSS catalog position exceeds **5× the local RMS**. Local RMS is the MAD-based estimate (`1.4826 × median(|pixel − median|)`) computed in a **50×50-pixel box** with the **central 10×10 pixels masked** (`_local_rms(outer=25, inner=5)`).
+
+::: {.callout-note}
+This recovery definition uses a smaller box than the forced photometry measurement in `batch_pipeline.py` (`measure_forced_peak`, box_size_pix=5). The QA gate intentionally uses a tight box to detect only genuine point-source matches.
+:::
+
+### Gate 3: Noise floor
+
+| | |
+|-|-|
+| **Metric** | Global MAD-based RMS of the full mosaic (mJy/beam) |
+| **Pass** | `RMS ≤ 17.1 mJy/beam` |
+| **Fail** | RMS exceeds limit |
+| **Catches** | Severe RFI contamination, calibration divergence, corrupt data |
+
+::: {.callout-warning}
+**Current limitation**: The 17.1 mJy threshold is 2× the empirical floor of 8.54 mJy/beam (validated on 2026-01-25 22h epoch with BP-only fallback calibration). The theoretical thermal noise from SEFD/Tsys has not been measured for DSA-110. The code marks this with `# TODO: recompute when Tsys/SEFD is measured`. The threshold will be updated when `dsa110_measured_parameters.yaml` contains measured values.
+:::
+
+---
+
+## The canary tile
+
+The **canary tile** is a single pre-existing tile image used for fast regression
+testing without reprocessing:
+
+- **Tile**: `2026-01-25T22:26:05` (contains 3C454.3 at ~12.5 Jy/beam)
+- **Script**: `scripts/run_canary.sh`
+- **Runtime**: < 1 minute (reads pre-existing tile FITS, does not re-run calibration or imaging)
+- **Acceptance criteria** (looser than full epoch QA gates):
+  - `median_ratio` ∈ [0.85, 1.15]
+  - `n_recovered ≥ 3`
+  - `RMS ≤ 17.1 mJy/beam`
+
+The canary runs `measure_epoch_qa()` directly on the tile image (not on an epoch
+mosaic), so it tests the same code path used by `batch_pipeline.py`, without the
+~3 hour cost of a full 11-tile epoch run.
+
+---
+
+## Artifacts produced
+
+Both QA-PASS and QA-FAIL epochs produce the same artifacts (so failures are
+always auditable):
+
+| Artifact | Path | Purpose |
+|----------|------|---------|
+| QA summary row | `products/qa_summary.csv` (append) | Machine-readable log of all epoch verdicts |
+| Diagnostic PNG | `{stage_dir}/{date}T{HH}00_mosaic_qa_diag.png` | Three-panel visual verdict |
+
+### Diagnostic PNG layout
+
+Three-panel figure (14×4 inches, dark theme):
+
+1. **Left**: DSA/NVSS ratio histogram with [0.8, 1.2] acceptance band shaded and median marked
+2. **Center**: Detection completeness bar (% recovered) with 60% threshold line
+3. **Right**: Per-tile RMS bar chart with 17.1 mJy/beam limit line; bars colored green/red per limit
+
+Title shows epoch label and overall verdict: **PASS** (green) or **FAIL** (red).
+
+---
+
+## How epoch QA fits into the batch pipeline
+
+In `batch_pipeline.py`, for each 1-hour epoch:
+
+1. Tiles are mosaicked via `build_common_wcs()` + `coadd_tiles()`
+2. Basic noise-strip QA runs (`check_mosaic_quality()` — legacy, max/min strip noise ratio < 3.0)
+3. Forced photometry runs at NVSS positions ≥ 10 mJy (`run_photometry_phase()`)
+4. Three-gate epoch QA runs independently (`measure_epoch_qa()`, NVSS ≥ 50 mJy)
+5. Diagnostic PNG is written (`plot_epoch_qa()`)
+6. A row is appended to `products/qa_summary.csv`
+7. The epoch mosaic FITS is copied to `products/mosaics/{date}/`
+
+Steps 3 and 4 are independent — forced photometry does not depend on the QA verdict,
+and the QA gate does not use the forced photometry output.
+
+---
+
+## Implementation status
+
+| Component | Status |
+|-----------|--------|
+| `epoch_qa.py` — `measure_epoch_qa()` | *Verified* — unit tested (5 tests in `tests/test_epoch_qa.py`) |
+| `epoch_qa_plot.py` — `plot_epoch_qa()` | *Verified* — unit tested (2 tests in `tests/test_epoch_qa_plot.py`) |
+| Wiring into `batch_pipeline.py` | *Verified* — tested on 2026-01-25; not yet run at scale |
+| `run_canary.sh` | *Verified* |
+| `qa_summary.csv` schema migration | *Verified* — stale CSV auto-archived on schema mismatch |
+| Noise threshold anchored to Tsys/SEFD | *Planned* — currently empirical |
+| Per-tile QA (tile rejection before mosaicking) | *Planned* — currently only epoch-level |
+
+---
+
+## Constants reference
+
+All constants are defined in `dsa110_continuum/photometry/epoch_qa.py`.
+
+| Constant | Value | Notes |
+|----------|-------|-------|
+| `QA_RATIO_LOW` | 0.8 | Lower bound of flux-scale acceptance |
+| `QA_RATIO_HIGH` | 1.2 | Upper bound of flux-scale acceptance |
+| `QA_COMPLETENESS_MIN` | 0.60 | Minimum fraction of catalog sources recovered |
+| `QA_MIN_CATALOG_SOURCES` | 5 | Below this, completeness gate = SKIP |
+| `QA_MIN_FLUX_MJY` | 50.0 | NVSS flux threshold for QA catalog query |
+| `QA_RECOVERY_SIGMA` | 5.0 | Local-RMS multiple for "recovered" |
+| `QA_MIN_RATIO_DETECTIONS` | 3 | Minimum detections for flux-scale gate |
+| `QA_RMS_LIMIT_MJY` | 17.1 | 2× empirical floor (8.54 mJy, Jan 25 22h) |

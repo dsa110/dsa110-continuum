@@ -1,0 +1,149 @@
+---
+title: "Agent Onboarding"
+---
+
+This page explains how a new agent or AI tool should acquire context in
+`dsa110-continuum` without confusing validated science behavior, active
+development state, and future plans.
+
+## Purpose
+
+Use this page as the canonical starting point for a new AI tool, operator, or
+collaborator. It is meant to reduce re-discovery cost, separate validated
+pipeline behavior from active work, and make success claims scientifically
+honest rather than purely procedural.
+
+## What This Pipeline Is Scientifically Trying To Do
+
+The DSA-110 continuum pipeline exists to turn drift-scan visibilities into
+calibrated tile images, epoch mosaics, QA-qualified products, and eventually
+multi-epoch light curves for variability and transient science at 1.4 GHz.
+
+The central scientific question is not only whether the software runs, but
+whether the flux scale, source recovery, and QA verdicts are attributable to
+the code in this repository and are trustworthy enough for multi-epoch
+variability analysis.
+
+In practice, the present scientific target is narrower than the long-term goal:
+establish that known bright sources can be recovered with defensible fluxes in
+the currently validated regime, then extend that confidence to repeated epochs
+only when QA evidence supports it.
+
+## What Is Currently Trusted
+
+- Single-epoch and single-strip production is possible in the validated Dec
+  `+16 deg` strip.
+- The canary tile and limited 2026-01-25 epoch runs provide real evidence that
+  bright known sources such as 3C454.3 can be recovered and inspected.
+- Epoch QA infrastructure exists and is documented: flux-scale, completeness,
+  and noise-floor gates produce a verdict plus auditable artifacts.
+- The Quarto docs site now contains an operator-facing summary of architecture,
+  QA interpretation, and artifact locations.
+
+## What Is Not Yet Trusted
+
+- Bulk multi-epoch production is not yet scientifically trusted at scale.
+- Phase 1 import rename is complete (450 replacements, 136 files); remaining
+  ~80 `dsa110_contimg.core.*` references are intentionally preserved in
+  `__init__.py` re-export layers to prevent double job-type registration.
+- Mosaicking works but performance-sensitive paths still need further
+  hardening, especially for large grids.
+- Calibration coverage outside the currently validated strip is incomplete; Dec
+  `+33 deg` and `+54 deg` production remains blocked on per-strip calibration
+  tables.
+- Light-curve generation is the intended downstream product, but that should not
+  be treated as validated science output yet.
+
+## Authoritative Files To Read First
+
+- `CLAUDE.md`: top-level repository truth, runtime environment, silent-failure
+  risks, and validated operating assumptions.
+- `TODOS.md`: current milestone state, next priorities, known blockers, and the
+  honest boundary between implemented and deferred work.
+- `docs/quarto/pipeline-overview.qmd`: stage-by-stage architecture, pipeline
+  entry points, and what is implemented versus planned.
+- `docs/quarto/epoch-qa.qmd`: QA gates, canary logic, thresholds, and what QA
+  verdicts do and do not mean scientifically.
+- `docs/quarto/outputs-and-artifacts.qmd`: where products land, what files are
+  canonical, and what to inspect during debugging.
+
+## Stable Context vs Volatile Context
+
+Stable context includes the overall architecture, silent-failure risks,
+reference docs, key H17 data paths, canonical artifact locations, and the
+meaning of the QA gates.
+
+Volatile context includes the latest milestone state in `TODOS.md`, the most
+recent canary or epoch-QA result, current blockers, current run summaries, and
+the dirty worktree state at the moment an agent starts.
+
+Good onboarding always combines both. Stable context tells you how the pipeline
+is supposed to work; volatile context tells you what is actually safe to claim
+today.
+
+## Standard Onboarding Protocol
+
+Before changing code, interpreting outputs, or reporting status, a new agent
+should determine:
+
+1. The scientific goal of the task: imaging, QA interpretation, mosaicking,
+   forced photometry, or something downstream.
+2. What pipeline behavior is already trusted for that task, and what remains
+   provisional.
+3. Which code paths carry known silent-failure risk, especially phase-centre
+   metadata, reference-direction sync, and telescope-name handling around
+   WSClean.
+4. Which outputs and artifacts are canonical for the task, and which files are
+   only intermediates or fallbacks.
+5. What is in scope right now according to the current request and `TODOS.md`,
+   so the agent does not quietly expand the task.
+6. What evidence is required before success can be claimed, including the exact
+   commands, tests, and scientific interpretation needed for the task.
+
+## Evidence Required Before Claiming Success
+
+Agents should not report completion based only on a diff or on the absence of
+exceptions. A success claim should record:
+
+- which files changed
+- which commands were actually run
+- which tests, lint checks, or structural checks were actually run
+- what remains unresolved
+- what the result means scientifically, and what it still does not justify
+
+For status reporting, use a format at least this explicit:
+
+```markdown
+- **What changed**: exact files edited
+- **What proves it**: exact commands/tests run
+- **What remains unresolved**: known caveats
+- **Scientific significance**: what this does and does not let us trust
+```
+
+For this repository, "it ran" is not enough. The important question is whether
+the change preserves or improves trustworthy source recovery, flux scale, and QA
+interpretation in the validated regime.
+
+## Future Extension: Machine-Generated Context Snapshot
+
+If this manually maintained protocol proves useful, a later script such as
+`scripts/generate_context_snapshot.py` could emit
+`outputs/context/current_state.json` containing:
+
+- git commit and branch
+- dirty files
+- latest canary result
+- latest QA summary highlights
+- active milestone and blockers
+- key artifact paths
+
+That machine-generated snapshot is intentionally deferred. The current priority
+is to prove that the human-maintained onboarding protocol is actually useful
+before adding another moving part.
+
+## See also
+
+- [Docs Home](index.qmd)
+- [Pipeline Overview](pipeline-overview.qmd)
+- [Epoch QA](epoch-qa.qmd)
+- [Outputs and Artifacts](outputs-and-artifacts.qmd)

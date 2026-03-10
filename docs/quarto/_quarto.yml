@@ -1,0 +1,27 @@
+project:
+  type: website
+  output-dir: _site
+
+website:
+  title: "DSA-110 Continuum Pipeline"
+  description: "Operator and developer documentation for the DSA-110 continuum imaging pipeline"
+  navbar:
+    left:
+      - href: index.qmd
+        text: Home
+  sidebar:
+    style: "docked"
+    contents:
+      - index.qmd
+      - agent-onboarding.qmd
+      - pipeline-overview.qmd
+      - epoch-qa.qmd
+      - outputs-and-artifacts.qmd
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    code-copy: true
+    highlight-style: github
