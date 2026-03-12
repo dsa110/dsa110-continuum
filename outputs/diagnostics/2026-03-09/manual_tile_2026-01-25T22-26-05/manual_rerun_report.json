@@ -1,0 +1,63 @@
+{
+  "source_name": "NVSS_997030",
+  "source_ra_deg": 343.490417,
+  "source_dec_deg": 16.148167,
+  "meridian_ms": "/stage/dsa110-contimg/images/manual_debug_2026-01-25T22-26-05/2026-01-25T22:26:05_manual_meridian.ms",
+  "phasecenter": "J2000 22h55m07.86s +16d08m03.2s",
+  "phase_dir_spread_arcsec": 0.0,
+  "phase_dec_spread_arcsec": 0.0,
+  "phase_dir_center_deg": [
+    343.78273009476885,
+    16.134232757445165
+  ],
+  "reference_dir_center_deg": [
+    343.78273009476885,
+    16.134232757445165
+  ],
+  "source_offset_from_phase_center_arcmin": 16.86812836312643,
+  "mean_abs_data": 0.05884697288274765,
+  "mean_abs_corrected": 12.97392463684082,
+  "corrected_to_data_ratio": 220.468853388454,
+  "data_image": {
+    "pixel_x": 1218.0,
+    "pixel_y": 1058.0,
+    "cut_peak_jyb": 0.0012323089176788926,
+    "cut_min_jyb": -0.0008072609780356288,
+    "local_rms_jyb": 0.000257564169360605
+  },
+  "data_model": {
+    "pixel_x": 1218.0,
+    "pixel_y": 1058.0,
+    "cut_peak_jyb": 0.0,
+    "cut_min_jyb": 0.0,
+    "local_rms_jyb": 0.0
+  },
+  "data_residual": {
+    "pixel_x": 1218.0,
+    "pixel_y": 1058.0,
+    "cut_peak_jyb": 0.0012323089176788926,
+    "cut_min_jyb": -0.0008072609780356288,
+    "local_rms_jyb": 0.000257564169360605
+  },
+  "corrected_image": {
+    "pixel_x": 1218.0,
+    "pixel_y": 1058.0,
+    "cut_peak_jyb": 12.459663391113281,
+    "cut_min_jyb": -0.03308285400271416,
+    "local_rms_jyb": 0.009077833706528236
+  },
+  "corrected_model": {
+    "pixel_x": 1218.0,
+    "pixel_y": 1058.0,
+    "cut_peak_jyb": 4.181280612945557,
+    "cut_min_jyb": -0.6861201524734497,
+    "local_rms_jyb": 0.08964702293914197
+  },
+  "corrected_residual": {
+    "pixel_x": 1218.0,
+    "pixel_y": 1058.0,
+    "cut_peak_jyb": 0.03487696498632431,
+    "cut_min_jyb": -0.032411281019449234,
+    "local_rms_jyb": 0.008103855768373282
+  }
+}

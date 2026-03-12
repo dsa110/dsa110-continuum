@@ -1,0 +1,35 @@
+nearest to tile center
+
+NVSS_993559    sep=  13.2 arcmin flux= 0.051 peak= 0.122 snr= 14.2 ratio= 2.38 x=1127.6 y= 942.8 edge= 942.8
+NVSS_992389    sep=  14.5 arcmin flux= 0.061 peak= 0.049 snr=  5.7 ratio= 0.80 x=1048.4 y= 904.9 edge= 904.9
+NVSS_999784    sep=  14.6 arcmin flux= 0.084 peak= 0.059 snr=  6.9 ratio= 0.70 x= 943.6 y=1149.5 edge= 943.6
+NVSS_996471    sep=  17.3 arcmin flux= 0.084 peak= 0.126 snr= 14.7 ratio= 1.50 x=1222.5 y=1040.8 edge= 876.5
+NVSS_1001131   sep=  17.3 arcmin flux= 0.092 peak= 0.052 snr=  6.1 ratio= 0.56 x= 953.3 y=1193.6 edge= 905.4
+NVSS_1001520   sep=  18.3 arcmin flux= 0.073 peak= 0.061 snr=  7.1 ratio= 0.84 x= 954.6 y=1205.7 edge= 893.3
+NVSS_997030    sep=  18.8 arcmin flux=12.657 peak= 0.058 snr=  6.7 ratio= 0.00 x= 861.9 y=1058.2 edge= 861.9
+NVSS_997182    sep=  19.3 arcmin flux= 0.071 peak= 0.134 snr= 15.7 ratio= 1.89 x=1241.5 y=1063.6 edge= 857.5
+NVSS_998979    sep=  29.6 arcmin flux= 0.053 peak= 0.131 snr= 15.3 ratio= 2.49 x=1336.2 y=1123.3 edge= 762.8
+NVSS_1009497   sep=  45.6 arcmin flux= 0.082 peak= 0.054 snr=  6.3 ratio= 0.65 x= 868.4 y=1468.5 edge= 630.5
+NVSS_1010778   sep=  48.9 arcmin flux= 0.056 peak= 0.011 snr=  1.3 ratio= 0.21 x= 895.4 y=1513.4 edge= 585.6
+NVSS_1010470   sep=  54.5 arcmin flux= 0.052 peak= 0.030 snr=  3.5 ratio= 0.57 x=1351.4 y=1503.7 edge= 595.3
+NVSS_1010826   sep=  56.1 arcmin flux= 0.099 peak= 0.039 snr=  4.6 ratio= 0.40 x= 736.4 y=1515.4 edge= 583.6
+NVSS_981660    sep=  62.7 arcmin flux= 0.064 peak= 0.176 snr= 20.5 ratio= 2.76 x=1429.0 y= 550.3 edge= 550.3
+NVSS_1015535   sep=  62.7 arcmin flux= 0.065 peak= 0.024 snr=  2.7 ratio= 0.36 x=1103.0 y=1674.6 edge= 424.4
+
+brightest inside tile
+
+NVSS_997030    sep=  18.8 arcmin flux=12.657 peak= 0.058 snr=  6.7 ratio= 0.00 x= 861.9 y=1058.2 edge= 861.9
+NVSS_1017701   sep=  70.4 arcmin flux= 0.664 peak= 0.036 snr=  4.2 ratio= 0.05 x=1153.6 y=1745.6 edge= 353.4
+NVSS_967826    sep= 108.8 arcmin flux= 0.333 peak= 0.214 snr= 24.9 ratio= 0.64 x= 517.7 y= 100.9 edge= 100.9
+MS_1557784     sep=  81.5 arcmin flux= 0.284 peak= 0.055 snr=  6.5 ratio= 0.19 x= 410.8 y=1556.1 edge= 410.8
+NVSS_976780    sep=  96.6 arcmin flux= 0.208 peak= 0.095 snr= 11.1 ratio= 0.46 x= 342.9 y= 391.6 edge= 342.9
+MS_1543779     sep=  93.6 arcmin flux= 0.162 peak= 0.082 snr=  9.6 ratio= 0.51 x=1242.4 y= 133.4 edge= 133.4
+NVSS_968400    sep= 107.8 arcmin flux= 0.152 peak= 0.015 snr=  1.7 ratio= 0.10 x= 503.7 y= 120.4 edge= 120.4
+NVSS_990974    sep=  72.4 arcmin flux= 0.132 peak= 0.099 snr= 11.5 ratio= 0.75 x= 349.9 y= 862.2 edge= 349.9
+NVSS_969620    sep=  96.1 arcmin flux= 0.131 peak= 0.136 snr= 15.9 ratio= 1.04 x= 689.9 y= 158.1 edge= 158.1
+NVSS_965169    sep= 110.6 arcmin flux= 0.128 peak= 0.330 snr= 38.5 ratio= 2.59 x=1431.5 y=  12.0 edge=  12.0
+NVSS_1010157   sep= 108.7 arcmin flux= 0.116 peak= 0.282 snr= 33.0 ratio= 2.44 x=  59.5 y=1496.7 edge=  59.5
+NVSS_1016883   sep=  79.3 arcmin flux= 0.114 peak= 0.048 snr=  5.6 ratio= 0.42 x=1475.5 y=1717.9 edge= 381.1
+NVSS_997308    sep=  65.1 arcmin flux= 0.107 peak= 0.113 snr= 13.2 ratio= 1.05 x= 399.2 y=1069.4 edge= 399.2
+NVSS_969764    sep=  96.5 arcmin flux= 0.104 peak= 0.163 snr= 19.0 ratio= 1.57 x= 671.0 y= 162.3 edge= 162.3
+NVSS_1027359   sep= 105.0 arcmin flux= 0.102 peak= 0.045 snr=  5.3 ratio= 0.44 x=1284.0 y=2072.6 edge=  26.4

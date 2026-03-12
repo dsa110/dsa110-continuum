@@ -1,0 +1,86 @@
+Milestone 1 — Mosaic RA-wrap / oversized-grid fix (final)
+==========================================================
+Date: 2026-03-09
+Files changed:
+  scripts/mosaic_day.py
+  scripts/source_finding.py
+  scripts/forced_photometry.py
+
+Problems fixed
+--------------
+1. build_common_wcs() used arithmetic mean → broken for RA wrap.
+   Fixed with circular mean (atan2 of unit vectors).
+
+2. All tiles from a full day (disjoint RA strips) were combined into
+   one grid spanning ~319 deg (~524M pixels, ~4.2 GB).
+   Fixed with group_tiles_by_ra() to split into contiguous strips.
+
+3. Strip filenames used arithmetic mean of tile RAs → misleading for
+   wrap-crossing strips.  e.g. [359,1] → ra180 (wrong).
+   Fixed with circular mean → ra000 (correct).
+
+4. _move_mosaic_to_products() assumed full_mosaic.fits existed.
+   Fixed with glob for full_mosaic*.fits.
+
+5. source_finding.py and forced_photometry.py hardcoded full_mosaic.fits.
+   Fixed with --mosaic CLI argument (default preserved for backward compat).
+
+Functions changed in mosaic_day.py
+-----------------------------------
+  _get_tile_center_ra()    NEW
+  group_tiles_by_ra()      NEW
+  build_common_wcs()       REWRITTEN (circular mean, wrap-safe bbox)
+  write_mosaic()           MODIFIED (output_path parameter)
+  main()                   MODIFIED (per-strip loop, circ-mean naming, messaging)
+  _move_mosaic_to_products() REWRITTEN (glob, per-file listing)
+
+Changes in downstream scripts
+-------------------------------
+  source_finding.py:
+    - MOSAIC → DEFAULT_MOSAIC, CATALOG_OUT derived from mosaic path
+    - main() accepts --mosaic PATH argument
+    - Without --mosaic: uses default (backward compatible)
+
+  forced_photometry.py:
+    - MOSAIC → DEFAULT_MOSAIC, MOSAIC_RMS/CATALOG/OUT_CSV derived from mosaic path
+    - main() accepts --mosaic PATH argument
+    - Without --mosaic: uses default (backward compatible)
+
+RA-wrap verification (strip naming)
+-------------------------------------
+  Case                    Arithmetic name         Circular name
+  [359, 1]               full_mosaic_ra180.fits   full_mosaic_ra000.fits  ✓
+  [352, 359, 1, 8]       full_mosaic_ra180.fits   full_mosaic_ra000.fits  ✓
+  02h strip [37..51]     full_mosaic_ra043.fits   full_mosaic_ra043.fits  (same)
+  22h strip [337..352]   full_mosaic_ra344.fits   full_mosaic_ra345.fits  (same)
+
+Jan 25 strip grouping
+---------------------
+  BEFORE: 1 grid, 191,860 x 2,731 = 523,969,660 px (~4.2 GB)
+  AFTER:
+    Strip 0: 11 tiles, RA  36.8– 51.4°, 11,552 x 2,716 = 31,375,232 px
+    Strip 1: 11 tiles, RA 337.3–351.9°, 11,552 x 2,706 = 31,259,712 px
+    Total: 62,634,944 px (~501 MB) — 8.4x reduction
+
+Performance claim (HONEST)
+--------------------------
+  SOLVED:  Oversized-grid pathology from disjoint RA strips (8.4x reduction)
+  SOLVED:  RA-wrap geometry bug
+  NOT SOLVED: coadd_tiles() still uses full-grid reproject_interp() per tile.
+              The per-tile reprojection cost is unchanged — each tile is
+              reprojected onto the full strip grid.  A tile-local bounding
+              box optimisation or use of reproject.mosaicking would further
+              reduce cost but is NOT implemented.
+
+Tests
+-----
+  62/62 pass, no regressions.
+
+Downstream compatibility
+------------------------
+  source_finding.py:     --mosaic flag added (default = old path)
+  forced_photometry.py:  --mosaic flag added (default = old path)
+  Both scripts fail cleanly with exit(1) if mosaic file not found.
+  Multi-strip usage:
+    python scripts/source_finding.py --mosaic /path/to/full_mosaic_ra345.fits
+    python scripts/forced_photometry.py --mosaic /path/to/full_mosaic_ra345.fits

@@ -1,0 +1,71 @@
+Milestone 2 — Phase 0 QA Infrastructure
+========================================
+Date: 2026-03-09
+
+Files created
+-------------
+  dsa110_continuum/photometry/epoch_qa.py      — EpochQAResult + measure_epoch_qa()
+  dsa110_continuum/photometry/epoch_qa_plot.py — plot_epoch_qa() diagnostic PNG
+  tests/test_epoch_qa.py                       — 11 tests for epoch QA logic
+  tests/test_epoch_qa_plot.py                  — 4 tests for plot generation
+  scripts/run_canary.sh                        — canary tile regression script
+
+Files modified
+--------------
+  scripts/batch_pipeline.py — epoch QA wiring, QA summary CSV, schema migration
+
+Three-gate QA constants
+-----------------------
+  QA_RATIO_LOW       = 0.8
+  QA_RATIO_HIGH      = 1.2
+  QA_COMPLETENESS_MIN = 0.60  (60%)
+  QA_MIN_CATALOG_SOURCES = 5  (below → SKIP)
+  QA_MIN_FLUX_MJY    = 50.0   (NVSS threshold)
+  QA_RECOVERY_SIGMA  = 5.0    (detection threshold)
+  QA_RMS_LIMIT_MJY   = 17.1   (2× empirical 8.54 mJy/beam)
+
+Canary results (2026-01-25T22:26:05 tile)
+------------------------------------------
+  Median DSA/NVSS ratio: 1.036   (acceptance: 0.85–1.15 → PASS)
+  Recovered sources:     26 / 60 (acceptance: >= 3 → PASS)
+  Mosaic RMS:            11.09 mJy/beam (acceptance: <= 17.1 → PASS)
+  CANARY: PASS
+
+  Three-gate epoch QA (informational):
+    Flux scale gate:     PASS
+    Completeness gate:   FAIL (43% < 60% — expected for single tile)
+    Noise floor gate:    PASS
+    Overall epoch QA:    FAIL (completeness gate drives this)
+
+qa_summary.csv schema (expanded)
+---------------------------------
+  date, epoch_utc, mosaic_path, n_catalog, n_recovered,
+  completeness_frac, median_ratio, ratio_gate, completeness_gate,
+  rms_gate, mosaic_rms_mjy, qa_result, gaincal_used
+
+  Old qa_summary.csv (7 columns) automatically archived to .pre_phase0.bak
+  on first batch_pipeline run with the new schema.
+
+Test results
+------------
+  77/77 pass (62 existing + 11 epoch_qa + 4 epoch_qa_plot)
+  ruff: all new files clean
+
+Note on completeness gate
+--------------------------
+  The 60% completeness threshold is calibrated for multi-tile epoch mosaics.
+  Single tiles (like the canary) have lower completeness due to primary beam
+  attenuation near edges. The canary script uses separate, looser acceptance
+  criteria (n_recovered >= 3) rather than the full three-gate epoch QA.
+
+  Wide epoch mosaics (Jan 25 22h, ~15° RA) also show low completeness (24%)
+  because many NVSS sources >= 50 mJy fall in low-sensitivity edge regions.
+  This threshold may need calibration based on production epoch runs.
+
+No end-to-end batch_pipeline run performed
+-------------------------------------------
+  The batch_pipeline QA wiring was validated by:
+    - syntax verification (ast.parse)
+    - import resolution (the imports succeed)
+    - unit tests for the underlying modules
+  A full end-to-end run would take 30+ minutes and is deferred to Milestone 4.

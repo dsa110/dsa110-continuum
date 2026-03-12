@@ -11,6 +11,11 @@ products/
 # Cache and scratch
 .cache/
 
+# Node.js (MCP server tooling)
+node_modules/
+package.json
+package-lock.json
+
 # Quarto render output (source .qmd files are tracked, not the built site)
 docs/quarto/_site/
 docs/quarto/.quarto/

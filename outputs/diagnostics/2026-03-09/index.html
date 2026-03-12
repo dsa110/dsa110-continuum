@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DSA-110 Diagnostics Gallery - 2026-03-09</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --panel: #161b22;
+      --text: #e6edf3;
+      --muted: #9da7b3;
+      --accent: #58a6ff;
+      --border: #30363d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    .wrap {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 32px 24px 64px;
+    }
+    h1, h2, h3 { margin: 0 0 12px; }
+    h1 { font-size: 2rem; }
+    h2 { margin-top: 32px; font-size: 1.35rem; }
+    p, li { color: var(--text); }
+    .muted { color: var(--muted); }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+      margin: 18px 0;
+    }
+    .hero {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: 1.2fr 1fr;
+      align-items: start;
+    }
+    .hero .summary {
+      font-size: 1rem;
+    }
+    .kv {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px 18px;
+      margin-top: 12px;
+    }
+    .kv div {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    .kv strong {
+      display: block;
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-bottom: 4px;
+    }
+    .img-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      margin: 18px 0;
+    }
+    .img-card img {
+      width: 100%;
+      display: block;
+      background: #000;
+    }
+    .img-card .caption {
+      padding: 12px 14px 16px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .thumb {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .thumb img {
+      width: 100%;
+      display: block;
+    }
+    .thumb .caption {
+      padding: 10px 12px 14px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+    code {
+      background: rgba(255,255,255,0.06);
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-size: 0.92em;
+    }
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    a:hover { text-decoration: underline; }
+    hr.section-divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 36px 0 24px;
+    }
+    .thumb img:hover {
+      outline: 2px solid #4ec9b0;
+    }
+    details {
+      margin-top: 12px;
+    }
+    details summary {
+      cursor: pointer;
+      color: #4ec9b0;
+      font-size: 1rem;
+      padding: 8px 0;
+      user-select: none;
+    }
+    details summary:hover { text-decoration: underline; }
+    details[open] summary { margin-bottom: 8px; }
+    table.qa-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      margin-top: 8px;
+    }
+    table.qa-table th {
+      background: rgba(78,201,176,0.15);
+      color: #4ec9b0;
+      text-align: left;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    table.qa-table td {
+      padding: 7px 10px;
+      border-bottom: 1px solid rgba(48,54,61,0.6);
+      color: var(--text);
+    }
+    table.qa-table tr:last-child td { border-bottom: none; }
+    table.qa-table tr:hover td { background: rgba(255,255,255,0.03); }
+    .ratio-high { color: #f97583; }
+    .ratio-low  { color: #ffa07a; }
+    .ratio-ok   { color: #9ddb8b; }
+    @media (max-width: 900px) {
+      .hero { grid-template-columns: 1fr; }
+      .kv { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>DSA-110 Diagnostics Gallery</h1>
+    <p class="muted">Generated locally on 2026-03-09. Structured to remain portable as a static gallery later.</p>
+
+    <div class="card hero">
+      <div class="summary">
+        <h2>Current Status</h2>
+        <p>
+          The fresh <code>2026-01-25 22h</code> rerun completed with a scientifically plausible outcome:
+          the regenerated hour mosaic reached <strong>Peak 12.68 Jy/beam</strong> and
+          <strong>RMS 8.54 mJy/beam</strong>, while the regenerated tile
+          <code>2026-01-25T22:26:05</code> recovered the bright source
+          <code>NVSS_997030</code> at <strong>12.46 Jy/beam</strong>.
+        </p>
+        <p>
+          The earlier “no point sources anywhere” conclusion was traced to <strong>stale tile and mosaic products</strong>.
+          The fresh tile outputs and the manual rerun agree.
+        </p>
+      </div>
+      <div class="kv">
+        <div><strong>Fresh 22h Mosaic</strong>Peak 12.6816 Jy/beam</div>
+        <div><strong>Fresh 22h Mosaic</strong>RMS 8.54 mJy/beam</div>
+        <div><strong>Tile 22:26:05</strong>Fresh peak at NVSS_997030: 12.4597 Jy/beam</div>
+        <div><strong>Tile 22:26:05</strong>Residual RMS near source: 8.10 mJy/beam</div>
+        <div><strong>Fresh Tile Count</strong>10 cleaned tiles regenerated</div>
+        <div><strong>Known Failure</strong>Tile <code>22:20:55</code> failed in <code>applycal</code> due to incomplete <code>*_meridian.ms</code> output</div>
+      </div>
+    </div>
+
+    <h2>Fresh Tile Overview</h2>
+    <div class="img-card">
+      <img src="jan25_22h_cleaned_tiles_contact_sheet.png" alt="Fresh Jan 25 cleaned tiles contact sheet" />
+      <div class="caption">
+        Fresh Jan 25 22h cleaned tile images from the rerun. These are the unannotated tile products.
+      </div>
+    </div>
+
+    <div class="img-card">
+      <img src="jan25_22h_cleaned_tiles_overlay_contact_sheet.png" alt="Fresh Jan 25 cleaned tiles with source markers" />
+      <div class="caption">
+        Same fresh tile set, now with known catalog source markers overlaid. Brightest few labels per tile are shown in cyan.
+      </div>
+    </div>
+
+    <h2>Per-Tile Annotated Views</h2>
+    <div class="grid">
+      <div class="thumb">
+        <img src="jan25_22h_tile_overlays/2026-01-25T22:00:18-image_overlay.png" alt="Tile 22:00:18 overlay" />
+        <div class="caption">Tile <code>22:00:18</code> with catalog markers.</div>
+      </div>
+      <div class="thumb">
+        <img src="jan25_22h_tile_overlays/2026-01-25T22:05:28-image_overlay.png" alt="Tile 22:05:28 overlay" />
+        <div class="caption">Tile <code>22:05:28</code> with catalog markers.</div>
+      </div>
+      <div class="thumb">
+        <img src="jan25_22h_tile_overlays/2026-01-25T22:10:37-image_overlay.png" alt="Tile 22:10:37 overlay" />
+        <div class="caption">Tile <code>22:10:37</code> with catalog markers.</div>
+      </div>
+      <div class="thumb">
+        <img src="jan25_22h_tile_overlays/2026-01-25T22:15:46-image_overlay.png" alt="Tile 22:15:46 overlay" />
+        <div class="caption">Tile <code>22:15:46</code> with catalog markers.</div>
+      </div>
+      <div class="thumb">
+        <img src="jan25_22h_tile_overlays/2026-01-25T22:26:05-image_overlay.png" alt="Tile 22:26:05 overlay" />
+        <div class="caption">Tile <code>22:26:05</code> with catalog markers. This includes the validated bright source <code>NVSS_997030</code>.</div>
+      </div>
+      <div class="thumb">
+        <img src="jan25_22h_tile_overlays/2026-01-25T22:36:08-image_overlay.png" alt="Tile 22:36:08 overlay" />
+        <div class="caption">Tile <code>22:36:08</code> with catalog markers.</div>
+      </div>
+      <div class="thumb">
+        <img src="jan25_22h_tile_overlays/2026-01-25T22:43:02-image_overlay.png" alt="Tile 22:43:02 overlay" />
+        <div class="caption">Tile <code>22:43:02</code> with catalog markers.</div>
+      </div>
+      <div class="thumb">
+        <img src="jan25_22h_tile_overlays/2026-01-25T22:48:11-image_overlay.png" alt="Tile 22:48:11 overlay" />
+        <div class="caption">Tile <code>22:48:11</code> with catalog markers.</div>
+      </div>
+      <div class="thumb">
+        <img src="jan25_22h_tile_overlays/2026-01-25T22:53:20-image_overlay.png" alt="Tile 22:53:20 overlay" />
+        <div class="caption">Tile <code>22:53:20</code> with catalog markers.</div>
+      </div>
+      <div class="thumb">
+        <img src="jan25_22h_tile_overlays/2026-01-25T22:58:30-image_overlay.png" alt="Tile 22:58:30 overlay" />
+        <div class="caption">Tile <code>22:58:30</code> with catalog markers.</div>
+      </div>
+    </div>
+
+    <h2>Key Comparisons</h2>
+    <div class="grid">
+      <div class="thumb">
+        <img src="manual_vs_stale_tile_2026-01-25T22-26-05_NVSS_997030.png" alt="Stale versus fresh tile comparison" />
+        <div class="caption">Same source, same tile: stale old product versus fresh corrected rerun.</div>
+      </div>
+      <div class="thumb">
+        <img src="single_tile_2026-01-25T22:26:05_NVSS_997030.png" alt="Single tile NVSS_997030 diagnostic" />
+        <div class="caption">Manual single-tile diagnostic around <code>NVSS_997030</code>.</div>
+      </div>
+      <div class="thumb">
+        <img src="single_tile_2026-01-25T22:58:30_MS_1630390.png" alt="Single tile MS_1630390 diagnostic" />
+        <div class="caption">Manual single-tile diagnostic around <code>MS_1630390</code>.</div>
+      </div>
+    </div>
+
+    <h2>Earlier Multi-Date Diagnostics</h2>
+    <div class="grid">
+      <div class="thumb">
+        <img src="mosaic_gallery.png" alt="Multi-date mosaic gallery" />
+        <div class="caption">Initial multi-date mosaic gallery used to identify the stale-output issue.</div>
+      </div>
+      <div class="thumb">
+        <img src="cutouts_2026-01-25.png" alt="Old Jan 25 cutouts" />
+        <div class="caption">Earlier Jan 25 cutout sheet generated from stale products.</div>
+      </div>
+      <div class="thumb">
+        <img src="cutouts_2026-02-15.png" alt="Old Feb 15 cutouts" />
+        <div class="caption">Feb 15 cutouts showing pathological striped behavior.</div>
+      </div>
+      <div class="thumb">
+        <img src="cutouts_2026-02-26.png" alt="Old Feb 26 cutouts" />
+        <div class="caption">Earlier Feb 26 cutout sheet from previously existing products.</div>
+      </div>
+    </div>
+
+    <h2>Supporting Files</h2>
+    <ul>
+      <li><a href="manual_tile_2026-01-25T22-26-05/manual_rerun_report.json">Manual rerun JSON report</a></li>
+      <li><a href="tile_2026-01-25T22-26-05_source_list.txt">Source list for tile 22:26:05</a></li>
+      <li><a href="jan25_22h_rerun.log">Fresh Jan 25 22h rerun log</a></li>
+    </ul>
+
+    <hr class="section-divider" />
+
+    <!-- ═══ Section A: Fresh Jan 25 22h Cleaned Tiles ═══ -->
+    <h2 style="color:#4ec9b0;">Fresh Jan 25 22h Cleaned Tiles</h2>
+    <p class="muted">Freshly generated cleaned tile images and catalog-annotated overlays from the 2026-01-25 22h rerun.</p>
+
+    <div class="img-card">
+      <img src="jan25_22h_cleaned_tiles_contact_sheet.png" alt="Fresh Jan 25 cleaned tiles contact sheet" />
+      <div class="caption">
+        Contact sheet of all 10 cleaned tiles — unannotated science images.
+      </div>
+    </div>
+
+    <div class="img-card">
+      <img src="jan25_22h_cleaned_tiles_overlay_contact_sheet.png" alt="Fresh Jan 25 cleaned tiles overlay contact sheet" />
+      <div class="caption">
+        Same tiles with known catalog source markers (NVSS/RACS/master) overlaid. Brightest labels shown in cyan.
+      </div>
+    </div>
+
+    <h3 style="margin-top:24px; color:#9da7b3;">Per-Tile Overlay Thumbnails</h3>
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));">
+      <div class="thumb">
+        <img src="jan25_22h_tile_overlays/2026-01-25T22:00:18-image_overlay.png" alt="Tile 22:00:18 overlay" />
+        <div class="caption">Tile <code>22:00:18</code></div>
+      </div>
+      <div class="thumb">
+        <img src="jan25_22h_tile_overlays/2026-01-25T22:05:28-image_overlay.png" alt="Tile 22:05:28 overlay" />
+        <div class="caption">Tile <code>22:05:28</code></div>
+      </div>
+      <div class="thumb">
+        <img src="jan25_22h_tile_overlays/2026-01-25T22:10:37-image_overlay.png" alt="Tile 22:10:37 overlay" />
+        <div class="caption">Tile <code>22:10:37</code></div>
+      </div>
+      <div class="thumb">
+        <img src="jan25_22h_tile_overlays/2026-01-25T22:15:46-image_overlay.png" alt="Tile 22:15:46 overlay" />
+        <div class="caption">Tile <code>22:15:46</code></div>
+      </div>
+      <div class="thumb">
+        <img src="jan25_22h_tile_overlays/2026-01-25T22:26:05-image_overlay.png" alt="Tile 22:26:05 overlay" />
+        <div class="caption">Tile <code>22:26:05</code> — contains <code>NVSS_997030</code></div>
+      </div>
+      <div class="thumb">
+        <img src="jan25_22h_tile_overlays/2026-01-25T22:36:08-image_overlay.png" alt="Tile 22:36:08 overlay" />
+        <div class="caption">Tile <code>22:36:08</code></div>
+      </div>
+      <div class="thumb">
+        <img src="jan25_22h_tile_overlays/2026-01-25T22:43:02-image_overlay.png" alt="Tile 22:43:02 overlay" />
+        <div class="caption">Tile <code>22:43:02</code></div>
+      </div>
+      <div class="thumb">
+        <img src="jan25_22h_tile_overlays/2026-01-25T22:48:11-image_overlay.png" alt="Tile 22:48:11 overlay" />
+        <div class="caption">Tile <code>22:48:11</code></div>
+      </div>
+      <div class="thumb">
+        <img src="jan25_22h_tile_overlays/2026-01-25T22:53:20-image_overlay.png" alt="Tile 22:53:20 overlay" />
+        <div class="caption">Tile <code>22:53:20</code></div>
+      </div>
+      <div class="thumb">
+        <img src="jan25_22h_tile_overlays/2026-01-25T22:58:30-image_overlay.png" alt="Tile 22:58:30 overlay" />
+        <div class="caption">Tile <code>22:58:30</code></div>
+      </div>
+    </div>
+
+    <hr class="section-divider" />
+
+    <!-- ═══ Section B: Fresh QA Cutouts ═══ -->
+    <h2 style="color:#4ec9b0;">Fresh QA Cutouts</h2>
+    <p class="muted">
+      Forced-photometry QA cutouts generated from the freshly calibrated Jan 25 22h data.
+      Each panel shows DSA-110 peak flux versus catalog position for a matched source.
+    </p>
+
+    <div class="img-card">
+      <img src="jan25_fresh_cutouts.png" alt="Fresh Jan 25 QA cutouts" />
+      <div class="caption">
+        QA cutout sheet — sources cross-matched against the master catalog. Cyan markers indicate catalog positions;
+        flux measurements in the title bars are DSA-110 peak values.
+      </div>
+    </div>
+
+    <details>
+      <summary>QA Table — top 10 sources by catalog order</summary>
+      <div class="card" style="padding: 0; overflow-x: auto;">
+        <table class="qa-table">
+          <thead>
+            <tr>
+              <th>Source</th>
+              <th>RA (deg)</th>
+              <th>Dec (deg)</th>
+              <th>DSA Peak (Jy/b)</th>
+              <th>Catalog Flux (Jy)</th>
+              <th>Ratio</th>
+              <th>Upper Limit?</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>MS_1613396</code></td>
+              <td>350.1290</td><td>14.4771</td>
+              <td>0.08520</td><td>0.07257</td>
+              <td class="ratio-ok">1.174</td><td>No</td>
+            </tr>
+            <tr>
+              <td><code>MS_1573124</code></td>
+              <td>345.7915</td><td>14.5282</td>
+              <td>0.15436</td><td>0.08954</td>
+              <td class="ratio-high">1.724</td><td>No</td>
+            </tr>
+            <tr>
+              <td><code>MS_1494806</code></td>
+              <td>337.4483</td><td>14.5612</td>
+              <td>0.02215</td><td>0.05079</td>
+              <td class="ratio-low">0.436</td><td>Yes</td>
+            </tr>
+            <tr>
+              <td><code>MS_1543779</code></td>
+              <td>342.8327</td><td>14.6066</td>
+              <td>0.21824</td><td>0.16184</td>
+              <td class="ratio-ok">1.349</td><td>No</td>
+            </tr>
+            <tr>
+              <td><code>MS_1574787</code></td>
+              <td>345.9828</td><td>14.6076</td>
+              <td>0.12129</td><td>0.05805</td>
+              <td class="ratio-high">2.090</td><td>No</td>
+            </tr>
+            <tr>
+              <td><code>MS_1479136</code></td>
+              <td>335.7142</td><td>14.6872</td>
+              <td>0.01221</td><td>0.15002</td>
+              <td class="ratio-low">0.081</td><td>Yes</td>
+            </tr>
+            <tr>
+              <td><code>MS_1581052</code></td>
+              <td>346.6633</td><td>14.7301</td>
+              <td>0.22836</td><td>0.09340</td>
+              <td class="ratio-high">2.445</td><td>No</td>
+            </tr>
+            <tr>
+              <td><code>MS_1495762</code></td>
+              <td>337.5534</td><td>14.7500</td>
+              <td>0.04690</td><td>0.12607</td>
+              <td class="ratio-low">0.372</td><td>No</td>
+            </tr>
+            <tr>
+              <td><code>MS_1617115</code></td>
+              <td>350.5182</td><td>14.8049</td>
+              <td>0.12823</td><td>0.10618</td>
+              <td class="ratio-ok">1.208</td><td>No</td>
+            </tr>
+            <tr>
+              <td><code>MS_1479727</code></td>
+              <td>335.7795</td><td>14.9000</td>
+              <td>0.00519</td><td>0.09391</td>
+              <td class="ratio-low">0.055</td><td>Yes</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <hr class="section-divider" />
+
+    <h2>Notes</h2>
+    <p class="muted">
+      This gallery is intentionally self-contained and uses relative paths so it can be
+      served later as a static page if desired. For now, it is meant to be the local,
+      authoritative diagnostics view under <code>/data/dsa110-continuum/outputs/</code>.
+    </p>
+  </div>
+</body>
+</html>
