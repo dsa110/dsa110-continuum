@@ -103,7 +103,8 @@ def needs_calibration(ms_path: str) -> bool:
                 return True
             ratio = np.mean(np.abs(corr[good])) / np.mean(np.abs(raw[good]))
             return ratio < 5.0
-    except Exception:
+    except (OSError, RuntimeError) as e:
+        log.warning("needs_calibration(%s) failed: %s — assuming calibration needed", ms_path, e)
         return True
 
 
@@ -168,6 +169,19 @@ def process_ms(ms_path: str, keep_intermediates: bool = False, force_recal: bool
         except Exception as e:
             log.error("[%s] Applycal failed: %s", tag, e)
             return None
+
+        # Verify CORRECTED_DATA isn't all zeros (silent applycal failure mode)
+        try:
+            with table(meridian_ms, readonly=True, ack=False) as t:
+                if "CORRECTED_DATA" in t.colnames():
+                    cd = t.getcol("CORRECTED_DATA", nrow=2048)
+                    fl = t.getcol("FLAG", nrow=2048)
+                    unflagged = cd[~fl]
+                    if len(unflagged) > 0 and np.all(np.abs(unflagged) < 1e-10):
+                        log.error("[%s] CORRECTED_DATA is all zeros after applycal", tag)
+                        return None
+        except (OSError, RuntimeError) as e:
+            log.warning("[%s] Post-applycal check failed: %s — continuing", tag, e)
     else:
         log.info("[%s] Calibration already applied", tag)
 
@@ -202,6 +216,17 @@ def process_ms(ms_path: str, keep_intermediates: bool = False, force_recal: bool
     else:
         log.error("[%s] WSClean finished but no image FITS found", tag)
         return None
+
+    # ── Per-tile image QA ─────────────────────────────────────────────────
+    from dsa110_continuum.validation.image_validator import validate_image_quality
+    tile_ok, tile_errors = validate_image_quality(Path(result_fits), min_snr=3.0, max_flagged_fraction=0.5)
+    if not tile_ok:
+        for err in tile_errors:
+            log.warning("[%s] Tile QA: %s", tag, err)
+        fatal = [e for e in tile_errors if "all zeros" in e.lower() or "no valid pixels" in e.lower()]
+        if fatal:
+            log.error("[%s] Tile rejected by image QA", tag)
+            return None
 
     # ── Cleanup: delete meridian MS now that imaging succeeded ────────────────
     if not keep_intermediates and os.path.isdir(meridian_ms):

@@ -72,6 +72,40 @@ def test_cal_type_detection_dsa110_suffix():
     assert metrics_gcal.cal_type == "g"
 
 
+def test_manifest_gates_serialized(tmp_path):
+    """Verify gates field appears in JSON output."""
+    from dsa110_continuum.qa.provenance import RunManifest
+
+    m = RunManifest.start("2026-02-12", "2026-01-25")
+    m.gates.append({"gate": "cal_quality", "verdict": "WARN", "reasons": ["high scatter"]})
+    m.gates.append({"gate": "archive", "verdict": "BLOCKED", "reason": "QA FAIL"})
+    m.finalize(50.0)
+
+    out = m.save(str(tmp_path))
+    with open(out) as f:
+        data = json.load(f)
+
+    assert len(data["gates"]) == 2
+    assert data["gates"][0]["gate"] == "cal_quality"
+    assert data["gates"][1]["verdict"] == "BLOCKED"
+    assert data["pipeline_verdict"] == "DEGRADED"
+
+
+def test_manifest_gates_empty_clean(tmp_path):
+    """No gates → gates is empty list and pipeline_verdict is CLEAN."""
+    from dsa110_continuum.qa.provenance import RunManifest
+
+    m = RunManifest.start("2026-02-12", "2026-01-25")
+    m.finalize(10.0)
+
+    out = m.save(str(tmp_path))
+    with open(out) as f:
+        data = json.load(f)
+
+    assert data["gates"] == []
+    assert data["pipeline_verdict"] == "CLEAN"
+
+
 def test_manifest_save_creates_file(tmp_path):
     """Verify JSON written to correct path with valid content."""
     from dsa110_continuum.qa.provenance import RunManifest

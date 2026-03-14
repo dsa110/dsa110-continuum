@@ -423,6 +423,31 @@ def check_dec_strip(
     )
 
 
+# ── Cal quality gate ──────────────────────────────────────────────────────────
+
+def check_cal_gate(manifest: RunManifest, cal_date: str, date: str, strict: bool) -> None:
+    """Check calibration quality and fire gate if thresholds are exceeded."""
+    issues: list[str] = []
+    g_q = manifest.cal_quality.get("g", {})
+    bp_q = manifest.cal_quality.get("bp", {})
+    if cal_date != date and g_q.get("phase_scatter_deg", 0) > 30.0:
+        issues.append(
+            f"Cross-date G table phase scatter {g_q['phase_scatter_deg']:.1f}\u00b0 > 30\u00b0 "
+            f"(cal from {cal_date}, data from {date})"
+        )
+    for label, q in [("BP", bp_q), ("G", g_q)]:
+        ff = q.get("flag_fraction", 0)
+        if ff > 0.5:
+            issues.append(f"{label} table {ff:.0%} flagged (> 50%)")
+    if issues:
+        for msg in issues:
+            log.warning("CAL GATE: %s", msg)
+        manifest.gates.append({"gate": "cal_quality", "verdict": "WARN", "reasons": issues})
+        if strict:
+            log.error("--strict-qa: aborting due to cal quality gate")
+            sys.exit(1)
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -514,6 +539,18 @@ def main() -> None:
             "runs fresh. Use when re-running a date after code changes (e.g. BP-only fallback)."
         ),
     )
+    parser.add_argument(
+        "--strict-qa",
+        action="store_true",
+        default=False,
+        help="Abort on cal quality gate failures and skip photometry for QA-FAIL epochs.",
+    )
+    parser.add_argument(
+        "--archive-all",
+        action="store_true",
+        default=False,
+        help="Archive mosaics to products even if epoch QA fails.",
+    )
     args = parser.parse_args()
 
     date = args.date
@@ -536,6 +573,9 @@ def main() -> None:
     # ── Provenance manifest ──────────────────────────────────────────────
     manifest = RunManifest.start(date, cal_date)
     manifest.assess_cal_quality(_bp, _ga)
+
+    # ── Cal quality gate ────────────────────────────────────────────────────
+    check_cal_gate(manifest, cal_date, date, args.strict_qa)
 
     # ── Dec-strip validation ───────────────────────────────────────────────────
     from dsa110_continuum.calibration.dec_utils import read_ms_dec as _read_ms_dec
@@ -833,24 +873,7 @@ def main() -> None:
         peak, rms = mosaic_stats(mosaic_path)
         log.info("  Peak: %.4f Jy/beam  RMS: %.2f mJy/beam  DR: %.0f", peak, rms * 1000, peak / rms if rms else 0)
 
-        # Forced photometry
-        n_sources: int | None = None
-        median_ratio: float | None = None
-
-        if not args.skip_photometry:
-            try:
-                from forced_photometry import run_forced_photometry
-                phot_result = run_forced_photometry(
-                    mosaic_path, output_csv=phot_csv_path, min_flux_mjy=10.0,
-                )
-                n_sources = phot_result["n_sources"]
-                median_ratio = phot_result["median_ratio"]
-                if np.isfinite(median_ratio):
-                    log.info("  Median DSA/Cat ratio: %.3f  (%d sources)", median_ratio, n_sources)
-            except Exception as e:
-                log.error("  Forced photometry failed: %s", e)
-
-        # ── Epoch QA (three-gate) ──────────────────────────────────────────────
+        # ── Epoch QA (three-gate) — run BEFORE photometry ─────────────────────
         epoch_qa: EpochQAResult | None = None
         try:
             epoch_qa = measure_epoch_qa(mosaic_path)
@@ -874,6 +897,27 @@ def main() -> None:
                     hdr["QARAT"] = (round(epoch_qa.median_ratio, 4), "Median DSA/catalog flux ratio")
             except Exception as e:
                 log.warning("  Could not update FITS header with QA: %s", e)
+
+        # ── Forced photometry — gated on QA result ────────────────────────────
+        n_sources: int | None = None
+        median_ratio: float | None = None
+        qa_verdict = epoch_qa.qa_result if epoch_qa else None
+        skip_phot = args.skip_photometry or (args.strict_qa and qa_verdict == "FAIL")
+
+        if skip_phot and args.strict_qa and qa_verdict == "FAIL":
+            log.warning("  --strict-qa: skipping photometry for QA-FAIL epoch %s", label)
+        elif not skip_phot:
+            try:
+                from forced_photometry import run_forced_photometry
+                phot_result = run_forced_photometry(
+                    mosaic_path, output_csv=phot_csv_path, min_flux_mjy=10.0,
+                )
+                n_sources = phot_result["n_sources"]
+                median_ratio = phot_result["median_ratio"]
+                if np.isfinite(median_ratio):
+                    log.info("  Median DSA/Cat ratio: %.3f  (%d sources)", median_ratio, n_sources)
+            except Exception as e:
+                log.error("  Forced photometry failed: %s", e)
 
         # ── Diagnostic PNG ────────────────────────────────────────────────────
         if epoch_qa is not None:
@@ -901,9 +945,13 @@ def main() -> None:
         except Exception as e:
             log.warning("  Could not write QA summary: %s", e)
 
-        # Archive epoch mosaic FITS alongside CSV
+        # ── Archive gate — skip archive for QA-FAIL unless --archive-all ──────
         mosaic_fits_src = Path(mosaic_path)
-        if mosaic_fits_src.exists() and (not mosaic_fits_dst.exists() or args.force_recal):
+        should_archive = qa_verdict != "FAIL" or args.archive_all
+        if not should_archive:
+            log.warning("  QA FAIL — mosaic NOT archived to products: %s", label)
+            manifest.gates.append({"gate": "archive", "verdict": "BLOCKED", "reason": f"epoch {label} QA FAIL"})
+        elif mosaic_fits_src.exists() and (not mosaic_fits_dst.exists() or args.force_recal):
             shutil.copy2(str(mosaic_fits_src), str(mosaic_fits_dst))
             log.info("Archived mosaic FITS: %s", mosaic_fits_dst)
 

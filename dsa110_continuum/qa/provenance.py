@@ -49,8 +49,12 @@ class RunManifest:
     # Per-epoch records
     epochs: list[dict[str, Any]] = field(default_factory=list)
 
+    # QA gates triggered during the run
+    gates: list[dict[str, Any]] = field(default_factory=list)
+
     # Overall
     gaincal_status: str = ""
+    pipeline_verdict: str = ""  # "CLEAN", "DEGRADED", or "FAILED"
 
     @classmethod
     def start(
@@ -171,9 +175,13 @@ class RunManifest:
         self.epochs.append(rec)
 
     def finalize(self, wall_time_sec: float) -> None:
-        """Mark the run as finished."""
+        """Mark the run as finished and compute pipeline verdict."""
         self.finished_at = datetime.now(timezone.utc).isoformat()
         self.wall_time_sec = round(wall_time_sec, 1)
+        if self.gates:
+            self.pipeline_verdict = "DEGRADED"
+        else:
+            self.pipeline_verdict = "CLEAN"
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a plain dict."""
