@@ -9,6 +9,7 @@ Usage:
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -22,7 +23,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 
 STAGE = Path("/stage/dsa110-contimg/images")
-PRODUCTS = Path("/data/dsa110-continuum/products/mosaics")
+PRODUCTS = Path(os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics"))
 
 DEFAULT_FILES = [
     # label, path

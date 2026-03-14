@@ -26,7 +26,7 @@ app = FastAPI(title="DSA-110 QA Dashboard")
 
 # Paths
 STAGE       = Path("/stage/dsa110-contimg")
-PRODUCTS    = Path("/data/dsa110-continuum/products/mosaics")
+PRODUCTS    = Path(os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics"))
 THUMB_DIR   = Path("/tmp/qa_thumbs")
 THUMB_DIR.mkdir(exist_ok=True)
 

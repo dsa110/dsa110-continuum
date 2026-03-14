@@ -14,11 +14,11 @@ def make_source_df(fluxes, errors):
         "source_id": [0] * n,
         "ra_deg": [10.0] * n,
         "dec_deg": [5.0] * n,
-        "nvss_flux_jy": [1.0] * n,
+        "catalog_flux_jy": [1.0] * n,
         "epoch_utc": [f"2026-01-0{i+1}T00:00:00" for i in range(n)],
-        "dsa_peak_jyb": fluxes,
-        "dsa_peak_err_jyb": errors,
-        "dsa_nvss_ratio": [f / 1.0 for f in fluxes],
+        "measured_flux_jy": fluxes,
+        "flux_err_jy": errors,
+        "flux_ratio": [f / 1.0 for f in fluxes],
         "date": [f"2026-01-0{i+1}" for i in range(n)],
     })
 

@@ -15,7 +15,7 @@ Steps:
     3. For each epoch (skip if output mosaic already exists):
        a. Build mosaic FITS  →  {stage}/mosaic_{date}/{date}T{HH}00_mosaic.fits
        b. Run QA (noise consistency)
-       c. Forced photometry against NVSS → {products}/{date}T{HH}00_forced_phot.csv
+       c. Forced photometry against master catalog → {products}/{date}T{HH}00_forced_phot.csv
     4. Print per-epoch summary + overall totals.
 
 Output layout (after mosaic move to products/):
@@ -72,14 +72,14 @@ log = logging.getLogger(__name__)
 DEFAULT_DATE = "2026-01-25"
 MS_DIR = os.environ.get("DSA110_MS_DIR", "/stage/dsa110-contimg/ms")
 STAGE_IMAGE_BASE = os.environ.get("DSA110_STAGE_IMAGE_BASE", "/stage/dsa110-contimg/images")
-PRODUCTS_BASE = os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-continuum/products/mosaics")
+PRODUCTS_BASE = os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics")
 CELL_ARCSEC = 6.0  # must match mosaic_day.py
 TILE_TIMEOUT_SEC = 1800  # 30 min max per tile before we kill & skip
 
 # QA summary CSV schema (expanded for three-gate epoch QA)
 QA_SUMMARY_CSV = os.environ.get(
     "DSA110_QA_SUMMARY",
-    "/data/dsa110-continuum/products/qa_summary.csv",
+    "/data/dsa110-proc/products/qa_summary.csv",
 )
 QA_CSV_FIELDS = [
     "date", "epoch_utc", "mosaic_path",
@@ -203,79 +203,7 @@ def write_epoch_mosaic(
     log.info("Epoch mosaic written: %s", out_path)
 
 
-# ── Forced photometry (unchanged from original) ───────────────────────────────
-
-def run_photometry_phase(mosaic_path: str) -> list[dict] | None:
-    """Query NVSS sources within epoch mosaic FoV and run forced photometry."""
-    try:
-        from dsa110_continuum.photometry.helpers import query_sources_for_fits
-        from dsa110_continuum.photometry.forced import measure_many
-    except ImportError as e:
-        log.error("Cannot import photometry modules: %s", e)
-        return None
-
-    try:
-        sources = query_sources_for_fits(
-            fits_path=Path(mosaic_path),
-            catalog="nvss",
-            radius_deg=12.0,  # mosaic spans ~15 deg RA; use 12 deg radius to cover full footprint
-            min_flux_mjy=10.0,
-        )
-    except Exception as e:
-        log.error("Catalog query failed: %s", e)
-        return None
-
-    if not sources:
-        log.info("No NVSS sources found in epoch FoV")
-        return []
-
-    log.info("Found %d NVSS sources (>10 mJy)", len(sources))
-
-    try:
-        from dsa110_continuum.photometry.forced import measure_forced_peak
-    except ImportError as e:
-        log.error("Cannot import measure_forced_peak: %s", e)
-        return None
-
-    # Use per-source measure_forced_peak rather than measure_many so that sources
-    # outside the mosaic footprint (empty cutout → broadcast error) are skipped
-    # gracefully instead of aborting the whole batch.
-    rows = []
-    n_skip = 0
-    for i, src in enumerate(sources):
-        try:
-            meas = measure_forced_peak(mosaic_path, src["ra_deg"], src["dec_deg"])
-            if meas is None:
-                n_skip += 1
-                continue
-        except Exception:
-            n_skip += 1
-            continue
-        nvss_flux_jy = src.get("flux_mjy", 0.0) / 1000.0
-        ratio = (meas.peak_jyb / nvss_flux_jy) if nvss_flux_jy > 0 else float("nan")
-        rows.append({
-            "ra_deg": round(src["ra_deg"], 6),
-            "dec_deg": round(src["dec_deg"], 6),
-            "nvss_flux_jy": round(nvss_flux_jy, 6),
-            "dsa_peak_jyb": round(meas.peak_jyb, 6),
-            "dsa_peak_err_jyb": round(meas.peak_err_jyb, 6),
-            "dsa_nvss_ratio": round(ratio, 4),
-            "source_id": i,
-        })
-    if n_skip:
-        log.info("Skipped %d sources outside mosaic footprint", n_skip)
-    return rows
-
-
-def write_photometry_csv(rows: list[dict], csv_path: str) -> None:
-    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
-    if not rows:
-        return
-    with open(csv_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
-        writer.writeheader()
-        writer.writerows(rows)
-    log.info("Photometry CSV: %s (%d sources)", csv_path, len(rows))
+# ── Forced photometry (delegates to forced_photometry.run_forced_photometry) ──
 
 
 # ── Mosaic stats helper ───────────────────────────────────────────────────────
@@ -333,7 +261,7 @@ def print_summary(date: str, epoch_results: list[dict]) -> None:
     print("=" * 88)
     hdr = (
         f"  {'Epoch':12s}  {'Tiles':>5}  {'GainCal':>8}"
-        f"  {'Peak(Jy/b)':>10}  {'RMS(mJy/b)':>10}  {'Sources':>7}  {'DSA/NVSS':>8}  {'QA':>4}"
+        f"  {'Peak(Jy/b)':>10}  {'RMS(mJy/b)':>10}  {'Sources':>7}  {'DSA/Cat':>8}  {'QA':>4}"
     )
     print(hdr)
     print("  " + "-" * 84)
@@ -367,7 +295,7 @@ def print_summary(date: str, epoch_results: list[dict]) -> None:
     if all_ratios:
         overall = float(np.median(all_ratios))
         flag = "  OK" if 0.8 <= overall <= 1.2 else "  WARNING: outside 0.8–1.2 target"
-        print(f"  Median DSA/NVSS ratio across all epochs: {overall:.3f}{flag}")
+        print(f"  Median DSA/Cat ratio across all epochs: {overall:.3f}{flag}")
     total_tiles = sum(r.get("n_tiles", 0) for r in epoch_results if r.get("status") != "skipped")
     n_epochs = len(epoch_results)
     n_skipped = sum(1 for r in epoch_results if r.get("status") == "skipped")
@@ -875,20 +803,21 @@ def main() -> None:
         log.info("  Peak: %.4f Jy/beam  RMS: %.2f mJy/beam  DR: %.0f", peak, rms * 1000, peak / rms if rms else 0)
 
         # Forced photometry
-        phot_rows: list[dict] | None = None
         n_sources: int | None = None
         median_ratio: float | None = None
 
         if not args.skip_photometry:
-            phot_rows = run_photometry_phase(mosaic_path)
-            if phot_rows is not None:
-                n_sources = len(phot_rows)
-                if phot_rows:
-                    write_photometry_csv(phot_rows, phot_csv_path)
-                    ratios = [r["dsa_nvss_ratio"] for r in phot_rows if np.isfinite(r["dsa_nvss_ratio"])]
-                    if ratios:
-                        median_ratio = float(np.median(ratios))
-                        log.info("  Median DSA/NVSS ratio: %.3f  (%d sources)", median_ratio, len(ratios))
+            try:
+                from forced_photometry import run_forced_photometry
+                phot_result = run_forced_photometry(
+                    mosaic_path, output_csv=phot_csv_path, min_flux_mjy=10.0,
+                )
+                n_sources = phot_result["n_sources"]
+                median_ratio = phot_result["median_ratio"]
+                if np.isfinite(median_ratio):
+                    log.info("  Median DSA/Cat ratio: %.3f  (%d sources)", median_ratio, n_sources)
+            except Exception as e:
+                log.error("  Forced photometry failed: %s", e)
 
         # ── Epoch QA (three-gate) ──────────────────────────────────────────────
         epoch_qa: EpochQAResult | None = None

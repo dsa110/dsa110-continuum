@@ -310,7 +310,7 @@ def print_report(all_results: list[dict], date: str) -> int:
 def main():
     parser = argparse.ArgumentParser(description="Unified pipeline validation runner")
     parser.add_argument("--date", required=True, help="Observation date (YYYY-MM-DD)")
-    parser.add_argument("--products-dir", default="/data/dsa110-continuum/products",
+    parser.add_argument("--products-dir", default=os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics").rsplit("/mosaics", 1)[0],
                         help="Products directory")
     parser.add_argument("--ms-dir", default="/stage/dsa110-contimg/ms",
                         help="Measurement Set directory")

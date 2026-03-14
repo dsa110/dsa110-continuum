@@ -6,6 +6,7 @@ Usage:
 """
 import argparse
 import base64
+import os
 from pathlib import Path
 
 import matplotlib
@@ -16,20 +17,20 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 
-PRODUCTS_DIR = Path("/data/dsa110-continuum/products")
+PRODUCTS_DIR = Path(os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics")).parent
 
 
 def plot_source_lightcurve(group: pd.DataFrame, nvss_flux: float, out_path: str) -> None:
     """Save a flux-vs-time plot for one source to out_path."""
     times = [datetime.fromisoformat(e) for e in group["epoch_utc"]]
-    fluxes = group["dsa_peak_jyb"].values
-    errors = group["dsa_peak_err_jyb"].values
+    fluxes = group["measured_flux_jy"].values
+    errors = group["flux_err_jy"].values
 
     fig, ax = plt.subplots(figsize=(7, 3.5))
     ax.errorbar(times, fluxes, yerr=errors, fmt="o", color="#1f77b4",
                 capsize=3, elinewidth=1, markersize=5, label="DSA-110")
     ax.axhline(nvss_flux, color="gray", linestyle="--", linewidth=1,
-               label=f"NVSS {nvss_flux:.3f} Jy")
+               label=f"Catalog ref. {nvss_flux:.3f} Jy")
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
     ax.xaxis.set_major_locator(mdates.AutoDateLocator())
     fig.autofmt_xdate(rotation=30)
@@ -79,7 +80,7 @@ def build_summary_html(
             <td>{sid:06d}</td>
             <td>{row['ra_deg']:.4f}</td>
             <td>{row['dec_deg']:.4f}</td>
-            <td>{row['nvss_flux_jy']:.3f}</td>
+            <td>{row['catalog_flux_jy']:.3f}</td>
             <td>{n_ep}</td>
             <td>{row['mean_flux']:.4f}</td>
             <td>{Vs_str}</td>
@@ -107,7 +108,7 @@ def build_summary_html(
 <table>
 <tr>
   <th>Source ID</th><th>RA (deg)</th><th>Dec (deg)</th>
-  <th>NVSS flux (Jy)</th><th>N epochs</th><th>Mean flux (Jy/bm)</th>
+  <th>Cat. flux (Jy)</th><th>N epochs</th><th>Mean flux (Jy/bm)</th>
   <th>V<sub>s</sub></th><th>&eta;</th><th>Light curve</th>
 </tr>
 {rows_html}
@@ -153,9 +154,9 @@ def main():
 
     for sid in plot_ids:
         group = lc[lc["source_id"] == sid]
-        nvss = group["nvss_flux_jy"].iloc[0]
+        cat_flux = group["catalog_flux_jy"].iloc[0]
         out_path = plots_dir / f"{int(sid):06d}.png"
-        plot_source_lightcurve(group, nvss_flux=float(nvss), out_path=str(out_path))
+        plot_source_lightcurve(group, nvss_flux=float(cat_flux), out_path=str(out_path))
 
     html = build_summary_html(metrics, lc, plots_dir=str(plots_dir), top_n=args.top_n)
     summary_path = products / "lightcurves" / "variable_candidates_summary.html"

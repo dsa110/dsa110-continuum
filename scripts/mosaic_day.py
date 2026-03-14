@@ -46,7 +46,7 @@ DATE = "2026-01-25"
 MS_DIR = os.environ.get("DSA110_MS_DIR", "/stage/dsa110-contimg/ms")
 IMAGE_DIR = f"/stage/dsa110-contimg/images/mosaic_{DATE}"
 MOSAIC_OUT = f"{IMAGE_DIR}/full_mosaic.fits"
-PRODUCTS_DIR = os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-continuum/products/mosaics") + f"/{DATE}"
+PRODUCTS_DIR = os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics") + f"/{DATE}"
 
 BP_TABLE = f"{MS_DIR}/{DATE}T22:26:05_0~23.b"
 G_TABLE = f"{MS_DIR}/{DATE}T22:26:05_0~23.g"
@@ -490,7 +490,7 @@ def main():
         DATE = args.date
         IMAGE_DIR = f"/stage/dsa110-contimg/images/mosaic_{DATE}"
         MOSAIC_OUT = f"{IMAGE_DIR}/full_mosaic.fits"
-        PRODUCTS_DIR = os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-continuum/products/mosaics") + f"/{DATE}"
+        PRODUCTS_DIR = os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics") + f"/{DATE}"
 
     cal_date = args.cal_date if args.cal_date is not None else DATE
     BP_TABLE = f"{MS_DIR}/{cal_date}T22:26:05_0~23.b"

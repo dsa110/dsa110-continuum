@@ -10,12 +10,13 @@ Usage:
     python scripts/variability_metrics.py [--products-dir ...]
 """
 import argparse
+import os
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-PRODUCTS_DIR = Path("/data/dsa110-continuum/products")
+PRODUCTS_DIR = Path(os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics")).parent
 VS_THRESHOLD = 4.0
 ETA_THRESHOLD = 2.5
 
@@ -25,11 +26,11 @@ def compute_metrics(lc: pd.DataFrame) -> pd.DataFrame:
     records = []
     for sid, group in lc.groupby("source_id"):
         n = len(group)
-        fluxes = group["dsa_peak_jyb"].values
-        errors = group["dsa_peak_err_jyb"].values
+        fluxes = group["measured_flux_jy"].values
+        errors = group["flux_err_jy"].values
         ra = group["ra_deg"].iloc[0]
         dec = group["dec_deg"].iloc[0]
-        nvss = group["nvss_flux_jy"].iloc[0]
+        cat_flux = group["catalog_flux_jy"].iloc[0]
 
         mean_s = fluxes.mean()
         std_s = fluxes.std(ddof=1) if n > 1 else np.nan
@@ -48,18 +49,21 @@ def compute_metrics(lc: pd.DataFrame) -> pd.DataFrame:
         else:
             m = Vs = eta = np.nan
 
-        records.append({
+        rec = {
             "source_id": sid,
             "ra_deg": ra,
             "dec_deg": dec,
-            "nvss_flux_jy": nvss,
+            "catalog_flux_jy": cat_flux,
             "n_epochs": n,
             "mean_flux": mean_s,
             "std_flux": std_s,
             "m": m,
             "Vs": Vs,
             "eta": eta,
-        })
+        }
+        if "spectral_index" in group.columns:
+            rec["spectral_index"] = group["spectral_index"].iloc[0]
+        records.append(rec)
     return pd.DataFrame(records).set_index("source_id")
 
 

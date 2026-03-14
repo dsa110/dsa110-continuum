@@ -5,6 +5,7 @@ Usage:
     python scripts/stack_lightcurves.py [--products-dir /data/dsa110-continuum/products]
 """
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -14,7 +15,7 @@ import pandas as pd
 from astropy.coordinates import SkyCoord
 import astropy.units as u
 
-PRODUCTS_DIR = Path("/data/dsa110-continuum/products")
+PRODUCTS_DIR = Path(os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics")).parent
 
 
 def parse_epoch_utc(filename: str) -> str:
@@ -32,11 +33,18 @@ def parse_epoch_utc(filename: str) -> str:
 
 
 def assign_source_ids(df: pd.DataFrame, match_arcsec: float = 5.0) -> pd.DataFrame:
-    """Assign a stable integer source_id to each row by clustering RA/Dec positions.
+    """Assign a stable integer source_id to each row by clustering positions.
 
-    Rows within match_arcsec of each other get the same source_id.
-    Uses greedy first-occurrence assignment via SkyCoord matching.
+    If ``source_name`` column exists (J-name from master catalog), uses
+    ``pd.factorize`` for O(N) grouping.  Falls back to O(N²) SkyCoord
+    matching when ``source_name`` is absent (legacy CSVs).
     """
+    df = df.copy()
+    if "source_name" in df.columns:
+        codes, _ = pd.factorize(df["source_name"])
+        df["source_id"] = codes
+        return df
+
     coords = SkyCoord(ra=df["ra_deg"].values * u.deg, dec=df["dec_deg"].values * u.deg)
     source_ids = np.full(len(df), -1, dtype=int)
     next_id = 0
@@ -48,7 +56,6 @@ def assign_source_ids(df: pd.DataFrame, match_arcsec: float = 5.0) -> pd.DataFra
         matches = (sep < match_arcsec) & (source_ids == -1)
         source_ids[matches] = next_id
         next_id += 1
-    df = df.copy()
     df["source_id"] = source_ids
     return df
 
