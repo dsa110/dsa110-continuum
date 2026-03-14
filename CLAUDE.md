@@ -4,8 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A clean continuum imaging pipeline for DSA-110 (Caltech), ported from dsa110-contimg.
-Only the verified science code lives here. No web infrastructure.
+A radio astronomy continuum imaging pipeline for DSA-110 (Deep Synoptic Array, 110 antennas)
+at OVRO, ported from the older dsa110-contimg codebase. Science goal: detect variable/transient
+compact radio sources (ESEs, AGN flares) via daily sky mosaics and per-source forced photometry.
+No web infrastructure — only verified science code.
 
 ## Python environment
 
@@ -18,7 +20,7 @@ system 3.8; if you need pip, use `/opt/miniforge/envs/casa6/bin/python -m pip`.
 
 ## Build / Test / Lint
 
-    # Run all tests (40 tests, ~1 s)
+    # Run all tests (118 tests, ~1 s)
     /opt/miniforge/envs/casa6/bin/python -m pytest tests/ -q
 
     # Run a single test file or test
@@ -34,25 +36,60 @@ system 3.8; if you need pip, use `/opt/miniforge/envs/casa6/bin/python -m pip`.
 
 ## Import architecture
 
-`dsa110_continuum/` is the new package but most runtime imports still reference the OLD
-`dsa110_contimg.core.*` package (installed from `/data/dsa110-contimg/backend/src`).
-The new package wraps and delegates to the old one. When adding new code, use
-`dsa110_continuum.*` imports; do not add new `dsa110_contimg` references.
+`dsa110_continuum/` is the canonical package. The import rename from the old
+`dsa110_contimg.core.*` paths is complete (~370 imports replaced across 136 files).
+The `__init__.py` re-export layers intentionally still reference old paths — do NOT
+change them (the old package's bootstrap chain loads core.calibration.jobs →
+register_job; using the new path causes ValueError from double job-registration).
+
+The old package remains installed from `/data/dsa110-contimg/backend/src` and is
+still loaded at runtime via those `__init__.py` re-exports. When adding new code,
+always use `dsa110_continuum.*` imports; do not add new `dsa110_contimg` references.
 
 ## Verified working state
 
 run_pipeline.py produces a calibrated image of 3C454.3 at 12.5 Jy/beam.
 Test data: 2026-01-25 HDF5 files at /data/incoming/ on H17.
 
-## Package structure
+## Data flow
+
+```
+HDF5 (16 subbands × N timestamps) → [conversion/] MS
+  → [calibration/] flagging + bandpass/gain solve + applycal
+  → [imaging/] phaseshift → WSClean (wgridder/IDG) → FITS tile
+  → [mosaic/] tiles → hourly-epoch mosaic (QUICKLOOK or SCIENCE/DEEP)
+  → [photometry/] forced photometry → variability metrics → light curves
+```
+
+## Package structure (17 submodules)
 
 dsa110_continuum/
-  conversion/   - HDF5 to MS (UVH5 subband grouping, phase centre assignment, UVW reconstruction)
-  calibration/  - bandpass, gain cal, applycal, phaseshift, self-cal
-  imaging/      - WSClean/CASA tclean interface, ImagingParams, sky model seeding
-  mosaic/       - mosaicking (QUICKLOOK image-domain and SCIENCE/DEEP visibility-domain tiers)
-  photometry/   - forced photometry, ESE detection, variability metrics (Mooley eta/Vs/m)
-  qa/           - delay validation, quality checks
+  conversion/      - HDF5 to MS (UVH5 subband grouping, phase centre, UVW reconstruction)
+  calibration/     - bandpass, gain cal, applycal, phaseshift, self-cal, presets
+  imaging/         - WSClean/CASA tclean interface, ImagingParams, sky model seeding
+  mosaic/          - QUICKLOOK (image-domain) and SCIENCE/DEEP (visibility-domain) mosaicking
+  photometry/      - forced photometry, ESE detection, variability metrics (Mooley eta/Vs/m)
+  catalog/         - source catalog management (NVSS, RACS, FIRST, VLA cal list); SQLite backend
+  qa/              - delay validation, image quality, pipeline QA hooks
+  simulation/      - synthetic UVH5 generation for testing
+  visualization/   - diagnostic plots (bandpass, UV coverage, calibration, mosaics, light curves)
+  validation/      - MS/image validators, storage checks
+  evaluation/      - pipeline stage evaluation harness
+  selfcal/         - self-calibration logic
+  rfi/             - RFI flagging strategies
+  search/          - source searching
+  spectral/        - spectral analysis
+  pointing/        - pointing corrections
+  adapters/        - external tool adapters
+
+## Key scripts
+
+scripts/run_pipeline.py        Single-tile reference run: phaseshift → applycal → WSClean → check flux
+scripts/mosaic_day.py          Process all tiles for one date → full-day mosaic (contiguous RA strips)
+scripts/batch_pipeline.py      Full orchestration: tiles → hourly-epoch mosaics → forced photometry
+scripts/source_finding.py      BANE + Aegean on mosaics → blind source catalog
+scripts/forced_photometry.py   Standalone forced photometry against reference catalog
+scripts/inventory.py           HDF5 data inventory with conversion status
 
 ## Key paths (H17)
 
@@ -145,8 +182,21 @@ imaging workflow is modified.
 Symptom if missing: EveryBeam silently selects the wrong beam model, producing
 incorrect primary beam correction and photometric errors up to ~20% near the field edge.
 
+## Output artifacts
+
+Save figures, images, preview PNGs, analysis CSVs, and other derived artifacts under
+`/data/dsa110-continuum/outputs/` (organized by topic or date). Do not leave user-facing
+artifacts in `/tmp`.
+
+## Instrument quick-reference
+
+DSA-110 is a meridian drift-scan transit array (doesn't track — sky drifts through fixed beam):
+- 117 antennas, 4.65 m dishes, L-band (1.31–1.50 GHz, 187.5 MHz bandwidth)
+- 16 subbands × 48 channels, 12.885 s integrations
+- Each "tile" ≈ 5-minute transit; imaging produces 4800×4800 px at 3 arcsec/px
+
 ## Next tasks
 
-- Extend scripts/run_pipeline.py to mosaic a full day of drift observations
-- Run source finding (BANE + Aegean) on the mosaic
+- Run source finding (BANE + Aegean) on mosaics
 - Run forced photometry against NVSS/RACS catalog positions
+- Multi-epoch production runs and light curve generation
