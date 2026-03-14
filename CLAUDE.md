@@ -197,7 +197,7 @@ DSA-110 is a meridian drift-scan transit array (doesn't track — sky drifts thr
 
 ## Next tasks
 
-- Multi-epoch production runs (batch_pipeline.py on 2026-02-12 through 2026-02-26)
+- Multi-epoch production runs (batch_pipeline.py on 2026-02-12 through 2026-03-05)
 - Per-date gain calibration (eliminate cross-date phase cal transfer)
 - Run source finding (BANE + Aegean) on mosaics
 - Generate multi-epoch light curves and variability analysis

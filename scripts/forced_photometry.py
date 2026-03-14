@@ -108,6 +108,7 @@ def run_forced_photometry(
     ra_cen, dec_cen, radius = get_mosaic_footprint(data, wcs)
     log.info("Querying %s catalog (min_flux=%.0f mJy) ...", catalog, min_flux_mjy)
 
+    actual_catalog = catalog
     df = cone_search(
         catalog,
         ra_center=ra_cen,
@@ -115,12 +116,22 @@ def run_forced_photometry(
         radius_deg=radius,
         min_flux_mjy=min_flux_mjy,
     )
+    if (df is None or len(df) == 0) and catalog == "master":
+        log.warning("Master catalog empty at this position — falling back to NVSS")
+        actual_catalog = "nvss"
+        df = cone_search(
+            "nvss",
+            ra_center=ra_cen,
+            dec_center=dec_cen,
+            radius_deg=radius,
+            min_flux_mjy=min_flux_mjy,
+        )
     if df is None or len(df) == 0:
         raise RuntimeError("No catalog sources returned")
-    log.info("Catalog returned %d sources", len(df))
+    log.info("%s catalog returned %d sources", actual_catalog, len(df))
 
     # Filter resolved and confused sources (master catalog only)
-    if catalog == "master":
+    if actual_catalog == "master":
         n_before = len(df)
         if exclude_resolved and "resolved_flag" in df.columns:
             df = df[df["resolved_flag"] == 0]
@@ -169,10 +180,11 @@ def run_forced_photometry(
         }
 
         # Add master catalog metadata if available
-        if catalog == "master":
+        if actual_catalog == "master":
             row_data = df.iloc[i]
-            if "alpha" in df.columns and not np.isnan(row_data.get("alpha", np.nan)):
-                row["spectral_index"] = round(float(row_data["alpha"]), 3)
+            alpha = row_data.get("alpha") if "alpha" in df.columns else None
+            if alpha is not None and np.isfinite(float(alpha)):
+                row["spectral_index"] = round(float(alpha), 3)
             else:
                 row["spectral_index"] = ""
 
@@ -192,7 +204,7 @@ def run_forced_photometry(
         "catalog_flux_jy", "measured_flux_jy", "flux_err_jy",
         "flux_ratio", "snr",
     ]
-    if catalog == "master":
+    if actual_catalog == "master":
         fieldnames.append("spectral_index")
 
     with open(out_csv, "w", newline="") as f:
@@ -208,7 +220,7 @@ def run_forced_photometry(
     median_ratio = float(np.median(valid_ratios)) if valid_ratios else float("nan")
 
     log.info("\n=== Forced Photometry QA ===")
-    log.info("Catalog: %s | Sources measured: %d", catalog, len(rows))
+    log.info("Catalog: %s | Sources measured: %d", actual_catalog, len(rows))
     if valid_ratios:
         log.info("Flux ratio (DSA/catalog): median=%.3f, std=%.3f", median_ratio, np.std(valid_ratios))
         log.info("Ratio range: %.3f – %.3f", min(valid_ratios), max(valid_ratios))

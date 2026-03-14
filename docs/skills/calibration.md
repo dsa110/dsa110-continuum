@@ -458,7 +458,29 @@ result = stage.execute(context)
 
 ## Quality Assurance
 
-Calibration tables are validated before use:
+Calibration table quality is assessed at two levels: raw metric extraction
+from the CASA table (`compute_calibration_metrics()`), and threshold-based
+grading (`assess_calibration_quality()`). During pipeline runs, the
+`RunManifest` records cal quality and writes it to a JSON manifest and
+FITS header keywords.
+
+For full documentation of the QA system, thresholds, manifest structure,
+FITS header cards, and diagnosis procedures, see
+[Calibration QA and Pipeline Provenance](calibration-qa.md).
+
+### Quick reference: QA thresholds
+
+| Metric | Warning | Error |
+|--------|---------|-------|
+| Flag fraction | > 30% | > 50% |
+| Phase scatter | > 30° | — |
+| Median SNR | — | < 3.0 |
+| Mean amplitude | < 0.1 | — |
+| Max amplitude | > 10.0 | — |
+
+### Legacy validation
+
+Calibration tables can also be validated via the old-package interface:
 
 ```python
 from dsa110_contimg.core.calibration.validate import validate_caltables_for_use
@@ -470,16 +492,8 @@ is_valid, issues = validate_caltables_for_use(
 
 if not is_valid:
     for issue in issues:
-        print(f"⚠️ {issue}")
+        print(f"  {issue}")
 ```
-
-### QA Thresholds
-
-| Metric | Critical | Warning |
-|--------|----------|---------|
-| Mean SNR | <3.0 | <10.0 |
-| Flagged fraction | >50% | >20% |
-| Minimum antennas | <10 | <50 |
 
 ## Best Practices
 

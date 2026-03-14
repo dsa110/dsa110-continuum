@@ -58,6 +58,7 @@ from astropy.wcs import WCS
 
 from dsa110_continuum.photometry.epoch_qa import EpochQAResult, measure_epoch_qa
 from dsa110_continuum.photometry.epoch_qa_plot import plot_epoch_qa
+from dsa110_continuum.qa.provenance import RunManifest
 
 logging.basicConfig(
     level=logging.INFO,
@@ -179,6 +180,9 @@ def write_epoch_mosaic(
     date: str,
     hour: int,
     n_tiles: int,
+    cal_date: str | None = None,
+    cal_quality: dict | None = None,
+    git_sha: str | None = None,
 ) -> None:
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with fits.open(ref_fits_paths[0]) as ref:
@@ -197,6 +201,20 @@ def write_epoch_mosaic(
     new_hdr["HISTORY"] = (
         f"DSA-110 hourly mosaic {date}T{hour:02d}:00 UTC, {n_tiles} tiles (with overlap)"
     )
+
+    # Provenance header cards
+    if git_sha:
+        new_hdr["PIPEVER"] = (git_sha, "Pipeline git commit")
+    if cal_date:
+        new_hdr["CALDATE"] = (cal_date, "Calibration table date")
+    new_hdr["NTILES"] = (n_tiles, "Number of input tiles")
+    if cal_quality:
+        bp_q = cal_quality.get("bp", {})
+        g_q = cal_quality.get("g", {})
+        if "flag_fraction" in bp_q:
+            new_hdr["BPFLAG"] = (round(bp_q["flag_fraction"], 4), "BP table flagged fraction")
+        if "phase_scatter_deg" in g_q:
+            new_hdr["GPHSCTR"] = (round(g_q["phase_scatter_deg"], 1), "Gain phase scatter [deg]")
 
     hdu = fits.PrimaryHDU(data=mosaic.astype(np.float32), header=new_hdr)
     hdu.writeto(out_path, overwrite=True)
@@ -515,6 +533,10 @@ def main() -> None:
         sys.exit(1)
     log.info("Cal tables verified for %s", cal_date)
 
+    # ── Provenance manifest ──────────────────────────────────────────────
+    manifest = RunManifest.start(date, cal_date)
+    manifest.assess_cal_quality(_bp, _ga)
+
     # ── Dec-strip validation ───────────────────────────────────────────────────
     from dsa110_continuum.calibration.dec_utils import read_ms_dec as _read_ms_dec
     _first_ms_list = sorted(
@@ -576,6 +598,7 @@ def main() -> None:
         log.error("No valid MS files found for %s — aborting", date)
         sys.exit(1)
     log.info("Found %d valid MS files", len(ms_list))
+    manifest.ms_files = list(ms_list)
 
     # Apply date filter (--date), then --start-hour / --end-hour
     def _ms_ts(ms_path: str):
@@ -675,6 +698,9 @@ def main() -> None:
         _epoch_gaincal_status = "skipped"
     # ──────────────────────────────────────────────────────────────────────────
 
+    manifest.gaincal_status = _epoch_gaincal_status
+    manifest.epoch_g_table = _epoch_g_table
+
     # ── Phase 1: Calibrate + image all tiles ──────────────────────────────────
     tile_timeout = args.tile_timeout
     retry_failed = args.retry_failed
@@ -719,6 +745,7 @@ def main() -> None:
         if result is None:
             log.error("  FAILED after %.0fs", elapsed)
             n_failed_tiles += 1
+            manifest.record_tile(ms_path, None, "failed", elapsed, error="timeout or crash")
         else:
             if result not in completed_fits:
                 tile_fits.append(result)
@@ -728,6 +755,7 @@ def main() -> None:
             else:
                 log.info("  Done in %.0fs → %s", elapsed, Path(result).name)
                 n_imaged += 1
+            manifest.record_tile(ms_path, result, "ok", elapsed)
 
             # Write checkpoint after every successful tile
             try:
@@ -791,7 +819,10 @@ def main() -> None:
         try:
             out_wcs, ny, nx = _md.build_common_wcs(epoch_tiles)
             mosaic_arr = _md.coadd_tiles(epoch_tiles, out_wcs, ny, nx)
-            write_epoch_mosaic(mosaic_arr, out_wcs, epoch_tiles, mosaic_path, date, hour, len(epoch_tiles))
+            write_epoch_mosaic(
+                mosaic_arr, out_wcs, epoch_tiles, mosaic_path, date, hour, len(epoch_tiles),
+                cal_date=cal_date, cal_quality=manifest.cal_quality, git_sha=manifest.git_sha,
+            )
         except Exception as e:
             log.error("  Mosaic failed for epoch %s: %s", label, e)
             epoch_results.append({"label": label, "status": "failed", "n_tiles": len(epoch_tiles), "gaincal_status": _epoch_gaincal_status})
@@ -832,6 +863,17 @@ def main() -> None:
             )
         except Exception as e:
             log.warning("  Epoch QA failed: %s", e)
+
+        # ── Update FITS header with QA results ────────────────────────────────
+        if epoch_qa is not None and os.path.exists(mosaic_path):
+            try:
+                with fits.open(mosaic_path, mode="update") as hdul:
+                    hdr = hdul[0].header
+                    hdr["QARESULT"] = (epoch_qa.qa_result, "Epoch QA verdict")
+                    hdr["QARMS"] = (round(epoch_qa.mosaic_rms_mjy, 2), "Mosaic RMS [mJy/beam]")
+                    hdr["QARAT"] = (round(epoch_qa.median_ratio, 4), "Median DSA/catalog flux ratio")
+            except Exception as e:
+                log.warning("  Could not update FITS header with QA: %s", e)
 
         # ── Diagnostic PNG ────────────────────────────────────────────────────
         if epoch_qa is not None:
@@ -880,14 +922,30 @@ def main() -> None:
             "qa_result": epoch_qa.qa_result if epoch_qa else None,
         })
 
+    # ── Record epochs in manifest ────────────────────────────────────────────
+    for er in epoch_results:
+        manifest.record_epoch(
+            hour=int(er["label"].split("T")[1][:2]),
+            epoch_result=er,
+        )
+
     # ── Print summary ─────────────────────────────────────────────────────────
+    _wall = time.time() - _main_start
     print_summary(date, epoch_results)
 
+    manifest.finalize(_wall)
+    manifest.save(paths["products_dir"])
 
-    emit_run_summary(date, cal_date, epoch_results, time.time() - _main_start)
+    emit_run_summary(date, cal_date, epoch_results, _wall, products_dir=paths["products_dir"])
 
-def emit_run_summary(date: str, cal_date: str, epoch_results: list, wall_time_sec: float) -> None:
-    """Write /tmp/pipeline_last_run.json and optionally POST to DSA_NOTIFY_URL."""
+def emit_run_summary(
+    date: str,
+    cal_date: str,
+    epoch_results: list,
+    wall_time_sec: float,
+    products_dir: str | None = None,
+) -> None:
+    """Write run summary JSON to products dir and symlink at /tmp for backward compat."""
     import json as _json
     from datetime import datetime as _dt
 
@@ -910,9 +968,25 @@ def emit_run_summary(date: str, cal_date: str, epoch_results: list, wall_time_se
         "epochs": epochs_list,
     }
 
-    summary_path = "/tmp/pipeline_last_run.json"
+    # Write to products dir if available, otherwise /tmp
+    if products_dir:
+        os.makedirs(products_dir, exist_ok=True)
+        summary_path = os.path.join(products_dir, f"{date}_run_summary.json")
+    else:
+        summary_path = "/tmp/pipeline_last_run.json"
+
     with open(summary_path, "w") as _f:
         _json.dump(payload, _f, indent=2)
+
+    # Backward-compat symlink at /tmp
+    tmp_link = "/tmp/pipeline_last_run.json"
+    if summary_path != tmp_link:
+        try:
+            if os.path.islink(tmp_link) or os.path.exists(tmp_link):
+                os.remove(tmp_link)
+            os.symlink(summary_path, tmp_link)
+        except OSError:
+            pass  # best-effort symlink
 
     log.info(
         "Run complete — date=%s cal=%s  epochs=%d  exec_ok=%d exec_fail=%d"

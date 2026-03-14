@@ -104,8 +104,10 @@ flowchart LR
 
 | Path | Description |
 |------|-------------|
-| `mosaics/{date}/{date}T{HH}00_mosaic.fits` | Archived epoch mosaic (copied from staging) |
+| `mosaics/{date}/{date}T{HH}00_mosaic.fits` | Archived epoch mosaic (copied from staging). FITS headers include provenance cards (`PIPEVER`, `CALDATE`, `NTILES`, `BPFLAG`, `GPHSCTR`) and QA cards (`QARESULT`, `QARMS`, `QARAT`) |
 | `mosaics/{date}/{date}T{HH}00_forced_phot.csv` | Per-epoch forced photometry CSV |
+| `mosaics/{date}/{date}_manifest.json` | **Pipeline provenance manifest** — git SHA, cal table quality, per-tile status, per-epoch QA. See [Calibration QA](../skills/calibration-qa.md) |
+| `mosaics/{date}/{date}_run_summary.json` | Execution summary (epoch pass/fail counts, wall time). Symlinked at `/tmp/pipeline_last_run.json` for backward compat |
 | `qa_summary.csv` | Master QA log — all dates, all epochs |
 | `lightcurves/` | Cross-epoch light curve products *(Planned — directory exists, not yet populated)* |
 
@@ -203,7 +205,7 @@ For gate threshold definitions, see [Epoch QA → Constants reference](02-epoch-
 
 | File | Location | Purpose |
 |------|----------|---------|
-| `/tmp/pipeline_last_run.json` | Temporary (lost on reboot) | Machine-readable run summary: date, wall time, per-epoch pass/fail |
+| `/tmp/pipeline_last_run.json` | Symlink to `products/mosaics/{date}/{date}_run_summary.json` | Machine-readable run summary: date, wall time, per-epoch pass/fail. The canonical copy now lives in products; the `/tmp` path is a backward-compat symlink |
 | `inventory.csv` | Repo root | Data census: HDF5 file counts by date/subband, MS availability, Dec strip |
 | `.tile_checkpoint.json` | Staging dir | Crash recovery: list of completed tile FITS paths and cal-date used |
 
@@ -219,6 +221,20 @@ For gate threshold definitions, see [Epoch QA → Constants reference](02-epoch-
 | Did all epochs get built? | `products/qa_summary.csv` → count rows for the date |
 | Any tiles time out or crash? | `batch_pipeline.py` log output → search for `TIMEOUT` or `FAILED` |
 | Is there a stale partial run? | `*_meridian.ms` directories still present in `/stage/dsa110-contimg/ms/` → indicates incomplete tile that wasn't cleaned up |
+
+### What went wrong with the calibration?
+
+| Check | Where to look |
+|-------|---------------|
+| Cal table quality at a glance | `{date}_manifest.json` → `cal_quality.bp` and `cal_quality.g` |
+| Bandpass flag fraction | `manifest.json` → `cal_quality.bp.flag_fraction` (target: < 0.3) |
+| Gain phase scatter | `manifest.json` → `cal_quality.g.phase_scatter_deg` (target: < 30°) |
+| Cross-date cal applied? | `manifest.json` → compare `date` vs `cal_date`. If different, check `gaincal_status` |
+| Epoch gaincal success? | `manifest.json` → `gaincal_status`: `"ok"` = good, `"fallback"` = failed (used static table), `"error"` = crashed |
+| FITS-level provenance | `fitsheader mosaic.fits` → `CALDATE`, `BPFLAG`, `GPHSCTR`, `QARESULT` |
+| Detailed per-tile outcomes | `manifest.json` → `tiles[]` array (status, elapsed, error) |
+
+See [Calibration QA](../skills/calibration-qa.md) for threshold interpretation tables and full manifest schema.
 
 ### Is the flux scale correct?
 

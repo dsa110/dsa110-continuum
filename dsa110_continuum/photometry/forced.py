@@ -646,6 +646,18 @@ def measure_forced_peak(
         ymin = max(0, cy - npix)
         ymax = min(data.shape[-2], cy + npix + 1)
 
+        # Source outside image bounds
+        if xmax <= xmin or ymax <= ymin:
+            return ForcedPhotometryResult(
+                ra_deg=ra_deg,
+                dec_deg=dec_deg,
+                peak_jyb=float("nan"),
+                peak_err_jyb=float("nan"),
+                pix_x=x0,
+                pix_y=y0,
+                box_size_pix=box_size_pix,
+            )
+
         # Extract cutout
         sl = (slice(ymin, ymax), slice(xmin, xmax))
         cutout_data = data[sl]

@@ -233,6 +233,10 @@ def compute_calibration_metrics(
             cal_type = "bp"
         elif "gcal" in path_lower or "_g." in path_lower or "gpcal" in path_lower:
             cal_type = "g"
+        elif path_lower.endswith(".b"):
+            cal_type = "bp"
+        elif path_lower.endswith(".g"):
+            cal_type = "g"
         else:
             cal_type = "unknown"
 

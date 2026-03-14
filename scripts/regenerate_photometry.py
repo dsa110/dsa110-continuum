@@ -26,27 +26,57 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 PRODUCTS_DIR = Path(os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics"))
+STAGE_BASE = Path(os.environ.get("DSA110_STAGE_IMAGE_BASE", "/stage/dsa110-contimg/images"))
+
+
+def find_mosaics() -> list[tuple[Path, Path]]:
+    """Return (mosaic_fits, csv_output) pairs from both products and stage dirs."""
+    pairs: list[tuple[Path, Path]] = []
+    seen_names: set[str] = set()
+
+    # Products dir first (authoritative)
+    for fits_path in sorted(PRODUCTS_DIR.rglob("*_mosaic.fits")):
+        csv_path = fits_path.with_name(fits_path.name.replace("_mosaic.fits", "_forced_phot.csv"))
+        pairs.append((fits_path, csv_path))
+        seen_names.add(fits_path.name)
+
+    # Stage dir: mosaics not yet archived
+    for mosaic_dir in sorted(STAGE_BASE.glob("mosaic_*")):
+        date = mosaic_dir.name.replace("mosaic_", "")
+        for fits_path in sorted(mosaic_dir.glob("*_mosaic.fits")):
+            if fits_path.name in seen_names:
+                continue
+            out_dir = PRODUCTS_DIR / date
+            csv_path = out_dir / fits_path.name.replace("_mosaic.fits", "_forced_phot.csv")
+            pairs.append((fits_path, csv_path))
+
+    return pairs
 
 
 def main():
     parser = argparse.ArgumentParser(description="Regenerate forced photometry CSVs.")
     parser.add_argument("--products-dir", default=str(PRODUCTS_DIR))
     parser.add_argument("--min-flux-mjy", type=float, default=10.0)
+    parser.add_argument("--dry-run", action="store_true", help="Print what would be done")
     args = parser.parse_args()
 
-    products = Path(args.products_dir)
-    mosaic_paths = sorted(products.glob("*/*_mosaic.fits"))
+    pairs = find_mosaics()
+    mosaic_paths = [p[0] for p in pairs]
     if not mosaic_paths:
-        print(f"No mosaic FITS found under {products}/", file=sys.stderr)
+        print("No mosaic FITS found.", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Found {len(mosaic_paths)} mosaics to process:")
-    for p in mosaic_paths:
-        print(f"  {p}")
+    print(f"Found {len(pairs)} mosaics to process:")
+    for fits_path, csv_path in pairs:
+        print(f"  {fits_path} → {csv_path}")
+
+    if args.dry_run:
+        print("\nDry run — no files written.")
+        return
 
     results = []
-    for mosaic_path in mosaic_paths:
-        csv_path = str(mosaic_path).replace("_mosaic.fits", "_forced_phot.csv")
+    for mosaic_path, csv_dest in pairs:
+        csv_path = str(csv_dest)
         log.info("Processing: %s", mosaic_path.name)
         try:
             result = run_forced_photometry(
