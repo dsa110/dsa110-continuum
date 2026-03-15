@@ -1,0 +1,245 @@
+{
+  "date": "2026-01-25",
+  "validated_at": "2026-03-14T09:05:21.879981+00:00",
+  "data_inventory": {
+    "n_total": 180,
+    "n_valid": 0,
+    "n_corrupt": 0,
+    "n_broken_links": 180,
+    "hours_covered": [],
+    "corrupt_files": [],
+    "verdict": "UNAVAILABLE"
+  },
+  "cal_assessment": {
+    "cal_date": "2026-01-25",
+    "cross_date": false,
+    "bp_table": "/stage/dsa110-contimg/ms/2026-01-25T22:26:05_0~23.b",
+    "g_table": "/stage/dsa110-contimg/ms/2026-01-25T22:26:05_0~23.g",
+    "bp_exists": true,
+    "g_exists": true,
+    "bp_metrics": {
+      "caltable_path": "/stage/dsa110-contimg/ms/2026-01-25T22:26:05_0~23.b",
+      "cal_type": "bp",
+      "n_solutions": 179712,
+      "n_flagged": 49752,
+      "flag_fraction": 0.27684294871794873,
+      "mean_amplitude": 1.000488519668579,
+      "std_amplitude": 0.019070040434598923,
+      "median_amplitude": 1.0006648302078247,
+      "min_amplitude": 0.5577729940414429,
+      "max_amplitude": 1.5834523439407349,
+      "median_phase_deg": 4.477886932363617e-07,
+      "phase_scatter_deg": 10.798110008239746,
+      "median_snr": 97.66160583496094,
+      "min_snr": 8.584146499633789,
+      "max_snr": 153.0006866455078,
+      "n_antennas": 117,
+      "n_spws": 16,
+      "n_channels": 48,
+      "extraction_time_s": 0.018373966217041016,
+      "extraction_error": null
+    },
+    "g_metrics": {
+      "caltable_path": "/stage/dsa110-contimg/ms/2026-01-25T22:26:05_0~23.g",
+      "cal_type": "g",
+      "n_solutions": 3744,
+      "n_flagged": 1145,
+      "flag_fraction": 0.3058226495726496,
+      "mean_amplitude": 0.06957167387008667,
+      "std_amplitude": 0.033561307936906815,
+      "median_amplitude": 0.06791408360004425,
+      "min_amplitude": 0.026247618719935417,
+      "max_amplitude": 1.3388582468032837,
+      "median_phase_deg": -6.1035027503967285,
+      "phase_scatter_deg": 102.5163345336914,
+      "median_snr": 15.352025032043457,
+      "min_snr": 3.009742259979248,
+      "max_snr": 193.26438903808594,
+      "n_antennas": 117,
+      "n_spws": 16,
+      "n_channels": 1,
+      "extraction_time_s": 0.006196022033691406,
+      "extraction_error": null
+    },
+    "issues": [
+      "G table 31% flagged (> 30%, elevated)"
+    ],
+    "verdict": "NOTE"
+  },
+  "tile_check": {
+    "n_pb_corrected": 22,
+    "n_plain_only": 0,
+    "n_total": 22,
+    "stage_dir": "/stage/dsa110-contimg/images/mosaic_2026-01-25",
+    "tile_stats": [
+      {
+        "name": "2026-01-25T02:01:43-image-pb.fits",
+        "peak_jyb": 22.7345,
+        "rms_mjyb": 32.19,
+        "dr": 706.0
+      },
+      {
+        "name": "2026-01-25T02:06:53-image-pb.fits",
+        "peak_jyb": 3.0334,
+        "rms_mjyb": 10.2,
+        "dr": 298.0
+      },
+      {
+        "name": "2026-01-25T02:12:02-image-pb.fits",
+        "peak_jyb": 11.7903,
+        "rms_mjyb": 41.35,
+        "dr": 285.0
+      },
+      {
+        "name": "2026-01-25T02:17:11-image-pb.fits",
+        "peak_jyb": 7.8144,
+        "rms_mjyb": 36.96,
+        "dr": 211.0
+      },
+      {
+        "name": "2026-01-25T02:22:20-image-pb.fits",
+        "peak_jyb": 3.4674,
+        "rms_mjyb": 10.32,
+        "dr": 336.0
+      },
+      {
+        "name": "2026-01-25T02:32:25-image-pb.fits",
+        "peak_jyb": 2.2927,
+        "rms_mjyb": 11.82,
+        "dr": 194.0
+      },
+      {
+        "name": "2026-01-25T02:39:17-image-pb.fits",
+        "peak_jyb": 5.6333,
+        "rms_mjyb": 13.37,
+        "dr": 421.0
+      },
+      {
+        "name": "2026-01-25T02:44:26-image-pb.fits",
+        "peak_jyb": 3.3331,
+        "rms_mjyb": 13.48,
+        "dr": 247.0
+      },
+      {
+        "name": "2026-01-25T02:49:36-image-pb.fits",
+        "peak_jyb": 9.1636,
+        "rms_mjyb": 23.72,
+        "dr": 386.0
+      },
+      {
+        "name": "2026-01-25T02:54:45-image-pb.fits",
+        "peak_jyb": 17.3477,
+        "rms_mjyb": 29.7,
+        "dr": 584.0
+      },
+      {
+        "name": "2026-01-25T02:59:54-image-pb.fits",
+        "peak_jyb": 7.4599,
+        "rms_mjyb": 17.42,
+        "dr": 428.0
+      },
+      {
+        "name": "2026-01-25T22:00:18-image-pb.fits",
+        "peak_jyb": 1.007,
+        "rms_mjyb": 4.98,
+        "dr": 202.0
+      },
+      {
+        "name": "2026-01-25T22:05:28-image-pb.fits",
+        "peak_jyb": 1.8872,
+        "rms_mjyb": 7.86,
+        "dr": 240.0
+      },
+      {
+        "name": "2026-01-25T22:10:37-image-pb.fits",
+        "peak_jyb": 2.8235,
+        "rms_mjyb": 8.91,
+        "dr": 317.0
+      },
+      {
+        "name": "2026-01-25T22:15:46-image-pb.fits",
+        "peak_jyb": 3.0342,
+        "rms_mjyb": 13.4,
+        "dr": 226.0
+      },
+      {
+        "name": "2026-01-25T22:20:55-image-pb.fits",
+        "peak_jyb": 16.5779,
+        "rms_mjyb": 16.76,
+        "dr": 989.0
+      },
+      {
+        "name": "2026-01-25T22:26:05-image-pb.fits",
+        "peak_jyb": 12.6954,
+        "rms_mjyb": 11.09,
+        "dr": 1144.0
+      },
+      {
+        "name": "2026-01-25T22:36:08-image-pb.fits",
+        "peak_jyb": 4.1464,
+        "rms_mjyb": 17.83,
+        "dr": 233.0
+      },
+      {
+        "name": "2026-01-25T22:43:02-image-pb.fits",
+        "peak_jyb": 2.0125,
+        "rms_mjyb": 9.18,
+        "dr": 219.0
+      },
+      {
+        "name": "2026-01-25T22:48:11-image-pb.fits",
+        "peak_jyb": 2.5039,
+        "rms_mjyb": 10.0,
+        "dr": 251.0
+      },
+      {
+        "name": "2026-01-25T22:53:20-image-pb.fits",
+        "peak_jyb": 12.5829,
+        "rms_mjyb": 41.93,
+        "dr": 300.0
+      },
+      {
+        "name": "2026-01-25T22:58:30-image-pb.fits",
+        "peak_jyb": 34.1084,
+        "rms_mjyb": 98.67,
+        "dr": 346.0
+      }
+    ],
+    "n_good": 22,
+    "n_bad": 0,
+    "verdict": "OK"
+  },
+  "mosaic_check": {
+    "n_mosaics": 1,
+    "mosaics": [
+      {
+        "path": "/stage/dsa110-contimg/images/mosaic_2026-01-25/2026-01-25T2200_mosaic.fits",
+        "name": "2026-01-25T2200_mosaic.fits",
+        "shape": [
+          2706,
+          11552
+        ],
+        "peak_jyb": 16.2755,
+        "rms_mjyb": 8.78,
+        "dynamic_range": 1854.0,
+        "nan_fraction": 0.331,
+        "center_ra_deg": 344.616,
+        "center_dec_deg": 16.127
+      }
+    ],
+    "verdict": "OK"
+  },
+  "flux_scale": {
+    "mosaic": "/stage/dsa110-contimg/images/mosaic_2026-01-25/2026-01-25T2200_mosaic.fits",
+    "n_sources": 170,
+    "median_ratio": 0.8321,
+    "csv_path": "/data/dsa110-continuum/outputs/validation/2026-01-25/2026-01-25T2200_mosaic_forced_phot.csv",
+    "ratio_std": 206.1777,
+    "ratio_iqr": 0.4428,
+    "n_outliers": 30,
+    "flux_scale_verdict": "GOOD",
+    "verdict": "OK"
+  },
+  "overall_verdict": "INCOMPLETE",
+  "wall_time_sec": 147.9
+}

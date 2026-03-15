@@ -62,10 +62,17 @@ def check_ms_inventory(date: str) -> dict:
 
     valid = []
     corrupt = []
+    broken_links = []
     for path in candidates:
+        if os.path.islink(path) and not os.path.exists(path):
+            broken_links.append(path)
+            continue
+        if not os.path.isdir(path):
+            corrupt.append(path)
+            continue
         try:
-            with table(path + "/FIELD", readonly=True, ack=False) as _:
-                pass
+            with table(path, readonly=True, ack=False) as t:
+                _ = t.nrows()
             valid.append(path)
         except Exception:
             corrupt.append(path)
@@ -83,11 +90,16 @@ def check_ms_inventory(date: str) -> dict:
         "n_total": len(candidates),
         "n_valid": len(valid),
         "n_corrupt": len(corrupt),
+        "n_broken_links": len(broken_links),
         "hours_covered": sorted(hours),
         "corrupt_files": [Path(p).name for p in corrupt],
     }
 
-    if result["n_valid"] == 0:
+    if result["n_valid"] == 0 and len(broken_links) > 0:
+        result["verdict"] = "UNAVAILABLE"
+        log.warning("STAGE 1: %d MS entries are broken symlinks (raw data moved/deleted); "
+                    "%d broken links found", len(broken_links), len(broken_links))
+    elif result["n_valid"] == 0:
         result["verdict"] = "FAIL"
         log.error("STAGE 1: No valid MS files found for %s", date)
     elif result["n_corrupt"] > 0:
@@ -143,7 +155,7 @@ def check_cal_quality(date: str, cal_date: str) -> dict:
 
             log.info("STAGE 2: %s — flag_frac=%.1f%%, phase_scatter=%.1f°, amp_scatter=%.1f%%",
                      label.upper(), metrics.flag_fraction * 100,
-                     metrics.phase_scatter_deg, metrics.amplitude_scatter_pct)
+                     metrics.phase_scatter_deg, metrics.std_amplitude)
 
             if metrics.flag_fraction > 0.5:
                 issues.append(f"{label.upper()} table {metrics.flag_fraction:.0%} flagged (> 50%)")
@@ -388,8 +400,11 @@ def check_flux_scale(mosaic_path: str, output_dir: str) -> dict:
     result = {"mosaic": mosaic_path}
 
     try:
+        # Use NVSS for flux scale validation — DSA-110 observes at L-band (1.4 GHz),
+        # same as NVSS.  The master catalog mixes frequencies (VLASS is 3 GHz),
+        # which introduces spectral index bias into flux ratios.
         phot = run_forced_photometry(
-            mosaic_path, output_csv=out_csv, min_flux_mjy=10.0,
+            mosaic_path, output_csv=out_csv, catalog="nvss", min_flux_mjy=50.0,
         )
         result["n_sources"] = phot["n_sources"]
         result["median_ratio"] = round(phot["median_ratio"], 4) if np.isfinite(phot["median_ratio"]) else None
@@ -465,7 +480,8 @@ def make_diagnostic_png(report: dict, output_path: str) -> None:
         stages.append(("Flux Scale", report["flux_scale"]["verdict"]))
 
     colors = {"OK": "#2ecc71", "GOOD": "#2ecc71", "WARN": "#f39c12", "NOTE": "#3498db",
-              "FAIL": "#e74c3c", "ERROR": "#e74c3c", "NONE": "#95a5a6"}
+              "FAIL": "#e74c3c", "ERROR": "#e74c3c", "NONE": "#95a5a6",
+              "UNAVAILABLE": "#95a5a6", "ACCEPTABLE": "#f39c12"}
 
     for i, (name, verdict) in enumerate(stages):
         y = 0.9 - i * 0.13
@@ -579,7 +595,7 @@ def compute_overall_verdict(report: dict) -> str:
 
     if any(v in ("FAIL", "ERROR") for v in verdicts):
         return "FAIL"
-    if any(v == "NONE" for v in verdicts):
+    if any(v in ("NONE", "UNAVAILABLE") for v in verdicts):
         return "INCOMPLETE"
     if any(v == "WARN" for v in verdicts):
         return "WARN"
