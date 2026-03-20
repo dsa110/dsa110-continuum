@@ -9,7 +9,7 @@ It was ported and rewritten from the older `dsa110-contimg` codebase.
 ### The Instrument
 
 DSA-110 is a **meridian drift-scan transit array** — it doesn't track sources, it lets the sky drift through its fixed beam. Key numbers:
-- **117 antennas**, 4.65 m dishes, L-band (1.31–1.50 GHz, 187.5 MHz bandwidth)
+- **96 antennas**, 4.65 m dishes, L-band (1.31–1.50 GHz, 187.5 MHz bandwidth)
 - **16 subbands × 48 channels**, 12.885 s integrations
 - Each "tile" is a ~5-minute transit of a field through the meridian
 - Raw data comes as **HDF5 files** (one per subband per timestamp) stored at `/data/incoming/`
