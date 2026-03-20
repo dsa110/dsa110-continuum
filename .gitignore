@@ -24,3 +24,7 @@ docs/quarto/.quarto/
 
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
+
+
+#Ignore windsurf AI rules
+.windsurfrules
