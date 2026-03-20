@@ -20,7 +20,7 @@ system 3.8; if you need pip, use `/opt/miniforge/envs/casa6/bin/python -m pip`.
 
 ## Build / Test / Lint
 
-    # Run all tests (118 tests, ~1 s)
+    # Run all tests (134 tests, ~20 s)
     /opt/miniforge/envs/casa6/bin/python -m pytest tests/ -q
 
     # Run a single test file or test
@@ -29,6 +29,7 @@ system 3.8; if you need pip, use `/opt/miniforge/envs/casa6/bin/python -m pip`.
 
     # Lint (ruff, configured in pyproject.toml — NumPy docstring convention, 100-char lines)
     ruff check dsa110_continuum/ scripts/ tests/
+    ruff check --fix dsa110_continuum/ scripts/ tests/   # auto-fix safe lint issues
     ruff format --check dsa110_continuum/ scripts/ tests/
 
     # Run a pipeline script
@@ -90,6 +91,12 @@ scripts/batch_pipeline.py      Full orchestration: tiles → hourly-epoch mosaic
 scripts/source_finding.py      BANE + Aegean on mosaics → blind source catalog
 scripts/forced_photometry.py   Standalone forced photometry against reference catalog
 scripts/inventory.py           HDF5 data inventory with conversion status
+scripts/plot_lightcurves.py    Plot multi-epoch light curves from forced photometry CSVs
+scripts/stack_lightcurves.py   Stack per-epoch CSVs into combined multi-epoch light curves
+scripts/variability_metrics.py Compute Mooley eta/Vs/m variability metrics
+scripts/verify_sources.py      Verify source fluxes against expected values
+scripts/validate_date.py       Run validation checks on a single date's pipeline outputs
+scripts/run_canary.sh          Canary test: end-to-end pipeline on reference date (2026-01-25)
 
 ## Key paths (H17)
 
@@ -142,6 +149,26 @@ READ THESE BEFORE IMPLEMENTING any of the following:
   vast-crossref.md      Variability metric formulas (Vs, m, eta), ForcedPhot library
                         interface, Condon errors, Huber flux-scale correction
 
+## Pipeline runtime gotchas
+
+### `--cal-date` takes a bare date, not a timestamp
+
+`batch_pipeline.py --cal-date 2026-01-25` is correct. The code appends `T22:26:05`
+internally. Passing `2026-01-25T22:26:05` will produce a wrong path.
+
+### `@memory_safe` decorator is incompatible with ThreadPoolExecutor
+
+The `@memory_safe` decorator uses Unix signal alarms (`SIGALRM`), which only work in
+the main thread. If you use `ThreadPoolExecutor` with functions decorated by
+`@memory_safe`, you get `ValueError: signal only works in main thread`. Use
+`ProcessPoolExecutor` instead.
+
+### `detect_datacolumn()` raises on all-zero CORRECTED_DATA
+
+`imaging/cli_utils.py`'s `detect_datacolumn()` raises `RuntimeError` if
+`CORRECTED_DATA` exists but is all zeros. It only falls back to `DATA` when the
+column is genuinely absent — this is intentional, not a silent failure.
+
 ## Critical silent failures
 
 The following bugs produce no runtime exception but yield wrong science output.
@@ -191,7 +218,8 @@ artifacts in `/tmp`.
 ## Instrument quick-reference
 
 DSA-110 is a meridian drift-scan transit array (doesn't track — sky drifts through fixed beam):
-- 117 antennas, 4.65 m dishes, L-band (1.31–1.50 GHz, 187.5 MHz bandwidth)
+- 96 online antennas (117 array elements in HDF5 files — some correspond to non-existent antennas)
+- 4.65 m dishes, L-band (1.31–1.50 GHz, 187.5 MHz bandwidth)
 - 16 subbands × 48 channels, 12.885 s integrations
 - Each "tile" ≈ 5-minute transit; imaging produces 4800×4800 px at 3 arcsec/px
 
