@@ -1,6 +1,6 @@
 ## DSA-110 Continuum Imaging Pipeline — Overview
 
-This is a **radio astronomy continuum imaging pipeline** for the DSA-110 (Deep Synoptic Array, 110 antennas) telescope at OVRO (Owens Valley Radio Observatory). Its science goal is to detect and monitor **variable (and possibly transient) compact radio sources** — in search of Extreme Scattering Events (ESEs) and other flux-variable phenomena — by producing daily sky mosaics and measuring per-source flux with daily cadence for weeks/months at a time.
+This is a **continuum imaging pipeline** for the DSA-110 (Deep Synoptic Array, 110 antennas) telescope at OVRO (Owens Valley Radio Observatory). Its science goal is to detect and monitor **variable (and possibly transient) compact radio sources** — in search of Extreme Scattering Events (ESEs) and other flux-variable phenomena — by producing daily sky mosaics and measuring per-source flux with daily cadence for weeks/months at a time.
 
 It was ported and rewritten from the older `dsa110-contimg` codebase.
 
