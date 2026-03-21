@@ -13,6 +13,7 @@ Then:
   6. Write final mosaic FITS
 """
 import argparse
+import dataclasses
 import glob
 import logging
 import os
@@ -40,18 +41,82 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# ── Configuration ────────────────────────────────────────────────────────────
-DATE = "2026-01-25"
 
-MS_DIR = os.environ.get("DSA110_MS_DIR", "/stage/dsa110-contimg/ms")
-IMAGE_DIR = f"/stage/dsa110-contimg/images/mosaic_{DATE}"
-MOSAIC_OUT = f"{IMAGE_DIR}/full_mosaic.fits"
-PRODUCTS_DIR = os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics") + f"/{DATE}"
+# ── TileConfig: explicit pipeline configuration ─────────────────────────────
 
-BP_TABLE = f"{MS_DIR}/{DATE}T22:26:05_0~23.b"
-G_TABLE = f"{MS_DIR}/{DATE}T22:26:05_0~23.g"
+@dataclasses.dataclass(frozen=True)
+class TileConfig:
+    """Immutable configuration for a single pipeline run.
 
-# Imaging parameters — same as run_pipeline.py
+    Replaces the former mutable module-level globals (DATE, IMAGE_DIR, etc.).
+    Passed explicitly to process_ms() and related functions so that pipeline
+    steps are pure functions of their inputs — no hidden global state.
+    """
+
+    date: str
+    ms_dir: str
+    image_dir: str
+    mosaic_out: str
+    products_dir: str
+    bp_table: str
+    g_table: str
+
+    @staticmethod
+    def build(
+        date: str,
+        cal_date: str | None = None,
+        ms_dir: str | None = None,
+        image_dir: str | None = None,
+        products_dir: str | None = None,
+    ) -> "TileConfig":
+        """Construct a TileConfig with standard DSA-110 path conventions.
+
+        Parameters
+        ----------
+        date
+            Observation date (YYYY-MM-DD).
+        cal_date
+            Date of calibration tables.  Defaults to *date*.
+        ms_dir
+            Measurement Set directory.  Defaults to ``$DSA110_MS_DIR`` or
+            ``/stage/dsa110-contimg/ms``.
+        image_dir
+            Per-date image staging directory.  Derived from *date* if omitted.
+        products_dir
+            Final products directory.  Derived from *date* if omitted.
+        """
+        _cal = cal_date or date
+        _ms = ms_dir or os.environ.get("DSA110_MS_DIR", "/stage/dsa110-contimg/ms")
+        _img = image_dir or f"/stage/dsa110-contimg/images/mosaic_{date}"
+        _prod = products_dir or (
+            os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics")
+            + f"/{date}"
+        )
+        return TileConfig(
+            date=date,
+            ms_dir=_ms,
+            image_dir=_img,
+            mosaic_out=f"{_img}/full_mosaic.fits",
+            products_dir=_prod,
+            bp_table=f"{_ms}/{_cal}T22:26:05_0~23.b",
+            g_table=f"{_ms}/{_cal}T22:26:05_0~23.g",
+        )
+
+    def replace(self, **kwargs) -> "TileConfig":
+        """Return a new TileConfig with selected fields overridden."""
+        return dataclasses.replace(self, **kwargs)
+
+    def to_dict(self) -> dict:
+        """Serialize to a plain dict (for subprocess pickling / JSON)."""
+        return dataclasses.asdict(self)
+
+    @staticmethod
+    def from_dict(d: dict) -> "TileConfig":
+        """Reconstruct from a plain dict."""
+        return TileConfig(**d)
+
+
+# ── Imaging parameters (constants — do not vary per run) ─────────────────────
 IMSIZE = 2400
 CELL_ARCSEC = 6.0
 WEIGHTING = "briggs"
@@ -64,14 +129,11 @@ THRESHOLD = "0.005Jy"
 # amplification in pb-corrected images and cause severe edge artefacts in the mosaic.
 PB_CUTOFF = 0.2  # 20 % of peak response
 
-
-# IMAGE_DIR is created in main() after --date is resolved, not at import time.
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def find_valid_ms() -> list[str]:
-    """Return sorted list of valid (non-corrupt) raw MS paths for DATE."""
-    candidates = sorted(glob.glob(f"{MS_DIR}/{DATE}T*.ms"))
+def find_valid_ms(cfg: TileConfig) -> list[str]:
+    """Return sorted list of valid (non-corrupt) raw MS paths for the configured date."""
+    candidates = sorted(glob.glob(f"{cfg.ms_dir}/{cfg.date}T*.ms"))
     candidates = [p for p in candidates if "meridian" not in p and "flagversion" not in p]
     valid = []
     for path in candidates:
@@ -118,11 +180,16 @@ def _ms_is_valid(path: str) -> bool:
     )
 
 
-def process_ms(ms_path: str, keep_intermediates: bool = False, force_recal: bool = False) -> str | None:
+def process_ms(
+    ms_path: str,
+    cfg: TileConfig,
+    keep_intermediates: bool = False,
+    force_recal: bool = False,
+) -> str | None:
     """Phaseshift → applycal → image one MS. Returns path to pb-corrected FITS or None."""
     tag = Path(ms_path).stem  # e.g. 2026-01-25T21:17:33
     meridian_ms = get_meridian_path(ms_path)
-    imagename = os.path.join(IMAGE_DIR, tag)
+    imagename = os.path.join(cfg.image_dir, tag)
     # With pbcor=True, WSClean produces {imagename}-image-pb.fits (primary-beam corrected)
     pbcor_fits = imagename + "-image-pb.fits"
     image_fits = imagename + "-image.fits"
@@ -163,7 +230,7 @@ def process_ms(ms_path: str, keep_intermediates: bool = False, force_recal: bool
             apply_to_target(
                 ms_target=meridian_ms,
                 field="",
-                gaintables=[BP_TABLE, G_TABLE],
+                gaintables=[cfg.bp_table, cfg.g_table],
                 interp=["nearest", "linear"],
             )
         except Exception as e:
@@ -421,9 +488,9 @@ def coadd_tiles(fits_paths: list[str], out_wcs: WCS, ny: int, nx: int) -> np.nda
 
 
 def write_mosaic(mosaic: np.ndarray, out_wcs: WCS, fits_paths: list[str],
-                  output_path: str | None = None) -> str:
+                  output_path: str, date: str = "") -> str:
     """Write mosaic to FITS using a representative header from the first tile."""
-    out_path = output_path or MOSAIC_OUT
+    out_path = output_path
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with fits.open(fits_paths[0]) as ref:
         ref_hdr = ref[0].header.copy()
