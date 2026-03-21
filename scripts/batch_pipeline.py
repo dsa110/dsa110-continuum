@@ -616,18 +616,18 @@ def main() -> None:
         except Exception as e:
             log.warning("Could not check/migrate qa_summary.csv: %s", e)
 
-    # ── Import mosaic_day and patch constants for this date ───────────────────
+    # ── Build immutable config for this run ─────────────────────────────────
     import mosaic_day as _md  # type: ignore  (scripts/ is on sys.path)
 
-    _md.DATE = date
-    _md.IMAGE_DIR = paths["stage_dir"]
-    _md.MOSAIC_OUT = f"{paths['stage_dir']}/full_mosaic.fits"  # not used, but keeps _md consistent
-    _md.PRODUCTS_DIR = paths["products_dir"]
-    _md.BP_TABLE = f"{MS_DIR}/{cal_date}T22:26:05_0~23.b"
-    _md.G_TABLE = f"{MS_DIR}/{cal_date}T22:26:05_0~23.g"
+    cfg = _md.TileConfig.build(
+        date=date,
+        cal_date=cal_date,
+        image_dir=paths["stage_dir"],
+        products_dir=paths["products_dir"],
+    )
 
     # ── Phase 1: Find + validate MS files ────────────────────────────────────
-    ms_list = _md.find_valid_ms()
+    ms_list = _md.find_valid_ms(cfg)
     if not ms_list:
         log.error("No valid MS files found for %s — aborting", date)
         sys.exit(1)
@@ -712,7 +712,7 @@ def main() -> None:
                 )
                 if _epoch_g_table is not None:
                     log.info("Epoch gaincal SUCCESS: %s", _epoch_g_table)
-                    _md.G_TABLE = _epoch_g_table
+                    cfg = cfg.replace(g_table=_epoch_g_table)
                     _epoch_gaincal_status = "ok"
                 else:
                     log.warning(
