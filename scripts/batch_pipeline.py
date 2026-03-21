@@ -779,20 +779,22 @@ def main() -> None:
         )
         elapsed = time.time() - t0
 
-        if result is None:
-            log.error("  FAILED after %.0fs", elapsed)
+        if not result.ok:
+            log.error("  FAILED after %.0fs (%s: %s)", elapsed,
+                       result.failed_stage, result.error or "unknown")
             n_failed_tiles += 1
-            manifest.record_tile(ms_path, None, "failed", elapsed, error="timeout or crash")
+            manifest.record_tile(ms_path, None, "failed", elapsed,
+                                 error=result.error or result.failed_stage)
         else:
-            if result not in completed_fits:
-                tile_fits.append(result)
-                completed_fits.add(result)
-            if elapsed < 2.0:
+            if result.fits_path not in completed_fits:
+                tile_fits.append(result.fits_path)
+                completed_fits.add(result.fits_path)
+            if result.status == "cached":
                 n_skipped_tiles += 1
             else:
-                log.info("  Done in %.0fs → %s", elapsed, Path(result).name)
+                log.info("  Done in %.0fs → %s", elapsed, Path(result.fits_path).name)
                 n_imaged += 1
-            manifest.record_tile(ms_path, result, "ok", elapsed)
+            manifest.record_tile(ms_path, result.fits_path, "ok", elapsed)
 
             # Write checkpoint after every successful tile
             try:
