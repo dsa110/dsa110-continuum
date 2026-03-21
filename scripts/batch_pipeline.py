@@ -338,16 +338,18 @@ def _run_process_ms(
     cfg_dict: dict,
     keep: bool,
     force_recal: bool = False,
-) -> str | None:
+) -> dict:
     """Thin wrapper so process_ms can be submitted to a subprocess pool.
 
     Accepts *cfg_dict* (a plain dict from TileConfig.to_dict()) so that
     configuration is explicitly passed to the subprocess rather than relying
-    on module-global mutation.
+    on module-global mutation.  Returns a dict (TileResult.to_dict()) for
+    safe transport across the ProcessPoolExecutor boundary.
     """
     import mosaic_day as _md
     cfg = _md.TileConfig.from_dict(cfg_dict)
-    return _md.process_ms(ms_path, cfg, keep_intermediates=keep, force_recal=force_recal)
+    result = _md.process_ms(ms_path, cfg, keep_intermediates=keep, force_recal=force_recal)
+    return result.to_dict()
 
 
 def process_tile_safe(
@@ -357,32 +359,35 @@ def process_tile_safe(
     timeout_sec: int,
     retry: bool,
     force_recal: bool = False,
-) -> str | None:
+) -> "mosaic_day.TileResult":
     """Run process_ms with a hard timeout and optional single retry.
 
     If the tile hangs beyond *timeout_sec*, any CASA/WSClean subprocesses are
-    killed with SIGKILL and None is returned.  With *retry=True* a second
-    attempt is made after a 60-second cool-down.
+    killed with SIGKILL and a failed TileResult is returned.  With *retry=True*
+    a second attempt is made after a 60-second cool-down.
     """
+    import mosaic_day as _md
     tag = Path(ms_path).stem
 
-    def _attempt() -> str | None:
+    def _attempt() -> _md.TileResult:
         with ProcessPoolExecutor(max_workers=1) as pool:
             fut = pool.submit(_run_process_ms, ms_path, cfg_dict, keep, force_recal)
             try:
-                return fut.result(timeout=timeout_sec)
+                result_dict = fut.result(timeout=timeout_sec)
+                return _md.TileResult.from_dict(result_dict)
             except FuturesTimeoutError:
                 log.error("[%s] TIMEOUT after %ds — killing CASA/WSClean", tag, timeout_sec)
                 for pattern in ["applycal", "wsclean", "mpicasa"]:
                     subprocess.run(["pkill", "-9", "-f", pattern], capture_output=True)
-                return None
+                return _md.TileResult("failed", failed_stage="timeout",
+                                      error=f"exceeded {timeout_sec}s")
 
     result = _attempt()
-    if result is None and retry:
+    if not result.ok and retry:
         log.warning("[%s] First attempt failed — waiting 60s then retrying once", tag)
         time.sleep(60)
         result = _attempt()
-        if result is None:
+        if not result.ok:
             log.error("[%s] Retry also failed — skipping tile", tag)
     return result
 

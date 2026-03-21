@@ -116,6 +116,27 @@ class TileConfig:
         return TileConfig(**d)
 
 
+@dataclasses.dataclass(frozen=True)
+class TileResult:
+    """Outcome of process_ms() for a single tile."""
+
+    status: str  # "imaged" | "cached" | "failed"
+    fits_path: str | None = None
+    failed_stage: str | None = None  # "phaseshift", "applycal", "allzero", "imaging", "no_output", "qa", "timeout"
+    error: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.status in ("imaged", "cached")
+
+    def to_dict(self) -> dict:
+        return dataclasses.asdict(self)
+
+    @staticmethod
+    def from_dict(d: dict) -> "TileResult":
+        return TileResult(**d)
+
+
 # ── Imaging parameters (constants — do not vary per run) ─────────────────────
 IMSIZE = 2400
 CELL_ARCSEC = 6.0
@@ -185,8 +206,8 @@ def process_ms(
     cfg: TileConfig,
     keep_intermediates: bool = False,
     force_recal: bool = False,
-) -> str | None:
-    """Phaseshift → applycal → image one MS. Returns path to pb-corrected FITS or None."""
+) -> TileResult:
+    """Phaseshift → applycal → image one MS. Returns a TileResult."""
     tag = Path(ms_path).stem  # e.g. 2026-01-25T21:17:33
     meridian_ms = get_meridian_path(ms_path)
     imagename = os.path.join(cfg.image_dir, tag)
@@ -198,10 +219,10 @@ def process_ms(
     if not force_recal:
         if os.path.exists(pbcor_fits):
             log.info("[%s] PB-corrected image already exists — skipping", tag)
-            return pbcor_fits
+            return TileResult("cached", fits_path=pbcor_fits)
         if os.path.exists(image_fits):
             log.info("[%s] Image already exists (no pbcor) — skipping", tag)
-            return image_fits
+            return TileResult("cached", fits_path=image_fits)
 
     # ── Step 1: Phaseshift ────────────────────────────────────────────────
     if _ms_is_valid(meridian_ms):
@@ -221,7 +242,7 @@ def process_ms(
             )
         except Exception as e:
             log.error("[%s] Phaseshift failed: %s", tag, e)
-            return None
+            return TileResult("failed", failed_stage="phaseshift", error=str(e))
 
     # ── Step 2: Calibration ────────────────────────────────────────────────
     if force_recal or needs_calibration(meridian_ms):
@@ -235,7 +256,7 @@ def process_ms(
             )
         except Exception as e:
             log.error("[%s] Applycal failed: %s", tag, e)
-            return None
+            return TileResult("failed", failed_stage="applycal", error=str(e))
 
         # Verify CORRECTED_DATA isn't all zeros (silent applycal failure mode)
         try:
@@ -246,7 +267,7 @@ def process_ms(
                     unflagged = cd[~fl]
                     if len(unflagged) > 0 and np.all(np.abs(unflagged) < 1e-10):
                         log.error("[%s] CORRECTED_DATA is all zeros after applycal", tag)
-                        return None
+                        return TileResult("failed", failed_stage="allzero", error="CORRECTED_DATA all zeros")
         except (OSError, RuntimeError) as e:
             log.warning("[%s] Post-applycal check failed: %s — continuing", tag, e)
     else:
@@ -271,7 +292,7 @@ def process_ms(
         )
     except Exception as e:
         log.error("[%s] Imaging failed: %s", tag, e)
-        return None
+        return TileResult("failed", failed_stage="imaging", error=str(e))
 
     result_fits = None
     if os.path.exists(pbcor_fits):
@@ -282,7 +303,7 @@ def process_ms(
         result_fits = image_fits
     else:
         log.error("[%s] WSClean finished but no image FITS found", tag)
-        return None
+        return TileResult("failed", failed_stage="no_output", error="no FITS after WSClean")
 
     # ── Per-tile image QA ─────────────────────────────────────────────────
     from dsa110_continuum.validation.image_validator import validate_image_quality
@@ -293,7 +314,7 @@ def process_ms(
         fatal = [e for e in tile_errors if "all zeros" in e.lower() or "no valid pixels" in e.lower()]
         if fatal:
             log.error("[%s] Tile rejected by image QA", tag)
-            return None
+            return TileResult("failed", failed_stage="qa", error="; ".join(fatal))
 
     # ── Cleanup: delete meridian MS now that imaging succeeded ────────────────
     if not keep_intermediates and os.path.isdir(meridian_ms):
@@ -303,7 +324,7 @@ def process_ms(
         except Exception as e:
             log.warning("[%s] Could not delete meridian MS %s: %s", tag, meridian_ms, e)
 
-    return result_fits
+    return TileResult("imaged", fits_path=result_fits)
 
 
 # ── Mosaicking ────────────────────────────────────────────────────────────────
@@ -614,10 +635,11 @@ def main():
     tile_images = []
     for ms_path in ms_list:
         result = process_ms(ms_path, cfg, keep_intermediates=keep)
-        if result:
-            tile_images.append(result)
+        if result.ok:
+            tile_images.append(result.fits_path)
         else:
-            log.warning("Skipping failed MS: %s", ms_path)
+            log.warning("Skipping failed MS (%s): %s — %s",
+                        result.failed_stage, ms_path, result.error or "unknown")
 
     log.info("\n=== Processed %d/%d tiles successfully ===\n", len(tile_images), len(ms_list))
 
