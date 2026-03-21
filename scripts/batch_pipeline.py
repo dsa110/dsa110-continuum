@@ -335,23 +335,19 @@ def print_summary(date: str, epoch_results: list[dict]) -> None:
 
 def _run_process_ms(
     ms_path: str,
+    cfg_dict: dict,
     keep: bool,
     force_recal: bool = False,
-    g_table: str | None = None,
-    bp_table: str | None = None,
 ) -> str | None:
     """Thin wrapper so process_ms can be submitted to a subprocess pool.
 
-    Accepts optional *g_table* and *bp_table* so that the epoch-derived G table
-    (set on the parent process's _md module) is propagated into the fresh
-    ``mosaic_day`` import that runs inside the subprocess.
+    Accepts *cfg_dict* (a plain dict from TileConfig.to_dict()) so that
+    configuration is explicitly passed to the subprocess rather than relying
+    on module-global mutation.
     """
     import mosaic_day as _md
-    if g_table is not None:
-        _md.G_TABLE = g_table
-    if bp_table is not None:
-        _md.BP_TABLE = bp_table
-    return _md.process_ms(ms_path, keep_intermediates=keep, force_recal=force_recal)
+    cfg = _md.TileConfig.from_dict(cfg_dict)
+    return _md.process_ms(ms_path, cfg, keep_intermediates=keep, force_recal=force_recal)
 
 
 def process_tile_safe(

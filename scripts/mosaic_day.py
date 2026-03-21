@@ -553,9 +553,9 @@ def main():
     parser = argparse.ArgumentParser(description="Mosaic a full day of DSA-110 drift observations.")
     parser.add_argument(
         "--date",
-        default=None,
+        default="2026-01-25",
         metavar="YYYY-MM-DD",
-        help="Observation date to process (default: module-level DATE = %(default)s).",
+        help="Observation date to process (default: %(default)s).",
     )
     parser.add_argument(
         "--cal-date",
@@ -576,43 +576,36 @@ def main():
     args = parser.parse_args()
     keep = args.keep_intermediates
 
-    # Allow overriding the global DATE and derived paths via --date / --cal-date
-    global DATE, IMAGE_DIR, MOSAIC_OUT, PRODUCTS_DIR, BP_TABLE, G_TABLE
-    if args.date is not None:
-        DATE = args.date
-        IMAGE_DIR = f"/stage/dsa110-contimg/images/mosaic_{DATE}"
-        MOSAIC_OUT = f"{IMAGE_DIR}/full_mosaic.fits"
-        PRODUCTS_DIR = os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics") + f"/{DATE}"
-
-    cal_date = args.cal_date if args.cal_date is not None else DATE
-    BP_TABLE = f"{MS_DIR}/{cal_date}T22:26:05_0~23.b"
-    G_TABLE = f"{MS_DIR}/{cal_date}T22:26:05_0~23.g"
+    # Build immutable config from CLI args
+    cfg = TileConfig.build(date=args.date, cal_date=args.cal_date)
 
     # ── Cal-table validation (ABORT early if missing) ─────────────────────────
-    _missing = [t for t in [BP_TABLE, G_TABLE] if not os.path.exists(t)]
+    _missing = [t for t in [cfg.bp_table, cfg.g_table] if not os.path.exists(t)]
     if _missing:
         for _t in _missing:
             log.error("ABORT: calibration table not found: %s", _t)
-        log.error("Available .b tables in %s:", MS_DIR)
-        for _f in sorted(os.listdir(MS_DIR)):
+        log.error("Available .b tables in %s:", cfg.ms_dir)
+        for _f in sorted(os.listdir(cfg.ms_dir)):
             if _f.endswith(".b"):
                 log.error("  %s", _f)
+        cal_date = args.cal_date or args.date
         log.error(
             "To use a different date's tables, run with: --cal-date YYYY-MM-DD\n"
             "To symlink from 2026-01-25, run:\n"
             "  ln -s %s/2026-01-25T22:26:05_0~23.b %s\n"
             "  ln -s %s/2026-01-25T22:26:05_0~23.g %s",
-            MS_DIR, BP_TABLE,
-            MS_DIR, G_TABLE,
+            cfg.ms_dir, cfg.bp_table,
+            cfg.ms_dir, cfg.g_table,
         )
         sys.exit(1)
 
-    if cal_date != DATE:
+    cal_date = args.cal_date or args.date
+    if cal_date != cfg.date:
         log.info("Calibration tables from: %s", cal_date)
-    log.info("Cal tables verified: %s, %s", BP_TABLE, G_TABLE)
-    os.makedirs(IMAGE_DIR, exist_ok=True)
+    log.info("Cal tables verified: %s, %s", cfg.bp_table, cfg.g_table)
+    os.makedirs(cfg.image_dir, exist_ok=True)
 
-    ms_list = find_valid_ms()
+    ms_list = find_valid_ms(cfg)
     if not ms_list:
         log.error("No valid MS files found — aborting")
         sys.exit(1)
@@ -620,7 +613,7 @@ def main():
     # ── Phase 1: Process each MS ──────────────────────────────────────────────
     tile_images = []
     for ms_path in ms_list:
-        result = process_ms(ms_path, keep_intermediates=keep)
+        result = process_ms(ms_path, cfg, keep_intermediates=keep)
         if result:
             tile_images.append(result)
         else:
@@ -642,7 +635,7 @@ def main():
             continue
 
         if len(strips) == 1:
-            strip_out = MOSAIC_OUT
+            strip_out = cfg.mosaic_out
         else:
             # Use circular mean for wrap-safe RA labelling
             tile_ras = [_get_tile_center_ra(p) for p in strip_tiles]
@@ -650,7 +643,7 @@ def main():
             strip_ra = float(np.rad2deg(
                 np.arctan2(np.mean(np.sin(ra_rad)), np.mean(np.cos(ra_rad)))
             )) % 360.0
-            strip_out = MOSAIC_OUT.replace(".fits", f"_ra{int(round(strip_ra)) % 360:03d}.fits")
+            strip_out = cfg.mosaic_out.replace(".fits", f"_ra{int(round(strip_ra)) % 360:03d}.fits")
 
         if os.path.exists(strip_out):
             log.info("Strip %d mosaic already exists: %s", strip_idx, strip_out)
@@ -660,7 +653,7 @@ def main():
         log.info("\n=== Building mosaic for strip %d (%d tiles) ===\n", strip_idx, len(strip_tiles))
         out_wcs, ny, nx = build_common_wcs(strip_tiles)
         mosaic = coadd_tiles(strip_tiles, out_wcs, ny, nx)
-        strip_path = write_mosaic(mosaic, out_wcs, strip_tiles, output_path=strip_out)
+        strip_path = write_mosaic(mosaic, out_wcs, strip_tiles, output_path=strip_out, date=cfg.date)
         mosaic_paths.append(strip_path)
 
     if not mosaic_paths:
@@ -684,7 +677,7 @@ def main():
             log.info("  Dynamic range: %.0f", peak / rms)
 
     if all_passed:
-        print(f"\nSUCCESS: {len(mosaic_paths)} mosaic(s) in {IMAGE_DIR}")
+        print(f"\nSUCCESS: {len(mosaic_paths)} mosaic(s) in {cfg.image_dir}")
         for mp in mosaic_paths:
             print(f"  {Path(mp).name}")
     else:
@@ -698,7 +691,7 @@ def main():
 
     # ── Phase 4: Move finished mosaics to products/ ──────────────────────────
     if not keep:
-        _move_mosaic_to_products()
+        _move_mosaic_to_products(cfg)
 
     return mosaic_paths[0] if len(mosaic_paths) == 1 else mosaic_paths
 
