@@ -351,16 +351,14 @@ def _run_process_ms(
 
 
 def process_tile_safe(
-    md,
+    cfg_dict: dict,
     ms_path: str,
     keep: bool,
     timeout_sec: int,
     retry: bool,
     force_recal: bool = False,
-    g_table: str | None = None,
-    bp_table: str | None = None,
 ) -> str | None:
-    """Run md.process_ms with a hard timeout and optional single retry.
+    """Run process_ms with a hard timeout and optional single retry.
 
     If the tile hangs beyond *timeout_sec*, any CASA/WSClean subprocesses are
     killed with SIGKILL and None is returned.  With *retry=True* a second
@@ -370,7 +368,7 @@ def process_tile_safe(
 
     def _attempt() -> str | None:
         with ProcessPoolExecutor(max_workers=1) as pool:
-            fut = pool.submit(_run_process_ms, ms_path, keep, force_recal, g_table, bp_table)
+            fut = pool.submit(_run_process_ms, ms_path, cfg_dict, keep, force_recal)
             try:
                 return fut.result(timeout=timeout_sec)
             except FuturesTimeoutError:
