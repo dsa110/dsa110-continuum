@@ -703,43 +703,43 @@ def main():
     return mosaic_paths[0] if len(mosaic_paths) == 1 else mosaic_paths
 
 
-def _move_mosaic_to_products() -> None:
+def _move_mosaic_to_products(cfg: TileConfig) -> None:
     """Move the completed mosaic directory from stage to the products tree.
 
-    Source:      IMAGE_DIR  (/stage/dsa110-contimg/images/mosaic_{DATE}/)
-    Destination: PRODUCTS_DIR  (/data/dsa110-continuum/products/mosaics/{DATE}/)
+    Source:      cfg.image_dir  (/stage/dsa110-contimg/images/mosaic_{date}/)
+    Destination: cfg.products_dir  (/data/dsa110-continuum/products/mosaics/{date}/)
 
     Handles both single-strip (full_mosaic.fits) and multi-strip
-    (full_mosaic_ra*.fits) outputs.  If PRODUCTS_DIR already exists
+    (full_mosaic_ra*.fits) outputs.  If products_dir already exists
     (e.g. from a previous run), the move is skipped and a warning is
     logged rather than overwriting science products.
     """
     import glob as _g
-    mosaic_files = sorted(_g.glob(os.path.join(IMAGE_DIR, "full_mosaic*.fits")))
+    mosaic_files = sorted(_g.glob(os.path.join(cfg.image_dir, "full_mosaic*.fits")))
     if not mosaic_files:
-        log.warning("Move skipped: no mosaic files found in %s", IMAGE_DIR)
+        log.warning("Move skipped: no mosaic files found in %s", cfg.image_dir)
         return
 
-    if os.path.exists(PRODUCTS_DIR):
+    if os.path.exists(cfg.products_dir):
         log.warning(
             "Move skipped: destination already exists — remove it manually if you want to overwrite: %s",
-            PRODUCTS_DIR,
+            cfg.products_dir,
         )
         return
 
-    parent = Path(PRODUCTS_DIR).parent
+    parent = Path(cfg.products_dir).parent
     parent.mkdir(parents=True, exist_ok=True)
 
-    log.info("Moving mosaic directory: %s → %s", IMAGE_DIR, PRODUCTS_DIR)
+    log.info("Moving mosaic directory: %s → %s", cfg.image_dir, cfg.products_dir)
     try:
-        shutil.move(IMAGE_DIR, PRODUCTS_DIR)
-        log.info("Mosaic moved to products: %s", PRODUCTS_DIR)
+        shutil.move(cfg.image_dir, cfg.products_dir)
+        log.info("Mosaic moved to products: %s", cfg.products_dir)
         names = [Path(f).name for f in mosaic_files]
         for name in names:
-            print(f"  Archived: {PRODUCTS_DIR}/{name}")
+            print(f"  Archived: {cfg.products_dir}/{name}")
     except Exception as e:
         log.error("Failed to move mosaic to products: %s", e)
-        print(f"\nERROR: Could not move mosaic to {PRODUCTS_DIR}: {e}")
+        print(f"\nERROR: Could not move mosaic to {cfg.products_dir}: {e}")
 
 
 if __name__ == "__main__":
