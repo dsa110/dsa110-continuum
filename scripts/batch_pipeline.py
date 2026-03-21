@@ -769,10 +769,8 @@ def main() -> None:
         log.info("[%d/%d] %s", i, len(ms_list), tag)
         t0 = time.time()
         result = process_tile_safe(
-            _md, ms_path, keep, tile_timeout, retry_failed,
+            cfg.to_dict(), ms_path, keep, tile_timeout, retry_failed,
             force_recal=(args.force_recal or _epoch_gaincal_status == "ok"),
-            g_table=_epoch_g_table,
-            bp_table=_bp,
         )
         elapsed = time.time() - t0
 
