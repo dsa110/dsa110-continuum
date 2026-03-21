@@ -38,7 +38,9 @@ class TestTileResultSerialization:
     def test_roundtrip(self, status, kwargs):
         original = TileResult(status, **kwargs)
         restored = TileResult.from_dict(original.to_dict())
-        assert restored == original
+        # Compare via dicts to avoid class-identity issues when mosaic_day
+        # gets reloaded by other tests (test_qa_gates uses importlib.reload)
+        assert restored.to_dict() == original.to_dict()
 
     def test_to_dict_returns_plain_dict(self):
         r = TileResult("imaged", fits_path="/tmp/x.fits")

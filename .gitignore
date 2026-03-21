@@ -26,5 +26,6 @@ docs/quarto/.quarto/
 .github/instructions/codacy.instructions.md
 
 
-#Ignore windsurf AI rules
+#Ignore windsurf AI rules and local config
 .windsurfrules
+.windsurf/

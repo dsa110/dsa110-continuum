@@ -359,7 +359,7 @@ def process_tile_safe(
     timeout_sec: int,
     retry: bool,
     force_recal: bool = False,
-) -> "TileResult":
+):
     """Run process_ms with a hard timeout and optional single retry.
 
     If the tile hangs beyond *timeout_sec*, any CASA/WSClean subprocesses are
