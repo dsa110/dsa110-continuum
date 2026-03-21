@@ -507,7 +507,7 @@ def write_mosaic(mosaic: np.ndarray, out_wcs: WCS, fits_paths: list[str],
         if key in ref_hdr:
             new_hdr[key] = ref_hdr[key]
     new_hdr.update(out_wcs.to_header())
-    new_hdr["HISTORY"] = f"Mosaic of {len(fits_paths)} DSA-110 tiles ({DATE})"
+    new_hdr["HISTORY"] = f"Mosaic of {len(fits_paths)} DSA-110 tiles ({date})"
 
     hdu = fits.PrimaryHDU(data=mosaic.astype(np.float32), header=new_hdr)
     hdu.writeto(out_path, overwrite=True)
