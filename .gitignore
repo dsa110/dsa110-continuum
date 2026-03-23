@@ -26,6 +26,15 @@ docs/quarto/.quarto/
 .github/instructions/codacy.instructions.md
 
 
-#Ignore windsurf AI rules and local config
-.windsurfrules
+# IDE and AI tool configs (local to each developer)
+.agent/
+.agents/
+.augment/
+.claude/skills/
+.continue/
+.cursor/
+.factory/
+.idea/
+.vscode/
 .windsurf/
+.windsurfrules

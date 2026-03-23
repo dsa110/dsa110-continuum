@@ -701,6 +701,15 @@ def main() -> None:
             except Exception as _e:
                 log.warning("--force-recal: could not remove meridian MS %s: %s", _p, _e)
 
+        # Purge applycal sentinel files so calibration reruns from scratch
+        _stale_sentinels = _glob.glob(os.path.join(MS_DIR, f"{date}*_meridian.ms.applycal_done"))
+        for _s in _stale_sentinels:
+            try:
+                os.remove(_s)
+                log.info("--force-recal: removed stale applycal sentinel: %s", _s)
+            except Exception as _e:
+                log.warning("--force-recal: could not remove sentinel %s: %s", _s, _e)
+
     _epoch_g_table: str | None = None
     if not args.skip_epoch_gaincal:
         log.info("=== Phase 0/3: Per-epoch gain calibration ===")

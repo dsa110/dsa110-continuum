@@ -201,6 +201,25 @@ def _ms_is_valid(path: str) -> bool:
     )
 
 
+def _applycal_sentinel_path(meridian_ms: str) -> str:
+    """Return the path of the applycal-completion sentinel for a meridian MS."""
+    return meridian_ms.rstrip("/") + ".applycal_done"
+
+
+def _fits_is_valid(fits_path: str) -> bool:
+    """Return True if FITS file exists and has a readable, non-empty data array."""
+    if not os.path.isfile(fits_path):
+        return False
+    try:
+        with fits.open(fits_path) as hdul:
+            if len(hdul) < 1 or hdul[0].data is None:
+                return False
+            _ = hdul[0].data.shape  # triggers decompression, catches truncation
+            return True
+    except Exception:
+        return False
+
+
 def process_ms(
     ms_path: str,
     cfg: TileConfig,
@@ -217,17 +236,29 @@ def process_ms(
 
     # Skip if already fully processed — unless force_recal requests a fresh run
     if not force_recal:
-        if os.path.exists(pbcor_fits):
+        if _fits_is_valid(pbcor_fits):
             log.info("[%s] PB-corrected image already exists — skipping", tag)
             return TileResult("cached", fits_path=pbcor_fits)
-        if os.path.exists(image_fits):
+        if _fits_is_valid(image_fits):
             log.info("[%s] Image already exists (no pbcor) — skipping", tag)
             return TileResult("cached", fits_path=image_fits)
+        # Remove partial/corrupt FITS so imaging reruns cleanly
+        for partial in (pbcor_fits, image_fits):
+            if os.path.isfile(partial):
+                log.warning("[%s] Removing invalid/partial FITS: %s", tag, partial)
+                try:
+                    os.remove(partial)
+                except OSError as e:
+                    log.warning("[%s] Could not remove %s: %s", tag, partial, e)
 
     # ── Step 1: Phaseshift ────────────────────────────────────────────────
+    sentinel = _applycal_sentinel_path(meridian_ms)
     if _ms_is_valid(meridian_ms):
         log.info("[%s] Meridian MS already exists", tag)
     else:
+        # Invalidate stale sentinel — the MS it referred to is gone
+        if os.path.isfile(sentinel):
+            os.remove(sentinel)
         if os.path.isdir(meridian_ms):
             log.warning(
                 "[%s] Corrupt or incomplete meridian MS detected — removing: %s", tag, meridian_ms
@@ -245,7 +276,15 @@ def process_ms(
             return TileResult("failed", failed_stage="phaseshift", error=str(e))
 
     # ── Step 2: Calibration ────────────────────────────────────────────────
-    if force_recal or needs_calibration(meridian_ms):
+    applycal_needed = force_recal or not os.path.isfile(sentinel)
+    if not applycal_needed and needs_calibration(meridian_ms):
+        log.warning(
+            "[%s] Applycal sentinel exists but ratio check disagrees — "
+            "trusting sentinel (use --force-recal to override)", tag
+        )
+    if applycal_needed:
+        if os.path.isfile(sentinel):
+            os.remove(sentinel)  # clear stale sentinel before starting
         log.info("[%s] Applying calibration (force_recal=%s) ...", tag, force_recal)
         try:
             apply_to_target(
@@ -270,8 +309,14 @@ def process_ms(
                         return TileResult("failed", failed_stage="allzero", error="CORRECTED_DATA all zeros")
         except (OSError, RuntimeError) as e:
             log.warning("[%s] Post-applycal check failed: %s — continuing", tag, e)
+
+        # Write sentinel ONLY after applycal + verification both pass
+        try:
+            Path(sentinel).write_text("applycal completed\n")
+        except OSError as e:
+            log.warning("[%s] Could not write applycal sentinel: %s", tag, e)
     else:
-        log.info("[%s] Calibration already applied", tag)
+        log.info("[%s] Calibration already applied (sentinel exists)", tag)
 
     # ── Step 3: Image ──────────────────────────────────────────────────────
     log.info("[%s] Imaging with WSClean ...", tag)
@@ -316,13 +361,18 @@ def process_ms(
             log.error("[%s] Tile rejected by image QA", tag)
             return TileResult("failed", failed_stage="qa", error="; ".join(fatal))
 
-    # ── Cleanup: delete meridian MS now that imaging succeeded ────────────────
+    # ── Cleanup: delete meridian MS + sentinel now that imaging succeeded ─────
     if not keep_intermediates and os.path.isdir(meridian_ms):
         try:
             shutil.rmtree(meridian_ms)
             log.info("[%s] Deleted intermediate meridian MS: %s", tag, meridian_ms)
         except Exception as e:
             log.warning("[%s] Could not delete meridian MS %s: %s", tag, meridian_ms, e)
+        if os.path.isfile(sentinel):
+            try:
+                os.remove(sentinel)
+            except OSError:
+                pass
 
     return TileResult("imaged", fits_path=result_fits)
 
