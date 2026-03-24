@@ -33,26 +33,21 @@ from dsa110_contimg.infrastructure.database import (
     images_insert,
     ms_index_upsert,
 )
+from dsa110_continuum._lazy_init import require_gpu_safety
 from dsa110_contimg.common.utils.gpu_safety import (
     check_gpu_memory_available,
     gpu_safe,
-    initialize_gpu_safety,
     is_gpu_available,
     memory_safe,
 )
 from dsa110_continuum.conversion.ms_utils import (
-    configure_ms_for_imaging,
     inject_provenance_metadata,
 )
 from dsa110_contimg.infrastructure.tracking.provenance import (
     ProvenanceTracker,
-    record_provenance,
 )
 
 logger = logging.getLogger("imaging_worker")
-
-# Initialize GPU safety limits at module load time
-initialize_gpu_safety()
 
 # Check if GPU gridding is available
 try:
@@ -225,6 +220,7 @@ def gpu_dirty_image(
     datacolumn: str = "CORRECTED_DATA",
 ) -> str | None:
     """Create dirty image using GPU gridding."""
+    require_gpu_safety()
     if not GPU_GRIDDING_AVAILABLE:
         logger.warning("GPU gridding not available, skipping GPU dirty image")
         return None
@@ -628,6 +624,7 @@ def process_once(
     catalog_mask_radius_arcsec : float, optional
         Mask radius in arcseconds (default: 60.0)
     """
+    require_gpu_safety()
     out_dir.mkdir(parents=True, exist_ok=True)
     conn = ensure_pipeline_db()
     processed = 0

@@ -6,10 +6,6 @@ import logging
 import os
 from dataclasses import dataclass
 
-# Ensure CASAPATH is set before importing CASA modules
-from dsa110_contimg.common.utils.casa_init import ensure_casa_path
-
-ensure_casa_path()
 
 import casacore.tables as casatables
 import numpy as np

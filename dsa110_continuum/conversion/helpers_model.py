@@ -4,10 +4,6 @@ import logging
 
 import astropy.units as u
 
-# Ensure CASAPATH is set before importing CASA modules
-from dsa110_contimg.common.utils.casa_init import ensure_casa_path
-
-ensure_casa_path()
 
 import casacore.tables as casatables  # type: ignore
 import numpy as np

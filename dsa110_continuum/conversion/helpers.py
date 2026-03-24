@@ -11,10 +11,8 @@ All functions have been split into logical modules for better organization:
 
 import logging
 
-# Provide a patchable casacore table symbol for tests and submodules
-from dsa110_contimg.common.utils.casa_init import ensure_casa_path
 
-ensure_casa_path()
+# Provide a patchable casacore table symbol for tests and submodules
 import casacore.tables as casatables  # type: ignore
 
 # Expose as module attribute so tests can patch dsa110_contimg.conversion.helpers.table

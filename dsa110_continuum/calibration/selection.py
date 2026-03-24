@@ -1,10 +1,6 @@
 # pylint: disable=no-member  # astropy.units uses dynamic attributes (deg, etc.)
 from __future__ import annotations
 
-# Ensure CASAPATH is set before importing CASA modules
-from dsa110_contimg.common.utils.casa_init import ensure_casa_path
-
-ensure_casa_path()
 
 import astropy.units as u
 import casacore.tables as casatables

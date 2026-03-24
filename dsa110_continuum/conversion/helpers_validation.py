@@ -4,10 +4,6 @@ import logging
 
 import numpy as np
 
-# Ensure CASAPATH is set before importing CASA modules
-from dsa110_contimg.common.utils.casa_init import ensure_casa_path
-
-ensure_casa_path()
 
 # Use the shared patchable table symbol from conversion.helpers to make unit tests simpler
 import dsa110_continuum.conversion.helpers as _helpers

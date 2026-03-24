@@ -9,11 +9,6 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-# Initialize CASA environment before importing CASA modules
-from dsa110_contimg.common.utils.casa_init import ensure_casa_path
-
-ensure_casa_path()
-
 # Prefer module import so mocks on casacore.tables.table are respected at call time
 import casacore.tables as casatables  # noqa: E402
 import numpy as np  # noqa: E402
@@ -40,6 +35,7 @@ class ImagingResult:
     beam_major: float | None = None
     beam_minor: float | None = None
     beam_pa: float | None = None
+    provenance_path: str | None = None
 
 
 # For backwards compatibility, provide module-level names that use CASAService
@@ -99,6 +95,82 @@ LOG = logging.getLogger(__name__)
 FIXED_IMAGE_EXTENT_DEG = settings.imaging.fixed_extent_deg
 
 
+def _write_imaging_provenance(
+    *,
+    imagename: str,
+    ms_path: str,
+    imsize: int,
+    cell_arcsec: float,
+    weighting: str,
+    robust: float,
+    specmode: str,
+    deconvolver: str,
+    nterms: int,
+    niter: int,
+    threshold: str,
+    auto_mask: float,
+    auto_threshold: float,
+    mgain: float,
+    pbcor: bool,
+    gridder: str,
+    uvrange: str,
+    quality_tier: str,
+    threads: int,
+    mem_gb: int,
+) -> str | None:
+    """Write imaging provenance to a sidecar JSON beside the output image.
+
+    The file records the *effective* (resolved) parameters that were passed
+    to WSClean, so that any image can be exactly reproduced or triaged.
+
+    Returns the path written, or None on failure.
+    """
+    import json
+    from datetime import datetime, timezone
+
+    provenance = {
+        "imaging_params": {
+            "imsize": imsize,
+            "cell_arcsec": cell_arcsec,
+            "weighting": weighting,
+            "robust": robust,
+            "specmode": specmode,
+            "deconvolver": deconvolver,
+            "nterms": nterms,
+            "niter": niter,
+            "threshold": threshold,
+            "auto_mask": auto_mask,
+            "auto_threshold": auto_threshold,
+            "mgain": mgain,
+            "pbcor": pbcor,
+            "gridder": gridder,
+            "uvrange": uvrange,
+            "quality_tier": quality_tier,
+        },
+        "resources": {
+            "threads": threads,
+            "mem_gb": mem_gb,
+        },
+        "inputs": {
+            "ms_path": ms_path,
+        },
+        "meta": {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "pipeline": "dsa110-continuum",
+        },
+    }
+
+    out_path = f"{imagename}.provenance.json"
+    try:
+        with open(out_path, "w") as f:
+            json.dump(provenance, f, indent=2)
+        LOG.info("Wrote imaging provenance to %s", out_path)
+        return out_path
+    except OSError as exc:
+        LOG.warning("Failed to write imaging provenance: %s", exc)
+        return None
+
+
 @track_performance("wsclean", log_result=True)
 def run_wsclean(
     ms_path: str,
@@ -128,8 +200,11 @@ def run_wsclean(
     erode_beam_shape: bool = False,
     idg_mode: str = "gpu",
     gpu_ids: list[int] | None = None,
-    use_gpu: bool = False,  # Ignored, for backward compatibility
-    auto_mask: bool = True,  # Ignored, for backward compatibility
+    auto_mask: float = 5.0,
+    auto_threshold: float = 1.0,
+    mgain: float = 0.8,
+    threads: int | None = None,
+    mem_gb: int | None = None,
 ) -> ImagingResult:
     """Run WSClean with parameters mapped from tclean equivalents.
 
@@ -152,7 +227,7 @@ def run_wsclean(
     """
     # Check GPU availability if requested
     gpu_config = get_gpu_config()
-    if (gridder == "idg" and idg_mode != "cpu") or (gpu_ids is not None) or use_gpu:
+    if (gridder == "idg" and idg_mode != "cpu") or (gpu_ids is not None):
         if not gpu_config.has_gpu:
             LOG.warning(
                 "GPU acceleration requested but no GPUs detected (or Docker GPU unavailable). "
@@ -332,32 +407,30 @@ def run_wsclean(
         cmd.extend(["-fits-mask", mask_path])
         LOG.info("Using mask file: %s", mask_path)
 
-    # Auto-masking (helps with convergence)
-    # Note: Auto-masking can be combined with user-provided mask
-    # WSClean will use the user mask as initial constraint and auto-expand if needed
-    # Values optimized for DSA-110 transient detection (primary science goal):
-    # - auto-mask 5σ: conservative mask creation for point sources
-    # - auto-threshold 1.0σ: clean deeply within mask
-    cmd.extend(["-auto-mask", "5"])
-    cmd.extend(["-auto-threshold", "1.0"])
-    cmd.extend(["-mgain", "0.8"])
+    # Auto-masking and major-cycle gain — controlled by caller via ImagingParams
+    cmd.extend(["-auto-mask", str(auto_mask)])
+    cmd.extend(["-auto-threshold", str(auto_threshold)])
+    cmd.extend(["-mgain", str(mgain)])
 
-    # Threading: use all available CPU cores (critical for performance!)
+    # Threading: explicit param > env var > cpu_count
     import multiprocessing
 
-    num_threads = os.getenv("WSCLEAN_THREADS", str(multiprocessing.cpu_count()))
+    if threads is not None:
+        num_threads = str(threads)
+    else:
+        num_threads = os.getenv("WSCLEAN_THREADS", str(multiprocessing.cpu_count()))
     cmd.extend(["-j", num_threads])
     LOG.debug("Using %s threads for WSClean", num_threads)
 
-    # Memory limit (optimized for performance)
-    # Development tier: Use more memory for faster gridding/FFT (16GB default)
-    # Production mode: Scale with image size (16-32GB)
-    if quality_tier == "development":
-        # Development tier: Allow more memory for speed (10-30% faster gridding)
-        abs_mem = os.getenv("WSCLEAN_ABS_MEM", "16")
+    # Memory limit: explicit param > env var > tier-based default
+    if mem_gb is not None:
+        abs_mem = str(mem_gb)
+    elif os.getenv("WSCLEAN_ABS_MEM"):
+        abs_mem = os.environ["WSCLEAN_ABS_MEM"]
+    elif quality_tier == "development":
+        abs_mem = "16"
     else:
-        # Production mode: Scale with image size
-        abs_mem = os.getenv("WSCLEAN_ABS_MEM", "64" if imsize >= 4800 else "32" if imsize >= 2400 else "16")
+        abs_mem = "64" if imsize >= 4800 else "32" if imsize >= 2400 else "16"
     cmd.extend(["-abs-mem", abs_mem])
     LOG.debug("WSClean memory allocation: %sGB", abs_mem)
 
@@ -370,6 +443,30 @@ def run_wsclean(
     # Log command
     cmd_str = " ".join(cmd)
     LOG.info("Running WSClean: %s", cmd_str)
+
+    # Write imaging provenance sidecar — captures the *effective* resolved values
+    provenance_path = _write_imaging_provenance(
+        imagename=imagename,
+        ms_path=ms_path,
+        imsize=imsize,
+        cell_arcsec=cell_arcsec,
+        weighting=weighting,
+        robust=robust,
+        specmode=specmode,
+        deconvolver=deconvolver,
+        nterms=nterms,
+        niter=niter,
+        threshold=threshold,
+        auto_mask=auto_mask,
+        auto_threshold=auto_threshold,
+        mgain=mgain,
+        pbcor=pbcor,
+        gridder=gridder,
+        uvrange=uvrange,
+        quality_tier=quality_tier,
+        threads=int(num_threads),
+        mem_gb=int(abs_mem),
+    )
 
     # Execute with configurable timeout
     # Set WSCLEAN_DOCKER_TIMEOUT env var to override default (in seconds)
@@ -515,6 +612,7 @@ def run_wsclean(
         beam_major=beam_major,
         beam_minor=beam_minor,
         beam_pa=beam_pa,
+        provenance_path=provenance_path,
     )
 
 
@@ -563,6 +661,11 @@ def image_ms(
     galvin_box_size: int = 100,
     galvin_adaptive_depth: int = 3,
     erode_beam_shape: bool = False,
+    auto_mask: float = 5.0,
+    auto_threshold: float = 1.0,
+    mgain: float = 0.8,
+    threads: int | None = None,
+    mem_gb: int | None = None,
 ) -> None:
     """Main imaging function for Measurement Sets.
 
@@ -1398,6 +1501,11 @@ def image_ms(
                 galvin_box_size=galvin_box_size,
                 galvin_adaptive_depth=galvin_adaptive_depth,
                 erode_beam_shape=erode_beam_shape,
+                auto_mask=auto_mask,
+                auto_threshold=auto_threshold,
+                mgain=mgain,
+                threads=threads,
+                mem_gb=mem_gb,
             )
         finally:
             # Clean up temporary IDG-merged MS

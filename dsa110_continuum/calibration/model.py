@@ -68,10 +68,6 @@ import os
 import time
 from pathlib import Path
 
-# IMPORTANT: Import casa_init BEFORE casacore to ensure CWD is set to logs directory
-from dsa110_contimg.common.utils.casa_init import ensure_casa_path
-
-ensure_casa_path()
 
 import astropy.units as u  # noqa: E402
 import casacore.tables as tb  # noqa: E402

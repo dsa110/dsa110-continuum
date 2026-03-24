@@ -11,15 +11,11 @@ import os
 from typing import Any
 
 from dsa110_contimg.common.utils import timed
-from dsa110_contimg.common.utils.casa_init import ensure_casa_path
 from dsa110_continuum.calibration.casa_service import CASAService
 from dsa110_continuum.calibration.validate import (
     validate_caltables_for_use,
 )
 from dsa110_continuum.conversion.merge_spws import get_spw_count
-
-# Initialize CASA environment before importing CASA modules
-ensure_casa_path()
 
 # setjy imported elsewhere; avoid unused import here
 

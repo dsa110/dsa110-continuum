@@ -16,9 +16,6 @@ from typing import Any
 
 import numpy as np
 
-from dsa110_contimg.common.utils.casa_init import ensure_casa_path
-
-ensure_casa_path()
 
 import casacore.tables as casatables
 

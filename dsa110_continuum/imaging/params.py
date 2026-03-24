@@ -91,6 +91,10 @@ class ImagingParams:
     wsclean_path: str | None = None
     export_model_image: bool = False
 
+    # Resource limits (None = env var fallback, then auto-detect)
+    threads: int | None = None  # WSClean -j (fallback: WSCLEAN_THREADS or cpu_count)
+    mem_gb: int | None = None  # WSClean -abs-mem (fallback: WSCLEAN_ABS_MEM or tier-based)
+
     # Masking
     use_unicat_mask: bool = True
     mask_path: str | None = None
@@ -149,6 +153,16 @@ class ImagingParams:
             raise ValueError(f"nterms must be >= 1, got {self.nterms}")
         if self.mask_radius_arcsec <= 0:
             raise ValueError(f"mask_radius_arcsec must be positive, got {self.mask_radius_arcsec}")
+        if self.auto_mask <= 0:
+            raise ValueError(f"auto_mask must be positive, got {self.auto_mask}")
+        if self.auto_threshold <= 0:
+            raise ValueError(f"auto_threshold must be positive, got {self.auto_threshold}")
+        if not 0 < self.mgain <= 1.0:
+            raise ValueError(f"mgain must be in (0, 1], got {self.mgain}")
+        if self.threads is not None and self.threads < 1:
+            raise ValueError(f"threads must be >= 1, got {self.threads}")
+        if self.mem_gb is not None and self.mem_gb < 1:
+            raise ValueError(f"mem_gb must be >= 1, got {self.mem_gb}")
 
     def to_dict(self) -> dict[str, Any]:
         """Convert parameters to dictionary for function calls.
@@ -194,6 +208,8 @@ class ImagingParams:
             "backend": self.backend,
             "wsclean_path": self.wsclean_path,
             "export_model_image": self.export_model_image,
+            "threads": self.threads,
+            "mem_gb": self.mem_gb,
             "use_unicat_mask": self.use_unicat_mask,
             "mask_path": self.mask_path,
             "mask_radius_arcsec": self.mask_radius_arcsec,

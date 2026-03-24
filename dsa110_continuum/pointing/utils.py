@@ -12,10 +12,6 @@ import astropy.units as u
 import numpy as np
 from astropy.time import Time
 
-# Ensure CASAPATH is set before importing CASA modules
-from dsa110_contimg.common.utils.casa_init import ensure_casa_path
-
-ensure_casa_path()
 
 import casacore.tables as casatables  # noqa: E402
 

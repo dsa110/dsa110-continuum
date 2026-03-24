@@ -17,14 +17,10 @@ from typing import Optional
 
 import numpy as np
 
-# Ensure CASAPATH is set before importing CASA modules
-from dsa110_contimg.common.utils.casa_init import ensure_casa_path
-
-ensure_casa_path()
-
 # CASA import moved to function level to prevent logs in workspace root
 # See: docs/dev-notes/analysis/casa_log_handling_investigation.md
 
+from dsa110_continuum._lazy_init import require_gpu_safety
 from dsa110_continuum.calibration.casa_service import CASAService
 from dsa110_continuum.calibration.validate import (
     validate_caltables_for_use,
@@ -33,16 +29,12 @@ from dsa110_contimg.common.utils import timed
 from dsa110_contimg.common.utils.gpu_safety import (
     check_gpu_memory_available,
     gpu_safe,
-    initialize_gpu_safety,
     is_gpu_available,
     memory_safe,
 )
 from dsa110_contimg.common.utils.ms_permissions import ensure_ms_writable
 
 logger = logging.getLogger("applycal")
-
-# Initialize GPU safety limits at module load time
-initialize_gpu_safety()
 
 # Check if GPU calibration is available
 try:
@@ -112,6 +104,7 @@ def apply_interpolated_calibration(
         If interpolation fails
 
     """
+    require_gpu_safety()
     import tempfile
     from pathlib import Path
 
@@ -506,6 +499,7 @@ def apply_gains_to_ms(
         ApplyCalResult with statistics, or None if GPU calibration unavailable
 
     """
+    require_gpu_safety()
     if not GPU_CALIBRATION_AVAILABLE:
         logger.warning("GPU calibration not available")
         return None
@@ -595,6 +589,7 @@ def apply_to_target(
     Parameters
     ----------
     """
+    require_gpu_safety()
     # PRECONDITION CHECK: Validate all calibration tables before applying
     # This ensures we follow "measure twice, cut once" - establish requirements upfront
     # for consistent, reliable calibration application.

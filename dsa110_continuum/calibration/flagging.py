@@ -13,8 +13,7 @@ from typing import Any
 
 from dsa110_continuum.calibration.casa_service import CASAService
 
-# Ensure CASAPATH is set before importing CASA modules
-from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+from dsa110_continuum._lazy_init import require_headless
 from dsa110_contimg.common.utils.error_context import format_ms_error_with_suggestions
 from dsa110_contimg.common.utils import get_env_path
 
@@ -26,17 +25,6 @@ except ImportError:
     @contextmanager
     def casa_log_environment():
         yield None
-
-
-ensure_casa_path()
-
-
-# Ensure headless operation to prevent casaplotserver X server errors
-# Set multiple environment variables to prevent CASA from launching plotting servers
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-os.environ.setdefault("CASA_NO_X", "1")  # Additional CASA-specific flag
-if os.environ.get("DISPLAY"):
-    os.environ.pop("DISPLAY", None)
 
 
 @contextmanager
@@ -1399,6 +1387,7 @@ def flag_rfi(
     clip_sigma :
         Threshold in MAD-σ units for the residual clip (default: 7.0).
     """
+    require_headless()
     from dsa110_contimg.common.utils.ms_permissions import ensure_ms_writable
 
     ensure_ms_writable(ms)
@@ -1560,6 +1549,7 @@ def flag_rfi_aoflagger(
         If AOFlagger execution fails
 
     """
+    require_headless()
     logger = logging.getLogger(__name__)
 
     # Determine AOFlagger command

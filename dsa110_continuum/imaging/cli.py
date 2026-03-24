@@ -8,8 +8,6 @@ Performs primary-beam correction and exports FITS products.
 Supports hybrid workflow: CASA ft() for model seeding + WSClean for fast imaging.
 """
 
-# Initialize CASA environment before importing CASA modules
-from dsa110_contimg.common.utils.casa_init import ensure_casa_path
 from dsa110_contimg.common.utils.cli_helpers import (
     configure_logging_from_args,
     ensure_scratch_dirs,
@@ -17,8 +15,6 @@ from dsa110_contimg.common.utils.cli_helpers import (
 )
 
 from .cli_imaging import image_ms
-
-ensure_casa_path()
 
 import casacore.tables as casatables  # type: ignore[import]
 

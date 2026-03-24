@@ -30,12 +30,9 @@ import numpy as np
 
 from dsa110_contimg.common.utils.casa_init import (
     casa_log_environment,
-    ensure_casa_path,
     get_casa_task,
 )
 
-# Ensure environment is set up on module import
-ensure_casa_path()
 
 logger = logging.getLogger(__name__)
 
