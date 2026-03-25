@@ -20,7 +20,7 @@ system 3.8; if you need pip, use `/opt/miniforge/envs/casa6/bin/python -m pip`.
 
 ## Build / Test / Lint
 
-    # Run all tests (134 tests, ~20 s)
+    # Run all tests (220 tests, ~20 s)
     /opt/miniforge/envs/casa6/bin/python -m pytest tests/ -q
 
     # Run a single test file or test
@@ -31,6 +31,10 @@ system 3.8; if you need pip, use `/opt/miniforge/envs/casa6/bin/python -m pip`.
     ruff check dsa110_continuum/ scripts/ tests/
     ruff check --fix dsa110_continuum/ scripts/ tests/   # auto-fix safe lint issues
     ruff format --check dsa110_continuum/ scripts/ tests/
+
+Note: ~900 pre-existing ruff violations exist (mostly whitespace W293/W291, unsorted
+imports I001, missing docstrings D103). Keep new code clean but do not bulk-fix existing
+violations — they are tracked separately.
 
     # Run a pipeline script
     /opt/miniforge/envs/casa6/bin/python scripts/batch_pipeline.py --date 2026-01-25

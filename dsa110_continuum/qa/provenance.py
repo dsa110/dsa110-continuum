@@ -3,19 +3,37 @@
 Records calibration quality, per-tile status, and per-epoch results
 into a single JSON manifest alongside pipeline products. When a mosaic
 looks bad, open the manifest to immediately see what went wrong.
+
+Tile-granular retrieval
+-----------------------
+For testing and diagnostics, use :func:`get_cal_qa_for_tile` to obtain
+calibration QA stats for any tile FITS or MS path::
+
+    from dsa110_continuum.qa.provenance import get_cal_qa_for_tile
+
+    qa = get_cal_qa_for_tile("/stage/.../2026-01-25T21:17:33-image-pb.fits")
+    print(qa.bp_flag_fraction)   # BP flagging fraction
+    print(qa.g_phase_scatter_deg) # G-table phase scatter
+    print(qa.tile_record)         # per-tile status dict (or None if not in manifest)
 """
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import os
+import re
 import socket
 import subprocess
 import sys
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+
+# Default products base — overridable via DSA_PRODUCTS_DIR env var.
+_DEFAULT_PRODUCTS_BASE = "/data/dsa110-continuum/products/mosaics"
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +60,9 @@ class RunManifest:
 
     # Calibration quality (from compute_calibration_metrics)
     cal_quality: dict[str, Any] = field(default_factory=dict)
+
+    # Calibration selection provenance (from ensure_bandpass)
+    cal_selection: dict[str, Any] = field(default_factory=dict)
 
     # Per-tile records
     tiles: list[dict[str, Any]] = field(default_factory=list)
@@ -195,3 +216,169 @@ class RunManifest:
             json.dump(self.to_dict(), f, indent=2, default=str)
         logger.info("Manifest written: %s", path)
         return path
+
+    @classmethod
+    def load(cls, path: str) -> RunManifest:
+        """Load a manifest from a saved JSON file.
+
+        Unknown keys in the JSON (e.g., from a newer pipeline version) are
+        silently ignored so older code can still read newer manifests.
+
+        Parameters
+        ----------
+        path : str
+            Path to the manifest JSON file (e.g. ``{products_dir}/{date}_manifest.json``).
+
+        Returns
+        -------
+        RunManifest
+            Populated manifest instance.
+
+        Raises
+        ------
+        FileNotFoundError
+            If *path* does not exist.
+        """
+        with open(path) as f:
+            data = json.load(f)
+        known = {f.name for f in dataclasses.fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in known})
+
+    def get_tile_record(self, key: str) -> dict[str, Any] | None:
+        """Return the tile record whose ``fits_path`` or ``ms_path`` matches *key*.
+
+        Parameters
+        ----------
+        key : str
+            A tile FITS path or MS path exactly as recorded by :meth:`record_tile`.
+
+        Returns
+        -------
+        dict or None
+            The matching tile record dict, or ``None`` if not found.
+        """
+        for rec in self.tiles:
+            if rec.get("fits_path") == key or rec.get("ms_path") == key:
+                return rec
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Tile-granular retrieval helpers
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class TileCalQA:
+    """Calibration QA stats for a single tile, resolved from the day manifest.
+
+    All tiles processed in a given pipeline day share the same BP and G
+    calibration tables, so ``cal_quality`` is run-level, not tile-level.
+    ``tile_record`` is the per-tile status entry from the manifest (or
+    ``None`` if the tile was not found in the manifest).
+    """
+
+    date: str
+    cal_date: str
+    bp_table: str
+    g_table: str
+    cal_quality: dict[str, Any]
+    tile_record: dict[str, Any] | None
+    gates: list[dict[str, Any]]
+    pipeline_verdict: str
+
+    @property
+    def bp_flag_fraction(self) -> float | None:
+        """Flagged fraction of the BP calibration table (0–1), or None."""
+        return self.cal_quality.get("bp", {}).get("flag_fraction")
+
+    @property
+    def g_phase_scatter_deg(self) -> float | None:
+        """Phase scatter of the G calibration table in degrees, or None."""
+        return self.cal_quality.get("g", {}).get("phase_scatter_deg")
+
+    @property
+    def tile_status(self) -> str | None:
+        """Processing status of this tile (``"ok"`` / ``"failed"``), or None."""
+        return self.tile_record.get("status") if self.tile_record else None
+
+
+def load_manifest(date: str, products_dir: str | None = None) -> RunManifest:
+    """Load the day manifest for *date* from *products_dir*.
+
+    Parameters
+    ----------
+    date : str
+        Observation date in ``YYYY-MM-DD`` format.
+    products_dir : str, optional
+        Base directory containing per-date product sub-directories.
+        Defaults to the ``DSA_PRODUCTS_DIR`` environment variable, or
+        ``/data/dsa110-continuum/products/mosaics`` if unset.
+
+    Returns
+    -------
+    RunManifest
+
+    Raises
+    ------
+    FileNotFoundError
+        If the manifest file does not exist for *date*.
+    """
+    if products_dir is None:
+        products_dir = os.environ.get("DSA_PRODUCTS_DIR", _DEFAULT_PRODUCTS_BASE)
+    manifest_path = os.path.join(products_dir, date, f"{date}_manifest.json")
+    if not os.path.exists(manifest_path):
+        raise FileNotFoundError(f"Manifest not found: {manifest_path}")
+    return RunManifest.load(manifest_path)
+
+
+def get_cal_qa_for_tile(
+    tile_path: str,
+    products_dir: str | None = None,
+) -> TileCalQA:
+    """Return calibration QA stats for a tile FITS path or MS path.
+
+    Parses the observation date from *tile_path*, loads the day manifest,
+    then returns a :class:`TileCalQA` containing the run-level calibration
+    metrics and the per-tile status record (if present in the manifest).
+
+    Parameters
+    ----------
+    tile_path : str
+        Path to a tile FITS file (e.g. ``…/2026-01-25T21:17:33-image-pb.fits``)
+        or a Measurement Set (e.g. ``…/2026-01-25T21:17:33.ms``).
+    products_dir : str, optional
+        Base directory for day manifests.  See :func:`load_manifest`.
+
+    Returns
+    -------
+    TileCalQA
+
+    Raises
+    ------
+    ValueError
+        If the date cannot be parsed from *tile_path*.
+    FileNotFoundError
+        If no manifest exists for the inferred date.
+    """
+    name = Path(tile_path).name
+    m = re.match(r"(\d{4}-\d{2}-\d{2})", name)
+    if not m:
+        raise ValueError(
+            f"Cannot parse observation date (YYYY-MM-DD) from tile path: {tile_path!r}"
+        )
+    date = m.group(1)
+
+    manifest = load_manifest(date, products_dir)
+    tile_record = manifest.get_tile_record(tile_path)
+
+    return TileCalQA(
+        date=manifest.date,
+        cal_date=manifest.cal_date,
+        bp_table=manifest.bp_table,
+        g_table=manifest.g_table,
+        cal_quality=manifest.cal_quality,
+        tile_record=tile_record,
+        gates=manifest.gates,
+        pipeline_verdict=manifest.pipeline_verdict,
+    )

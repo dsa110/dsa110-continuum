@@ -3,6 +3,8 @@
 ## Scope
 
 `dsa110-continuum` is a Python radio astronomy continuum imaging pipeline for DSA-110.
+Science target: variable (and possibly transient) compact radio sources (e.g. ESEs) using
+daily sky products and flux time series over week-to-month baselines.
 Primary package: `dsa110_continuum/` (distribution name remains `dsa110_contimg`).
 
 Use this file for workspace-wide defaults. For subsystem details and validated science constraints,
@@ -57,3 +59,21 @@ pipeline logic.
 
 - Save generated figures/csvs/previews under `/data/dsa110-continuum/outputs/`.
 - Do not leave user-facing artifacts in `/tmp`.
+
+## Learned User Preferences
+
+- When pipeline or repo state is uncertain, prefer tests, diagnostics, or direct
+  filesystem inspection over asking the user to supply answers the tools can
+  determine.
+
+## Learned Workspace Facts
+
+- Do not track Measurement Sets or other large stage/correlation data in Git.
+- Sliding-window mosaic settings (tiles per mosaic product and stride between
+  products) describe how successive mosaic outputs are built from the tile
+  stream, not the number of tiles whose beams significantly overlap one sky
+  location; the latter follows beam geometry, drift spacing, and coadd weights.
+- For compact-source variability science, per-position mosaic depth saturates
+  after only a few overlapping drift tiles (about 3), so hour-scale windowed
+  mosaics are the default science product and >1 hour/full-day coadds are
+  diagnostic rather than default science products.

@@ -145,6 +145,11 @@ dsa110-validate = "dsa110_contimg.validation.package_health:main"
 where = ["src"]
 
 [tool.pytest.ini_options]
+# Keep pytest tmp_path output on the /data filesystem (not /tmp which is on a
+# small disk).  Placing it inside the workspace also avoids ownership conflicts
+# with the stale /data/dsa110-contimg/tmp/pytest-of-* directory left by earlier
+# pipeline runs under a different user.
+addopts = "--basetemp=/data/dsa110-continuum/.pytest_tmp"
 testpaths = ["tests"]
 norecursedirs = [".codacy", ".git", ".hypothesis", ".venv", "venv", "__pycache__", ".pytest_cache", ".mypy_cache", "node_modules", ".idea", ".vscode", "dist", "build", ".tox", ".eggs", "*.egg", ".archive", ".stale", "manual"]
 python_files = ["test_*.py"]

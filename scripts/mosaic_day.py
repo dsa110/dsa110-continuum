@@ -1,6 +1,10 @@
 #!/opt/miniforge/envs/casa6/bin/python
 """
-Process a full day of DSA-110 drift observations and mosaic them.
+Process DSA-110 drift observations and produce science mosaics.
+
+Default (science) mode builds sliding-window mosaics (~1-hour products)
+from time-ordered tiles, not one monolithic day coadd.  Use ``--full-day``
+for the legacy all-day diagnostic mosaic.
 
 Steps per MS:
   1. Phaseshift to median meridian (skip if *_meridian.ms already exists)
@@ -8,9 +12,10 @@ Steps per MS:
   3. Image with WSClean
 
 Then:
-  4. Reproject all tile images onto a common WCS
-  5. Coadd with noise (1/σ²) weighting
-  6. Write final mosaic FITS
+  4. Window tiles (default 12 tiles / stride 6) — or all-day with --full-day
+  5. Reproject each window's tiles onto a common WCS
+  6. Coadd with noise (1/σ²) weighting
+  7. Write per-window mosaic FITS: {date}_w{NN}_mosaic.fits
 """
 import argparse
 import dataclasses
@@ -22,7 +27,6 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from astropy import units as u
 from astropy.io import fits
 from astropy.wcs import WCS
 from casacore.tables import table
@@ -40,6 +44,21 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger(__name__)
+
+
+# ── Cal-path resolution (inlined to avoid dependency on untracked ensure.py) ─
+
+def _resolve_cal_table_paths(ms_dir: str, cal_date: str) -> tuple[str, str]:
+    """Find bandpass and gain table paths for a cal date.
+
+    Globs for ``{ms_dir}/{cal_date}T*_0~23.{b,g}``; falls back to the
+    legacy ``T22:26:05`` convention when no glob match is found.
+    """
+    bp_matches = sorted(glob.glob(os.path.join(ms_dir, f"{cal_date}T*_0~23.b")))
+    g_matches = sorted(glob.glob(os.path.join(ms_dir, f"{cal_date}T*_0~23.g")))
+    bp = bp_matches[0] if bp_matches else os.path.join(ms_dir, f"{cal_date}T22:26:05_0~23.b")
+    g = g_matches[0] if g_matches else os.path.join(ms_dir, f"{cal_date}T22:26:05_0~23.g")
+    return bp, g
 
 
 # ── TileConfig: explicit pipeline configuration ─────────────────────────────
@@ -92,14 +111,15 @@ class TileConfig:
             os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics")
             + f"/{date}"
         )
+        _bp, _g = _resolve_cal_table_paths(_ms, _cal)
         return TileConfig(
             date=date,
             ms_dir=_ms,
             image_dir=_img,
             mosaic_out=f"{_img}/full_mosaic.fits",
             products_dir=_prod,
-            bp_table=f"{_ms}/{_cal}T22:26:05_0~23.b",
-            g_table=f"{_ms}/{_cal}T22:26:05_0~23.g",
+            bp_table=_bp,
+            g_table=_g,
         )
 
     def replace(self, **kwargs) -> "TileConfig":
@@ -127,13 +147,16 @@ class TileResult:
 
     @property
     def ok(self) -> bool:
+        """Return True if the tile was successfully imaged or cached."""
         return self.status in ("imaged", "cached")
 
     def to_dict(self) -> dict:
+        """Serialize to a plain dict for subprocess transport."""
         return dataclasses.asdict(self)
 
     @staticmethod
     def from_dict(d: dict) -> "TileResult":
+        """Reconstruct a TileResult from a plain dict."""
         return TileResult(**d)
 
 
@@ -169,6 +192,7 @@ def find_valid_ms(cfg: TileConfig) -> list[str]:
 
 
 def get_meridian_path(ms_path: str) -> str:
+    """Return the meridian-phaseshifted MS path for a given raw MS."""
     return ms_path.replace(".ms", "_meridian.ms")
 
 
@@ -218,6 +242,60 @@ def _fits_is_valid(fits_path: str) -> bool:
             return True
     except Exception:
         return False
+
+
+def generate_windows(
+    tile_paths: list[str],
+    window_tiles: int,
+    stride_tiles: int,
+) -> list[list[str]]:
+    """Generate sliding windows over time-ordered tiles.
+
+    Parameters
+    ----------
+    tile_paths
+        Time-ordered list of tile FITS paths.
+    window_tiles
+        Maximum number of tiles per window.
+    stride_tiles
+        Step size between consecutive window starts.
+
+    Returns
+    -------
+    list[list[str]]
+        Each element is a list of tile paths for one mosaic window.
+        Windows with fewer than 2 tiles are dropped (cannot mosaic).
+    """
+    if len(tile_paths) <= window_tiles:
+        return [list(tile_paths)] if len(tile_paths) >= 2 else []
+    windows: list[list[str]] = []
+    for start in range(0, len(tile_paths), stride_tiles):
+        window = tile_paths[start : start + window_tiles]
+        if len(window) >= 2:
+            windows.append(window)
+        if start + window_tiles >= len(tile_paths):
+            break
+    return windows
+
+
+def validate_window_params(window_tiles: int, stride_tiles: int) -> list[str]:
+    """Validate windowing CLI parameters.
+
+    Returns
+    -------
+    list[str]
+        Empty if valid; otherwise one error message per violation.
+    """
+    errors: list[str] = []
+    if window_tiles < 2:
+        errors.append(f"--window-tiles must be >= 2, got {window_tiles}")
+    if stride_tiles < 1:
+        errors.append(f"--stride-tiles must be >= 1, got {stride_tiles}")
+    if stride_tiles > window_tiles and window_tiles >= 2:
+        errors.append(
+            f"--stride-tiles ({stride_tiles}) must be <= --window-tiles ({window_tiles})"
+        )
+    return errors
 
 
 def process_ms(
@@ -434,7 +512,6 @@ def build_common_wcs(fits_paths: list[str], margin_deg: float = 0.5) -> tuple[WC
     all_ras: list[float] = []
     dec_min, dec_max = 90.0, -90.0
 
-    tile_corners: list[tuple[list[float], list[float]]] = []
     for path in fits_paths:
         with fits.open(path) as hdul:
             hdr = hdul[0].header
@@ -587,7 +664,7 @@ def write_mosaic(mosaic: np.ndarray, out_wcs: WCS, fits_paths: list[str],
 
 
 def check_mosaic_quality(mosaic_path: str) -> bool:
-    """Basic QA: check noise consistency across strips of the mosaic."""
+    """Check noise consistency across horizontal strips of the mosaic."""
     with fits.open(mosaic_path) as hdul:
         data = hdul[0].data.squeeze()
 
@@ -621,7 +698,14 @@ def check_mosaic_quality(mosaic_path: str) -> bool:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Mosaic a full day of DSA-110 drift observations.")
+    """Parse CLI arguments and run the mosaic pipeline."""
+    parser = argparse.ArgumentParser(
+        description=(
+            "Produce science mosaics from DSA-110 drift observations. "
+            "Default: sliding-window mosaics (~1 hour each). "
+            "Use --full-day for legacy all-day diagnostic mosaic."
+        ),
+    )
     parser.add_argument(
         "--date",
         default="2026-01-25",
@@ -644,8 +728,46 @@ def main():
         default=False,
         help="Keep *_meridian.ms files and skip moving the mosaic to products/ (useful for debugging).",
     )
+    parser.add_argument(
+        "--window-tiles",
+        type=int,
+        default=12,
+        metavar="N",
+        help=(
+            "Tiles per science mosaic window (default: %(default)s). "
+            "Each window produces an independent ~1-hour mosaic product. "
+            "Output: {date}_w{NN}_mosaic.fits"
+        ),
+    )
+    parser.add_argument(
+        "--stride-tiles",
+        type=int,
+        default=6,
+        metavar="N",
+        help=(
+            "Step between consecutive window starts in tiles (default: %(default)s). "
+            "stride < window-tiles gives overlapping windows for continuity."
+        ),
+    )
+    parser.add_argument(
+        "--full-day",
+        action="store_true",
+        default=False,
+        help=(
+            "Diagnostic/legacy: coadd ALL tiles for the date into monolithic "
+            "full_mosaic.fits strip(s). Not the default science product."
+        ),
+    )
     args = parser.parse_args()
     keep = args.keep_intermediates
+
+    # ── Validate windowing parameters ─────────────────────────────────────────
+    if not args.full_day:
+        win_errors = validate_window_params(args.window_tiles, args.stride_tiles)
+        if win_errors:
+            for e in win_errors:
+                log.error("Invalid windowing parameter: %s", e)
+            sys.exit(1)
 
     # Build immutable config from CLI args
     cfg = TileConfig.build(date=args.date, cal_date=args.cal_date)
@@ -697,36 +819,91 @@ def main():
         log.error("Need at least 2 tile images to mosaic — aborting")
         sys.exit(1)
 
-    # ── Phase 2: Group tiles and build per-strip mosaics ────────────────────
-    strips = group_tiles_by_ra(tile_images)
+    # ── Phase 2: Build mosaics ──────────────────────────────────────────────
     mosaic_paths: list[str] = []
 
-    for strip_idx, strip_tiles in enumerate(strips):
-        if len(strip_tiles) < 2:
-            log.warning("Strip %d has only %d tile — skipping", strip_idx, len(strip_tiles))
-            continue
-
-        if len(strips) == 1:
-            strip_out = cfg.mosaic_out
-        else:
-            # Use circular mean for wrap-safe RA labelling
-            tile_ras = [_get_tile_center_ra(p) for p in strip_tiles]
-            ra_rad = np.deg2rad(tile_ras)
-            strip_ra = float(np.rad2deg(
-                np.arctan2(np.mean(np.sin(ra_rad)), np.mean(np.cos(ra_rad)))
-            )) % 360.0
-            strip_out = cfg.mosaic_out.replace(".fits", f"_ra{int(round(strip_ra)) % 360:03d}.fits")
-
-        if os.path.exists(strip_out):
-            log.info("Strip %d mosaic already exists: %s", strip_idx, strip_out)
-            mosaic_paths.append(strip_out)
-            continue
-
-        log.info("\n=== Building mosaic for strip %d (%d tiles) ===\n", strip_idx, len(strip_tiles))
-        out_wcs, ny, nx = build_common_wcs(strip_tiles)
-        mosaic = coadd_tiles(strip_tiles, out_wcs, ny, nx)
-        strip_path = write_mosaic(mosaic, out_wcs, strip_tiles, output_path=strip_out, date=cfg.date)
-        mosaic_paths.append(strip_path)
+    if args.full_day:
+        # Legacy/diagnostic: coadd ALL tiles into monolithic strip mosaic(s)
+        log.warning(
+            "FULL-DAY MODE: coadding all %d tiles into monolithic mosaic(s). "
+            "This is diagnostic — not the default science product.",
+            len(tile_images),
+        )
+        strips = group_tiles_by_ra(tile_images)
+        for strip_idx, strip_tiles in enumerate(strips):
+            if len(strip_tiles) < 2:
+                log.warning("Strip %d has only %d tile — skipping", strip_idx, len(strip_tiles))
+                continue
+            if len(strips) == 1:
+                strip_out = cfg.mosaic_out
+            else:
+                tile_ras = [_get_tile_center_ra(p) for p in strip_tiles]
+                ra_rad = np.deg2rad(tile_ras)
+                strip_ra = float(np.rad2deg(
+                    np.arctan2(np.mean(np.sin(ra_rad)), np.mean(np.cos(ra_rad)))
+                )) % 360.0
+                strip_out = cfg.mosaic_out.replace(
+                    ".fits", f"_ra{int(round(strip_ra)) % 360:03d}.fits"
+                )
+            if os.path.exists(strip_out):
+                log.info("Strip %d mosaic already exists: %s", strip_idx, strip_out)
+                mosaic_paths.append(strip_out)
+                continue
+            log.info(
+                "\n=== [full-day] Building mosaic for strip %d (%d tiles) ===\n",
+                strip_idx, len(strip_tiles),
+            )
+            out_wcs, ny, nx = build_common_wcs(strip_tiles)
+            mosaic_data = coadd_tiles(strip_tiles, out_wcs, ny, nx)
+            strip_path = write_mosaic(
+                mosaic_data, out_wcs, strip_tiles, output_path=strip_out, date=cfg.date,
+            )
+            mosaic_paths.append(strip_path)
+    else:
+        # Science mode: sliding-window mosaics (~1 hour products)
+        windows = generate_windows(tile_images, args.window_tiles, args.stride_tiles)
+        if len(tile_images) < args.window_tiles:
+            log.warning(
+                "Only %d tiles available (< --window-tiles %d); "
+                "producing single short-window mosaic",
+                len(tile_images), args.window_tiles,
+            )
+        log.info(
+            "Science mode: %d window(s) of <=%d tiles, stride %d",
+            len(windows), args.window_tiles, args.stride_tiles,
+        )
+        for win_idx, win_tiles in enumerate(windows):
+            strips = group_tiles_by_ra(win_tiles)
+            for strip_idx, strip_tiles in enumerate(strips):
+                if len(strip_tiles) < 2:
+                    log.warning(
+                        "Window %d strip %d has only %d tile — skipping",
+                        win_idx, strip_idx, len(strip_tiles),
+                    )
+                    continue
+                base = f"{cfg.date}_w{win_idx:02d}_mosaic"
+                if len(strips) > 1:
+                    tile_ras = [_get_tile_center_ra(p) for p in strip_tiles]
+                    ra_rad = np.deg2rad(tile_ras)
+                    strip_ra = float(np.rad2deg(
+                        np.arctan2(np.mean(np.sin(ra_rad)), np.mean(np.cos(ra_rad)))
+                    )) % 360.0
+                    base += f"_ra{int(round(strip_ra)) % 360:03d}"
+                win_out = os.path.join(cfg.image_dir, base + ".fits")
+                if os.path.exists(win_out):
+                    log.info("Window %d mosaic already exists: %s", win_idx, win_out)
+                    mosaic_paths.append(win_out)
+                    continue
+                log.info(
+                    "\n=== Building mosaic: window %d, strip %d (%d tiles) ===\n",
+                    win_idx, strip_idx, len(strip_tiles),
+                )
+                out_wcs, ny, nx = build_common_wcs(strip_tiles)
+                mosaic_data = coadd_tiles(strip_tiles, out_wcs, ny, nx)
+                win_path = write_mosaic(
+                    mosaic_data, out_wcs, strip_tiles, output_path=win_out, date=cfg.date,
+                )
+                mosaic_paths.append(win_path)
 
     if not mosaic_paths:
         log.error("No mosaics produced — aborting")
@@ -746,41 +923,44 @@ def main():
             rms = 1.4826 * np.nanmedian(np.abs(finite - np.nanmedian(finite)))
             log.info("  Peak: %.4f Jy/beam", peak)
             log.info("  RMS (MAD): %.4f Jy/beam", rms)
-            log.info("  Dynamic range: %.0f", peak / rms)
+            if rms > 0 and np.isfinite(rms):
+                log.info("  Dynamic range: %.0f", peak / rms)
+            else:
+                log.info("  Dynamic range: n/a (rms=0 or non-finite)")
 
+    mode_label = "full-day" if args.full_day else "science-window"
     if all_passed:
-        print(f"\nSUCCESS: {len(mosaic_paths)} mosaic(s) in {cfg.image_dir}")
+        print(f"\nSUCCESS: {len(mosaic_paths)} {mode_label} mosaic(s) in {cfg.image_dir}")
         for mp in mosaic_paths:
             print(f"  {Path(mp).name}")
     else:
-        print(f"\nWARNING: One or more mosaic QA checks failed — check noise consistency")
-    if len(mosaic_paths) > 1:
-        log.info(
-            "Multiple RA strips produced — no single full_mosaic.fits. "
-            "Downstream scripts expecting full_mosaic.fits must be updated "
-            "to use per-strip products."
-        )
+        print("\nWARNING: One or more mosaic QA checks failed — check noise consistency")
 
     # ── Phase 4: Move finished mosaics to products/ ──────────────────────────
     if not keep:
-        _move_mosaic_to_products(cfg)
+        _move_mosaic_to_products(cfg, full_day=args.full_day)
 
     return mosaic_paths[0] if len(mosaic_paths) == 1 else mosaic_paths
 
 
-def _move_mosaic_to_products(cfg: TileConfig) -> None:
-    """Move the completed mosaic directory from stage to the products tree.
+def _move_mosaic_to_products(cfg: TileConfig, *, full_day: bool) -> None:
+    """Archive matching mosaic files from the staging area to products.
 
-    Source:      cfg.image_dir  (/stage/dsa110-contimg/images/mosaic_{date}/)
-    Destination: cfg.products_dir  (/data/dsa110-continuum/products/mosaics/{date}/)
+    Moves individual mosaic FITS files from *cfg.image_dir* into
+    *cfg.products_dir*, selecting only files that match the active mode:
+    ``full_mosaic*.fits`` when *full_day* is True, or
+    ``{date}_w*_mosaic*.fits`` otherwise.  Other files in the staging
+    directory (tile images, beam models) are left in place.
 
-    Handles both single-strip (full_mosaic.fits) and multi-strip
-    (full_mosaic_ra*.fits) outputs.  If products_dir already exists
-    (e.g. from a previous run), the move is skipped and a warning is
-    logged rather than overwriting science products.
+    Skips with a warning if *products_dir* already exists.
     """
     import glob as _g
-    mosaic_files = sorted(_g.glob(os.path.join(cfg.image_dir, "full_mosaic*.fits")))
+    if full_day:
+        mosaic_files = sorted(_g.glob(os.path.join(cfg.image_dir, "full_mosaic*.fits")))
+    else:
+        mosaic_files = sorted(
+            _g.glob(os.path.join(cfg.image_dir, f"{cfg.date}_w*_mosaic*.fits"))
+        )
     if not mosaic_files:
         log.warning("Move skipped: no mosaic files found in %s", cfg.image_dir)
         return
@@ -792,19 +972,22 @@ def _move_mosaic_to_products(cfg: TileConfig) -> None:
         )
         return
 
-    parent = Path(cfg.products_dir).parent
-    parent.mkdir(parents=True, exist_ok=True)
+    os.makedirs(cfg.products_dir, exist_ok=True)
 
-    log.info("Moving mosaic directory: %s → %s", cfg.image_dir, cfg.products_dir)
+    mode_label = "full-day" if full_day else "science-window"
+    log.info(
+        "Archiving %d %s mosaic(s): %s → %s",
+        len(mosaic_files), mode_label, cfg.image_dir, cfg.products_dir,
+    )
     try:
-        shutil.move(cfg.image_dir, cfg.products_dir)
-        log.info("Mosaic moved to products: %s", cfg.products_dir)
-        names = [Path(f).name for f in mosaic_files]
-        for name in names:
-            print(f"  Archived: {cfg.products_dir}/{name}")
+        for src in mosaic_files:
+            dst = os.path.join(cfg.products_dir, Path(src).name)
+            shutil.move(src, dst)
+            print(f"  Archived: {dst}")
+        log.info("Archival complete: %s", cfg.products_dir)
     except Exception as e:
-        log.error("Failed to move mosaic to products: %s", e)
-        print(f"\nERROR: Could not move mosaic to {cfg.products_dir}: {e}")
+        log.error("Failed to archive mosaic to products: %s", e)
+        print(f"\nERROR: Could not archive mosaic to {cfg.products_dir}: {e}")
 
 
 if __name__ == "__main__":

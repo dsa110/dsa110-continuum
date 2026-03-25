@@ -183,6 +183,7 @@ def write_epoch_mosaic(
     cal_date: str | None = None,
     cal_quality: dict | None = None,
     git_sha: str | None = None,
+    cal_selection: dict | None = None,
 ) -> None:
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with fits.open(ref_fits_paths[0]) as ref:
@@ -215,6 +216,18 @@ def write_epoch_mosaic(
             new_hdr["BPFLAG"] = (round(bp_q["flag_fraction"], 4), "BP table flagged fraction")
         if "phase_scatter_deg" in g_q:
             new_hdr["GPHSCTR"] = (round(g_q["phase_scatter_deg"], 1), "Gain phase scatter [deg]")
+
+    # Calibration selection provenance
+    if cal_selection:
+        bpcal = cal_selection.get("calibrator_name")
+        if bpcal:
+            new_hdr["BPCAL"] = (bpcal, "Bandpass calibrator name")
+        calsrc = cal_selection.get("source")
+        if calsrc:
+            new_hdr["CALSRC"] = (calsrc, "Cal table source (generated/existing/borrowed)")
+        caldec = cal_selection.get("obs_dec_deg_used")
+        if caldec is not None:
+            new_hdr["CALDEC"] = (round(caldec, 2), "Obs Dec used for cal selection [deg]")
 
     hdu = fits.PrimaryHDU(data=mosaic.astype(np.float32), header=new_hdr)
     hdu.writeto(out_path, overwrite=True)
@@ -550,14 +563,65 @@ def main() -> None:
         default=False,
         help="Archive mosaics to products even if epoch QA fails.",
     )
+    parser.add_argument(
+        "--skip-auto-cal",
+        action="store_true",
+        default=False,
+        help=(
+            "Skip automatic bandpass table generation. "
+            "Requires --cal-date to point at existing tables. "
+            "Use when you want manual control over calibration."
+        ),
+    )
     args = parser.parse_args()
 
     date = args.date
     cal_date = args.cal_date if args.cal_date is not None else date
 
+    # ── Determine observation declination ──────────────────────────────────
+    # The Dec must be known before calibrator selection so that the bandpass
+    # calibrator matches the science strip's beam response.
+    from dsa110_continuum.calibration.dec_utils import read_ms_dec as _read_ms_dec
+    _obs_dec: float | None = None
+    _first_ms_list = sorted(
+        f for f in os.listdir(MS_DIR)
+        if f.endswith(".ms") and f.startswith(date) and "meridian" not in f
+    )
+    if _first_ms_list:
+        try:
+            _obs_dec = _read_ms_dec(os.path.join(MS_DIR, _first_ms_list[0]))
+            check_dec_strip(_obs_dec, args.expected_dec)
+        except RuntimeError as _e:
+            log.warning("Could not determine observed Dec (%s) — using --expected-dec", _e)
+            _obs_dec = args.expected_dec
+    else:
+        log.warning("No MS files found for %s yet — using --expected-dec for cal selection", date)
+        _obs_dec = args.expected_dec
+    log.info("Observation Dec for calibrator selection: %.1f°", _obs_dec)
+
+    # ── Automatic bandpass table generation ────────────────────────────────
+    _auto_cal_result = None
+    if not args.skip_auto_cal:
+        try:
+            from dsa110_continuum.calibration.ensure import ensure_bandpass
+            _auto_cal_result = ensure_bandpass(
+                cal_date, ms_dir=MS_DIR, refant="103", obs_dec_deg=_obs_dec,
+            )
+            log.info(
+                "Auto-cal: %s tables from %s (calibrator=%s, source=%s)",
+                cal_date, _auto_cal_result.cal_date,
+                _auto_cal_result.calibrator_name, _auto_cal_result.source,
+            )
+        except Exception as _acal_err:
+            log.warning("Auto-cal failed (%s) — falling back to manual table lookup", _acal_err)
+
     # ── Cal-table validation ───────────────────────────────────────────────
-    _bp = f"{MS_DIR}/{cal_date}T22:26:05_0~23.b"
-    _ga = f"{MS_DIR}/{cal_date}T22:26:05_0~23.g"
+    if _auto_cal_result is not None:
+        _bp = _auto_cal_result.bp_table
+        _ga = _auto_cal_result.g_table
+    else:
+        from dsa110_continuum.calibration.ensure import resolve_cal_table_paths
+        _bp, _ga = resolve_cal_table_paths(MS_DIR, cal_date)
     _missing = [t for t in [_bp, _ga] if not os.path.exists(t)]
     if _missing:
         for _t in _missing:
@@ -573,24 +637,18 @@ def main() -> None:
     manifest = RunManifest.start(date, cal_date)
     manifest.assess_cal_quality(_bp, _ga)
 
+    # Record calibration selection provenance in manifest
+    if _auto_cal_result is not None and _auto_cal_result.provenance:
+        manifest.cal_selection = dict(_auto_cal_result.provenance)
+    else:
+        # Try loading from sidecar for manual/legacy table paths
+        from dsa110_continuum.calibration.ensure import load_provenance_sidecar
+        _loaded_prov = load_provenance_sidecar(_bp)
+        if _loaded_prov is not None:
+            manifest.cal_selection = _loaded_prov
+
     # ── Cal quality gate ────────────────────────────────────────────────────
     check_cal_gate(manifest, cal_date, date, args.strict_qa)
-
-    # ── Dec-strip validation ───────────────────────────────────────────────────
-    from dsa110_continuum.calibration.dec_utils import read_ms_dec as _read_ms_dec
-    _first_ms_list = sorted(
-        f for f in os.listdir(MS_DIR)
-        if f.endswith(".ms") and f.startswith(date) and "meridian" not in f
-    )
-    if _first_ms_list:
-        try:
-            _obs_dec = _read_ms_dec(os.path.join(MS_DIR, _first_ms_list[0]))
-            check_dec_strip(_obs_dec, args.expected_dec)
-        except RuntimeError as _e:
-            log.warning("Could not determine observed Dec (%s) — skipping dec-strip check", _e)
-    else:
-        log.warning("No MS files found for %s yet — dec-strip check skipped", date)
-    # ─────────────────────────────────────────────────────────────────────────
 
     # ───────────────────────────────────────────────────────────────────────
     keep = args.keep_intermediates
@@ -870,6 +928,7 @@ def main() -> None:
             write_epoch_mosaic(
                 mosaic_arr, out_wcs, epoch_tiles, mosaic_path, date, hour, len(epoch_tiles),
                 cal_date=cal_date, cal_quality=manifest.cal_quality, git_sha=manifest.git_sha,
+                cal_selection=manifest.cal_selection or None,
             )
         except Exception as e:
             log.error("  Mosaic failed for epoch %s: %s", label, e)
