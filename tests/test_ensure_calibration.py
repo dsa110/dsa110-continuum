@@ -12,6 +12,7 @@ from dsa110_continuum.calibration.ensure import (
     CalibrationError,
     CalibrationResult,
     _build_provenance,
+    _enrich_result_provenance,
     _find_nearest_real_tables,
     _parse_dec_deg,
     _parse_ra_deg,
@@ -22,6 +23,7 @@ from dsa110_continuum.calibration.ensure import (
     provenance_sidecar_path,
     resolve_cal_table_paths,
     select_bandpass_calibrator,
+    validate_table_strip_compatibility,
     write_provenance_sidecar,
 )
 
@@ -276,7 +278,10 @@ class TestProvenanceSidecar:
 
 
 class TestStripCompatibility:
-    def _make_tables_with_provenance(self, tmp_path, date, cal_dec=16.64, source="existing"):
+    def _make_tables_with_provenance(
+        self, tmp_path, date, obs_dec_used=16.1, cal_dec=16.64, source="existing",
+    ):
+        """Build tables and sidecar; *obs_dec_used* controls strip provenance."""
         bp = tmp_path / f"{date}T05:21:10_0~23.b"
         bp.mkdir()
         g = tmp_path / f"{date}T05:21:10_0~23.g"
@@ -284,13 +289,13 @@ class TestStripCompatibility:
 
         prov = _build_provenance(
             selection_mode="dec_aware",
-            obs_dec_deg_used=16.1,
+            obs_dec_deg_used=obs_dec_used,
             selection_dec_tolerance_deg=10.0,
             calibrator_name="3C138",
             calibrator_ra_deg=80.29,
             calibrator_dec_deg=cal_dec,
             calibrator_flux_jy=8.36,
-            calibrator_dec_offset_deg=abs(cal_dec - 16.1),
+            calibrator_dec_offset_deg=abs(cal_dec - obs_dec_used),
             transit_time_iso=f"{date}T05:21:10",
             source="generated",
             cal_date=date,
@@ -309,24 +314,23 @@ class TestStripCompatibility:
 
     def test_compatible_existing_accepted(self, tmp_path):
         """Same-date existing tables with compatible provenance pass validation."""
-        result = self._make_tables_with_provenance(tmp_path, "2026-01-25", cal_dec=16.64)
+        result = self._make_tables_with_provenance(tmp_path, "2026-01-25", obs_dec_used=16.1)
         validated = _validate_strip_compatibility(result, obs_dec_deg=16.1)
         assert validated.bp_table == result.bp_table
 
     def test_incompatible_existing_rejected(self, tmp_path):
-        """Same-date existing tables at wrong Dec are rejected."""
-        result = self._make_tables_with_provenance(tmp_path, "2026-01-25", cal_dec=50.0)
+        """Same-date existing tables at wrong strip Dec are rejected."""
+        # Tables were generated for strip Dec 50.0, but we're observing at 16.1
+        result = self._make_tables_with_provenance(tmp_path, "2026-01-25", obs_dec_used=50.0)
         with pytest.raises(CalibrationError, match="Existing cal tables"):
             _validate_strip_compatibility(result, obs_dec_deg=16.1)
 
     def test_borrowed_with_compatible_provenance(self, tmp_path):
         """Borrowed tables with compatible provenance pass validation."""
-        # Real tables with provenance
         real_result = self._make_tables_with_provenance(
-            tmp_path, "2026-01-25", cal_dec=16.64, source="existing",
+            tmp_path, "2026-01-25", obs_dec_used=16.1, source="existing",
         )
 
-        # Create symlinks to simulate borrowing
         link_bp = tmp_path / "2026-01-26T05:21:10_0~23.b"
         link_bp.symlink_to(real_result.bp_table)
         link_g = tmp_path / "2026-01-26T05:21:10_0~23.g"
@@ -343,9 +347,10 @@ class TestStripCompatibility:
         assert validated.bp_table == str(link_bp)
 
     def test_borrowed_incompatible_rejected(self, tmp_path):
-        """Borrowed tables with incompatible Dec are rejected."""
+        """Borrowed tables with incompatible strip Dec are rejected."""
+        # Tables were generated for strip Dec 50.0
         real_result = self._make_tables_with_provenance(
-            tmp_path, "2026-01-25", cal_dec=50.0, source="existing",
+            tmp_path, "2026-01-25", obs_dec_used=50.0, source="existing",
         )
 
         link_bp = tmp_path / "2026-01-26T05:21:10_0~23.b"
@@ -573,3 +578,286 @@ class TestEnsureBandpass:
                     input_dir="/nonexistent", db_path="/nonexistent",
                     max_borrow_days=5, obs_dec_deg=16.1,
                 )
+
+
+# ── Validator uses strip Dec (obs_dec_deg_used), not calibrator Dec ──────
+
+
+class TestValidatorUsesStripDec:
+    """Confirm that validation keys off obs_dec_deg_used, NOT calibrator_dec_deg."""
+
+    def test_calibrator_dec_far_but_strip_dec_compatible(self, tmp_path):
+        """Calibrator Dec=50° would fail old logic, but obs_dec_deg_used=16.1 matches."""
+        bp = tmp_path / "2026-01-25T05:21:10_0~23.b"
+        bp.mkdir()
+        g = tmp_path / "2026-01-25T05:21:10_0~23.g"
+        g.mkdir()
+
+        prov = _build_provenance(
+            selection_mode="dec_aware",
+            obs_dec_deg_used=16.1,
+            selection_dec_tolerance_deg=10.0,
+            calibrator_name="3C147",
+            calibrator_ra_deg=85.65,
+            calibrator_dec_deg=49.85,  # far from obs_dec 16.1 — would fail old logic
+            calibrator_flux_jy=22.45,
+            calibrator_dec_offset_deg=33.75,
+            transit_time_iso="2026-01-25T05:42:36",
+            source="generated",
+            cal_date="2026-01-25",
+            bp_table=str(bp),
+            g_table=str(g),
+        )
+        write_provenance_sidecar(str(bp), prov)
+
+        result = CalibrationResult(
+            bp_table=str(bp), g_table=str(g),
+            cal_date="2026-01-25", calibrator_name="3C147", source="existing",
+        )
+        # Current obs is at 16.1°, stored strip Dec is 16.1° → should PASS
+        validated = _validate_strip_compatibility(result, obs_dec_deg=16.1)
+        assert validated.bp_table == result.bp_table
+
+    def test_calibrator_dec_close_but_strip_dec_incompatible(self, tmp_path):
+        """Calibrator Dec=16.6° close to obs_dec, but strip Dec=50° → reject."""
+        bp = tmp_path / "2026-01-25T05:21:10_0~23.b"
+        bp.mkdir()
+        g = tmp_path / "2026-01-25T05:21:10_0~23.g"
+        g.mkdir()
+
+        prov = _build_provenance(
+            selection_mode="dec_aware",
+            obs_dec_deg_used=50.0,  # table was generated for strip Dec 50°
+            selection_dec_tolerance_deg=10.0,
+            calibrator_name="3C138",
+            calibrator_ra_deg=80.29,
+            calibrator_dec_deg=16.64,  # calibrator Dec close to current obs
+            calibrator_flux_jy=8.36,
+            calibrator_dec_offset_deg=33.36,
+            transit_time_iso="2026-01-25T05:21:10",
+            source="generated",
+            cal_date="2026-01-25",
+            bp_table=str(bp),
+            g_table=str(g),
+        )
+        write_provenance_sidecar(str(bp), prov)
+
+        result = CalibrationResult(
+            bp_table=str(bp), g_table=str(g),
+            cal_date="2026-01-25", calibrator_name="3C138", source="existing",
+        )
+        # Current obs is at 16.1°, but stored strip Dec is 50.0° → should REJECT
+        with pytest.raises(CalibrationError, match="strip Dec 50.0"):
+            _validate_strip_compatibility(result, obs_dec_deg=16.1)
+
+
+# ── Borrowed tables with sidecar but missing obs_dec_deg_used ────────────
+
+
+class TestBorrowedPartialProvenance:
+    def test_borrowed_sidecar_missing_obs_dec_used_rejected(self, tmp_path):
+        """Borrowed table with sidecar that lacks obs_dec_deg_used → reject."""
+        import json
+
+        real_bp = tmp_path / "2026-01-25T05:21:10_0~23.b"
+        real_bp.mkdir()
+        real_g = tmp_path / "2026-01-25T05:21:10_0~23.g"
+        real_g.mkdir()
+
+        # Write a sidecar WITHOUT obs_dec_deg_used (simulating old/partial provenance)
+        partial_prov = {
+            "selection_mode": "brightest",
+            "calibrator_name": "3C147",
+            "calibrator_dec_deg": 49.85,
+            "source": "generated",
+        }
+        sidecar = str(real_bp) + ".cal_provenance.json"
+        with open(sidecar, "w") as f:
+            json.dump(partial_prov, f)
+
+        link_bp = tmp_path / "2026-03-16T05:21:10_0~23.b"
+        link_bp.symlink_to(real_bp)
+        link_g = tmp_path / "2026-03-16T05:21:10_0~23.g"
+        link_g.symlink_to(real_g)
+
+        borrowed = CalibrationResult(
+            bp_table=str(link_bp), g_table=str(link_g),
+            cal_date="2026-01-25", calibrator_name="unknown", source="borrowed",
+        )
+        with pytest.raises(CalibrationError, match="missing obs_dec_deg_used"):
+            _validate_strip_compatibility(borrowed, obs_dec_deg=16.1)
+
+    def test_existing_sidecar_missing_obs_dec_used_warned(self, tmp_path):
+        """Existing table with sidecar that lacks obs_dec_deg_used → warn, allow."""
+        import json
+
+        bp = tmp_path / "2026-01-25T05:21:10_0~23.b"
+        bp.mkdir()
+        g = tmp_path / "2026-01-25T05:21:10_0~23.g"
+        g.mkdir()
+
+        partial_prov = {
+            "selection_mode": "brightest",
+            "calibrator_name": "3C147",
+            "calibrator_dec_deg": 49.85,
+            "source": "generated",
+        }
+        sidecar = str(bp) + ".cal_provenance.json"
+        with open(sidecar, "w") as f:
+            json.dump(partial_prov, f)
+
+        result = CalibrationResult(
+            bp_table=str(bp), g_table=str(g),
+            cal_date="2026-01-25", calibrator_name="unknown", source="existing",
+        )
+        # Should NOT raise — backward-compatible warn+allow
+        validated = _validate_strip_compatibility(result, obs_dec_deg=16.1)
+        assert validated.bp_table == str(bp)
+
+
+# ── validate_table_strip_compatibility (public, for fallback path) ───────
+
+
+class TestValidateTableStripCompatibility:
+    def test_rejects_incompatible_symlinked_tables(self, tmp_path):
+        """Symlinked (borrowed) tables at wrong strip Dec → CalibrationError."""
+        real_bp = tmp_path / "2026-01-25T05:21:10_0~23.b"
+        real_bp.mkdir()
+
+        prov = _build_provenance(
+            selection_mode="dec_aware",
+            obs_dec_deg_used=50.0,
+            selection_dec_tolerance_deg=10.0,
+            calibrator_name="3C147",
+            calibrator_ra_deg=85.65,
+            calibrator_dec_deg=49.85,
+            calibrator_flux_jy=22.45,
+            calibrator_dec_offset_deg=0.85,
+            transit_time_iso="2026-01-25T05:42:36",
+            source="generated",
+            cal_date="2026-01-25",
+            bp_table=str(real_bp),
+            g_table=str(real_bp).replace(".b", ".g"),
+        )
+        write_provenance_sidecar(str(real_bp), prov)
+
+        link_bp = tmp_path / "2026-03-16T05:21:10_0~23.b"
+        link_bp.symlink_to(real_bp)
+
+        with pytest.raises(CalibrationError, match="strip Dec 50.0"):
+            validate_table_strip_compatibility(str(link_bp), obs_dec_deg=16.1)
+
+    def test_accepts_compatible_real_tables(self, tmp_path):
+        """Real (existing) tables at correct strip Dec → no error."""
+        bp = tmp_path / "2026-01-25T05:21:10_0~23.b"
+        bp.mkdir()
+
+        prov = _build_provenance(
+            selection_mode="dec_aware",
+            obs_dec_deg_used=16.1,
+            selection_dec_tolerance_deg=10.0,
+            calibrator_name="3C138",
+            calibrator_ra_deg=80.29,
+            calibrator_dec_deg=16.64,
+            calibrator_flux_jy=8.36,
+            calibrator_dec_offset_deg=0.54,
+            transit_time_iso="2026-01-25T05:21:10",
+            source="generated",
+            cal_date="2026-01-25",
+            bp_table=str(bp),
+            g_table=str(bp).replace(".b", ".g"),
+        )
+        write_provenance_sidecar(str(bp), prov)
+
+        # Should not raise
+        validate_table_strip_compatibility(str(bp), obs_dec_deg=16.1)
+
+    def test_skips_when_no_obs_dec(self, tmp_path):
+        """When obs_dec_deg is None, validation is skipped."""
+        bp = tmp_path / "2026-01-25T05:21:10_0~23.b"
+        bp.mkdir()
+        # No sidecar — would fail for borrowed, but obs_dec=None skips
+        validate_table_strip_compatibility(str(bp), obs_dec_deg=None)
+
+
+# ── Runtime source fidelity in provenance ────────────────────────────────
+
+
+class TestRuntimeSourceFidelity:
+    def _setup_real_tables_with_provenance(self, tmp_path, date="2026-01-25"):
+        """Create real tables with 'generated' sidecar provenance."""
+        bp = tmp_path / f"{date}T05:21:10_0~23.b"
+        bp.mkdir()
+        g = tmp_path / f"{date}T05:21:10_0~23.g"
+        g.mkdir()
+        prov = _build_provenance(
+            selection_mode="dec_aware",
+            obs_dec_deg_used=16.1,
+            selection_dec_tolerance_deg=10.0,
+            calibrator_name="3C138",
+            calibrator_ra_deg=80.29,
+            calibrator_dec_deg=16.64,
+            calibrator_flux_jy=8.36,
+            calibrator_dec_offset_deg=0.54,
+            transit_time_iso=f"{date}T05:21:10",
+            source="generated",
+            cal_date=date,
+            bp_table=str(bp),
+            g_table=str(g),
+        )
+        write_provenance_sidecar(str(bp), prov)
+        return str(bp), str(g)
+
+    def test_existing_tables_have_source_existing(self, tmp_path):
+        """ensure_bandpass on same-date existing tables → source='existing' in provenance."""
+        self._setup_real_tables_with_provenance(tmp_path)
+
+        result = ensure_bandpass(
+            "2026-01-25", ms_dir=str(tmp_path),
+            input_dir="/nonexistent", db_path="/nonexistent",
+            obs_dec_deg=16.1,
+        )
+        assert result.source == "existing"
+        assert result.provenance["source"] == "existing"  # NOT "generated"
+        assert result.provenance["calibrator_name"] == "3C138"
+
+    def test_borrowed_tables_have_source_borrowed(self, tmp_path):
+        """ensure_bandpass borrowing from nearby date → source='borrowed' in provenance."""
+        self._setup_real_tables_with_provenance(tmp_path)
+
+        with patch(
+            "dsa110_continuum.calibration.ensure.select_bandpass_calibrator",
+            side_effect=CalibrationError("no data"),
+        ):
+            result = ensure_bandpass(
+                "2026-01-26", ms_dir=str(tmp_path),
+                input_dir="/nonexistent", db_path="/nonexistent",
+                max_borrow_days=5, obs_dec_deg=16.1,
+            )
+        assert result.source == "borrowed"
+        assert result.provenance["source"] == "borrowed"  # NOT "generated"
+        assert result.provenance["calibrator_name"] == "3C138"
+
+    def test_enrich_overlays_runtime_fields(self, tmp_path):
+        """_enrich_result_provenance overlays source, bp_table, g_table, cal_date."""
+        bp, g = self._setup_real_tables_with_provenance(tmp_path)
+
+        raw = CalibrationResult(
+            bp_table=bp, g_table=g,
+            cal_date="2026-01-25", calibrator_name="unknown", source="existing",
+        )
+        enriched = _enrich_result_provenance(raw)
+        assert enriched.provenance["source"] == "existing"
+        assert enriched.provenance["bp_table"] == bp
+        assert enriched.provenance["calibrator_name"] == "3C138"  # from sidecar
+
+    def test_enrich_noop_for_generated(self, tmp_path):
+        """_enrich_result_provenance is a no-op when provenance is already populated."""
+        existing_prov = {"source": "generated", "calibrator_name": "3C147"}
+        result = CalibrationResult(
+            bp_table="/fake/bp.b", g_table="/fake/bp.g",
+            cal_date="2026-01-25", calibrator_name="3C147",
+            source="generated", provenance=existing_prov,
+        )
+        enriched = _enrich_result_provenance(result)
+        assert enriched is result  # Same object, not modified

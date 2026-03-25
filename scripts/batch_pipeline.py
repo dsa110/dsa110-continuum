@@ -620,8 +620,17 @@ def main() -> None:
         _bp = _auto_cal_result.bp_table
         _ga = _auto_cal_result.g_table
     else:
-        from dsa110_continuum.calibration.ensure import resolve_cal_table_paths
+        from dsa110_continuum.calibration.ensure import (
+            resolve_cal_table_paths,
+            validate_table_strip_compatibility,
+        )
         _bp, _ga = resolve_cal_table_paths(MS_DIR, cal_date)
+        # Apply the same strip compatibility policy as the auto-cal path
+        try:
+            validate_table_strip_compatibility(_bp, _obs_dec)
+        except Exception as _strip_err:
+            log.error("ABORT: strip compatibility check failed for fallback tables: %s", _strip_err)
+            sys.exit(1)
     _missing = [t for t in [_bp, _ga] if not os.path.exists(t)]
     if _missing:
         for _t in _missing:
@@ -641,11 +650,18 @@ def main() -> None:
     if _auto_cal_result is not None and _auto_cal_result.provenance:
         manifest.cal_selection = dict(_auto_cal_result.provenance)
     else:
-        # Try loading from sidecar for manual/legacy table paths
+        # Try loading from sidecar for manual/legacy table paths.
+        # Overlay runtime source so the manifest reflects actual table origin,
+        # not the original generation source recorded in the sidecar.
         from dsa110_continuum.calibration.ensure import load_provenance_sidecar
         _loaded_prov = load_provenance_sidecar(_bp)
         if _loaded_prov is not None:
-            manifest.cal_selection = _loaded_prov
+            _runtime_source = "borrowed" if os.path.islink(_bp) else "existing"
+            manifest.cal_selection = dict(_loaded_prov)
+            manifest.cal_selection["source"] = _runtime_source
+            manifest.cal_selection["bp_table"] = _bp
+            manifest.cal_selection["g_table"] = _ga
+            manifest.cal_selection["cal_date"] = cal_date
 
     # ── Cal quality gate ────────────────────────────────────────────────────
     check_cal_gate(manifest, cal_date, date, args.strict_qa)

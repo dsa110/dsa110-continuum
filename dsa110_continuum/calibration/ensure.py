@@ -165,11 +165,18 @@ def _validate_strip_compatibility(
 ) -> CalibrationResult:
     """Validate that reused tables are compatible with the observation strip.
 
+    The key provenance field is ``obs_dec_deg_used`` — the science strip Dec
+    that was active when the tables were originally generated.  This is distinct
+    from ``calibrator_dec_deg`` (the calibrator's sky position), which can be
+    within tolerance of one strip yet incompatible with another.
+
     Policy:
     - **borrowed** tables with missing provenance → reject (CalibrationError)
-    - **borrowed** tables with provenance at incompatible Dec → reject
+    - **borrowed** tables with provenance but missing ``obs_dec_deg_used`` → reject
+    - **borrowed** tables with provenance at incompatible strip Dec → reject
     - **existing** same-date tables with missing provenance → warn, allow
-    - **existing** same-date tables with provenance at incompatible Dec → reject
+    - **existing** same-date tables with provenance but missing ``obs_dec_deg_used`` → warn, allow
+    - **existing** same-date tables with provenance at incompatible strip Dec → reject
 
     Returns the *result* unchanged if validation passes.
     """
@@ -185,11 +192,16 @@ def _validate_strip_compatibility(
                 f"Borrowed cal tables {result.bp_table} have no provenance sidecar — "
                 "cannot verify strip compatibility. Generate fresh tables or add provenance."
             )
-        stored_dec = prov.get("calibrator_dec_deg")
-        if stored_dec is not None and abs(stored_dec - obs_dec_deg) > tolerance_deg:
+        stored_dec = prov.get("obs_dec_deg_used")
+        if stored_dec is None:
+            raise CalibrationError(
+                f"Borrowed cal tables {result.bp_table} have provenance sidecar "
+                "but missing obs_dec_deg_used — cannot verify strip compatibility."
+            )
+        if abs(stored_dec - obs_dec_deg) > tolerance_deg:
             raise CalibrationError(
                 f"Borrowed cal tables from {result.cal_date} were generated for "
-                f"calibrator Dec {stored_dec:.1f}° but current observation is at "
+                f"strip Dec {stored_dec:.1f}° but current observation is at "
                 f"Dec {obs_dec_deg:.1f}° (offset {abs(stored_dec - obs_dec_deg):.1f}° "
                 f"> tolerance {tolerance_deg}°)."
             )
@@ -202,16 +214,84 @@ def _validate_strip_compatibility(
                 result.bp_table,
             )
             return result
-        stored_dec = prov.get("calibrator_dec_deg")
-        if stored_dec is not None and abs(stored_dec - obs_dec_deg) > tolerance_deg:
+        stored_dec = prov.get("obs_dec_deg_used")
+        if stored_dec is None:
+            logger.warning(
+                "Existing cal tables %s have provenance but missing obs_dec_deg_used — "
+                "cannot verify strip compatibility. Accepting for backward compatibility.",
+                result.bp_table,
+            )
+            return result
+        if abs(stored_dec - obs_dec_deg) > tolerance_deg:
             raise CalibrationError(
                 f"Existing cal tables for {result.cal_date} were generated for "
-                f"calibrator Dec {stored_dec:.1f}° but current observation is at "
+                f"strip Dec {stored_dec:.1f}° but current observation is at "
                 f"Dec {obs_dec_deg:.1f}° (offset {abs(stored_dec - obs_dec_deg):.1f}° "
                 f"> tolerance {tolerance_deg}°)."
             )
 
     return result
+
+
+def _enrich_result_provenance(result: CalibrationResult) -> CalibrationResult:
+    """Merge sidecar provenance into *result*, overlaying runtime source/paths.
+
+    For ``generated`` results the provenance is already populated at creation
+    time, so this is a no-op.  For ``existing`` and ``borrowed`` results the
+    sidecar (if present) carries the *original* generation metadata — we merge
+    it but override ``source``, ``bp_table``, ``g_table``, and ``cal_date``
+    with the runtime values so the manifest reflects the actual table provenance
+    chain.
+    """
+    if result.provenance:
+        return result  # Already populated (generated path)
+
+    prov = load_provenance_sidecar(result.bp_table)
+    if prov is None:
+        return result  # No sidecar — nothing to merge
+
+    merged = dict(prov)
+    merged["source"] = result.source  # runtime source overrides original
+    merged["bp_table"] = result.bp_table
+    merged["g_table"] = result.g_table
+    merged["cal_date"] = result.cal_date
+
+    return CalibrationResult(
+        bp_table=result.bp_table,
+        g_table=result.g_table,
+        cal_date=result.cal_date,
+        calibrator_name=prov.get("calibrator_name", result.calibrator_name),
+        source=result.source,
+        provenance=merged,
+    )
+
+
+def validate_table_strip_compatibility(
+    bp_table: str,
+    obs_dec_deg: float | None,
+    tolerance_deg: float = STRIP_COMPAT_TOLERANCE_DEG,
+) -> None:
+    """Validate strip compatibility for manually resolved calibration tables.
+
+    This is the public entry point for callers outside ``ensure_bandpass()``
+    (e.g. the fallback path in ``batch_pipeline.py``).  Determines whether
+    the tables are symlinks (borrowed) or real files (existing), then applies
+    the same validation policy as the internal ``_validate_strip_compatibility``.
+
+    Raises
+    ------
+    CalibrationError
+        If the tables are incompatible with the observation strip.
+    """
+    source = "borrowed" if os.path.islink(bp_table) else "existing"
+    result = CalibrationResult(
+        bp_table=bp_table,
+        g_table=bp_table,  # placeholder — validation only reads bp sidecar
+        cal_date="unknown",
+        calibrator_name="unknown",
+        source=source,
+    )
+    _validate_strip_compatibility(result, obs_dec_deg, tolerance_deg)
 
 
 # ---------------------------------------------------------------------------
@@ -686,6 +766,7 @@ def ensure_bandpass(
         existing = find_cal_tables(date, ms_dir)
         if existing is not None:
             existing = _validate_strip_compatibility(existing, obs_dec_deg)
+            existing = _enrich_result_provenance(existing)
             return existing
 
     # 2. Try to generate from calibrator transit
@@ -712,6 +793,7 @@ def ensure_bandpass(
     borrowed = _find_nearest_real_tables(date, ms_dir, max_borrow_days)
     if borrowed is not None:
         borrowed = _validate_strip_compatibility(borrowed, obs_dec_deg)
+        borrowed = _enrich_result_provenance(borrowed)
         return borrowed
 
     raise CalibrationError(
