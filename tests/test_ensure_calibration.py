@@ -14,6 +14,8 @@ from dsa110_continuum.calibration.ensure import (
     _build_provenance,
     _enrich_result_provenance,
     _find_nearest_real_tables,
+    _get_bright_fallback_list,
+    _lookup_calibrator_coords,
     _parse_dec_deg,
     _parse_ra_deg,
     _validate_strip_compatibility,
@@ -187,7 +189,7 @@ class TestSelectBandpassCalibrator:
             mock_find.return_value = []
 
             with tempfile.NamedTemporaryFile(suffix=".sqlite3") as f:
-                with pytest.raises(CalibrationError, match="No primary flux calibrator"):
+                with pytest.raises(CalibrationError, match="No usable calibrator"):
                     select_bandpass_calibrator("2026-01-25", db_path=f.name)
 
 
@@ -861,3 +863,190 @@ class TestRuntimeSourceFidelity:
         )
         enriched = _enrich_result_provenance(result)
         assert enriched is result  # Same object, not modified
+
+
+# ── Two-phase calibrator selection (primary + bright fallback) ────────
+
+
+class TestTwoPhaseSelection:
+    """Test primary-preferred / bright-fallback calibrator selection."""
+
+    @staticmethod
+    def _all_have_data(db_path, ra_deg, dec_deg, **kwargs):
+        return [{"group_id": "2026-01-25T00:00:00", "ra_deg": ra_deg,
+                 "dec_deg": dec_deg, "transit_time_iso": "2026-01-25T00:00:00",
+                 "delta_minutes": 0.5}]
+
+    @staticmethod
+    def _none_have_data(db_path, ra_deg, dec_deg, **kwargs):
+        return []
+
+    def test_primary_preferred_over_bright_fallback(self):
+        """When both pools have candidates, primary is selected."""
+        with patch(
+            "dsa110_continuum.calibration.transit.find_transits_for_source"
+        ) as mock_find:
+            mock_find.side_effect = self._all_have_data
+
+            with tempfile.NamedTemporaryFile(suffix=".sqlite3") as f:
+                name, ra, dec, transit = select_bandpass_calibrator(
+                    "2026-01-25", db_path=f.name, obs_dec_deg=16.0,
+                )
+            # Must come from primary pool (3C138 is closest to Dec 16)
+            from dsa110_continuum.calibration.fluxscale import PRIMARY_FLUX_CALIBRATORS
+            assert name in PRIMARY_FLUX_CALIBRATORS
+
+    def test_bright_fallback_used_when_no_primary_has_date_data(self):
+        """When primary pool is empty, falls back to bright VLA catalog sources."""
+        primary_names = set()
+        from dsa110_continuum.calibration.fluxscale import PRIMARY_FLUX_CALIBRATORS
+        for info in PRIMARY_FLUX_CALIBRATORS.values():
+            primary_names.update(info.get("alt_names", []))
+        primary_names.update(PRIMARY_FLUX_CALIBRATORS.keys())
+
+        fallback_cal = {
+            "name": "J0834+555",
+            "ra_deg": 128.65,
+            "dec_deg": 55.5,
+            "flux_jy": 7.2,
+            "separation_deg": 2.1,
+        }
+
+        def selective_data(db_path, ra_deg, dec_deg, **kwargs):
+            """Return data only for non-primary (fallback) calibrators."""
+            # Primary calibrators: no data
+            for pn, pi in PRIMARY_FLUX_CALIBRATORS.items():
+                from dsa110_continuum.calibration.ensure import _parse_ra_deg
+                pra = _parse_ra_deg(pi["ra_j2000"])
+                if abs(ra_deg - pra) < 1.0:
+                    return []
+            # Fallback calibrators: have data
+            return [{"group_id": "2026-01-25T03:30:00", "ra_deg": ra_deg,
+                     "dec_deg": dec_deg, "transit_time_iso": "2026-01-25T03:30:00",
+                     "delta_minutes": 1.0}]
+
+        with patch(
+            "dsa110_continuum.calibration.transit.find_transits_for_source",
+            side_effect=selective_data,
+        ), patch(
+            "dsa110_continuum.calibration.ensure._get_bright_fallback_list",
+            return_value=[
+                (fallback_cal["name"], fallback_cal["ra_deg"],
+                 fallback_cal["dec_deg"], fallback_cal["flux_jy"]),
+            ],
+        ):
+            with tempfile.NamedTemporaryFile(suffix=".sqlite3") as f:
+                name, ra, dec, transit = select_bandpass_calibrator(
+                    "2026-01-25", db_path=f.name,
+                )
+            assert name == "J0834+555"
+            assert name not in PRIMARY_FLUX_CALIBRATORS
+
+    def test_fallback_candidate_must_have_date_data(self):
+        """Fallback candidates in catalog but without transit data → CalibrationError."""
+        with patch(
+            "dsa110_continuum.calibration.transit.find_transits_for_source",
+            return_value=[],  # No data for anyone
+        ), patch(
+            "dsa110_continuum.calibration.ensure._get_bright_fallback_list",
+            return_value=[
+                ("J0834+555", 128.65, 55.5, 7.2),
+                ("J1407+284", 211.75, 28.4, 6.1),
+            ],
+        ):
+            with tempfile.NamedTemporaryFile(suffix=".sqlite3") as f:
+                with pytest.raises(CalibrationError, match="No usable calibrator"):
+                    select_bandpass_calibrator("2026-01-25", db_path=f.name)
+
+    def test_generated_provenance_marks_fallback_correctly(self, tmp_path):
+        """Provenance from a fallback-generated result has correct pool/anchor."""
+        prov = _build_provenance(
+            selection_mode="dec_aware",
+            obs_dec_deg_used=16.0,
+            selection_dec_tolerance_deg=10.0,
+            calibrator_name="J0834+555",
+            calibrator_ra_deg=128.65,
+            calibrator_dec_deg=55.5,
+            calibrator_flux_jy=7.2,
+            calibrator_dec_offset_deg=39.5,
+            transit_time_iso="2026-01-25T08:34:00",
+            source="generated",
+            cal_date="2026-01-25",
+            bp_table="/fake/bp.b",
+            g_table="/fake/bp.g",
+            selection_pool="bright_fallback",
+            flux_anchor="vla_catalog",
+        )
+        assert prov["selection_pool"] == "bright_fallback"
+        assert prov["flux_anchor"] == "vla_catalog"
+        assert prov["calibrator_flux_jy"] == 7.2
+        assert prov["calibrator_flux_jy"] > 0
+
+    def test_primary_provenance_has_primary_pool(self):
+        """Provenance from a primary-selected result has correct pool/anchor."""
+        prov = _build_provenance(
+            selection_mode="dec_aware",
+            obs_dec_deg_used=16.0,
+            selection_dec_tolerance_deg=10.0,
+            calibrator_name="3C138",
+            calibrator_ra_deg=80.29,
+            calibrator_dec_deg=16.64,
+            calibrator_flux_jy=8.36,
+            calibrator_dec_offset_deg=0.64,
+            transit_time_iso="2026-01-25T05:21:10",
+            source="generated",
+            cal_date="2026-01-25",
+            bp_table="/fake/bp.b",
+            g_table="/fake/bp.g",
+            selection_pool="primary",
+            flux_anchor="perley_butler_primary",
+        )
+        assert prov["selection_pool"] == "primary"
+        assert prov["flux_anchor"] == "perley_butler_primary"
+
+    def test_lookup_primary_calibrator(self):
+        """_lookup_calibrator_coords returns primary pool for known primaries."""
+        ra, dec, flux, pool, anchor = _lookup_calibrator_coords("3C138")
+        assert pool == "primary"
+        assert anchor == "perley_butler_primary"
+        assert flux > 0
+        assert 80 < ra < 81
+        assert 16 < dec < 17
+
+    def test_lookup_unknown_calibrator(self):
+        """_lookup_calibrator_coords returns defaults for unknown names."""
+        ra, dec, flux, pool, anchor = _lookup_calibrator_coords("NONEXISTENT_9999")
+        # Will fall through both primary and VLA catalog lookups
+        assert pool in ("bright_fallback", "unknown")
+
+    def test_error_message_mentions_both_pools(self):
+        """CalibrationError from select_bandpass_calibrator mentions both pool failures."""
+        with patch(
+            "dsa110_continuum.calibration.transit.find_transits_for_source",
+            return_value=[],
+        ), patch(
+            "dsa110_continuum.calibration.ensure._get_bright_fallback_list",
+            return_value=[],
+        ):
+            with tempfile.NamedTemporaryFile(suffix=".sqlite3") as f:
+                with pytest.raises(CalibrationError, match="Primary pool.*Bright fallback"):
+                    select_bandpass_calibrator("2026-01-25", db_path=f.name)
+
+    def test_fallback_full_sky_when_no_obs_dec(self):
+        """When obs_dec_deg=None, _get_bright_fallback_list searches full sky."""
+        captured = {}
+
+        def fake_query(dec_deg, max_separation, **kwargs):
+            captured["dec_deg"] = dec_deg
+            captured["max_separation"] = max_separation
+            return []
+
+        with patch(
+            "dsa110_continuum.catalog.build_vla_calibrators.query_calibrators_by_dec",
+            side_effect=fake_query,
+        ):
+            _get_bright_fallback_list(obs_dec_deg=None, dec_tolerance_deg=10.0)
+
+        assert captured["max_separation"] == 90.0, (
+            f"Expected full-sky search (90 deg), got {captured['max_separation']}"
+        )

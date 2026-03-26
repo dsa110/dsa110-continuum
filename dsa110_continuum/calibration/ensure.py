@@ -36,6 +36,11 @@ DEFAULT_DB_PATH = "/data/dsa110-contimg/state/db/pipeline.sqlite3"
 # differs from the current observation strip by more than this.
 STRIP_COMPAT_TOLERANCE_DEG = 5.0
 
+# Bright-source fallback: minimum flux and candidate cap for VLA catalog query.
+BRIGHT_FALLBACK_MIN_FLUX_JY = 5.0
+BRIGHT_FALLBACK_MAX_CANDIDATES = 25
+DEFAULT_VLA_CAL_DB = "/data/dsa110-contimg/state/catalogs/vla_calibrators.sqlite3"
+
 
 @dataclass(frozen=True)
 class CalibrationResult:
@@ -132,10 +137,14 @@ def _build_provenance(
     cal_date: str,
     bp_table: str,
     g_table: str,
+    selection_pool: str = "primary",
+    flux_anchor: str = "perley_butler_primary",
 ) -> dict[str, Any]:
     """Construct the provenance dict recorded in the sidecar and manifest."""
     return {
         "selection_mode": selection_mode,
+        "selection_pool": selection_pool,
+        "flux_anchor": flux_anchor,
         "obs_dec_deg_used": obs_dec_deg_used,
         "selection_dec_tolerance_deg": selection_dec_tolerance_deg,
         "calibrator_name": calibrator_name,
@@ -369,23 +378,167 @@ def resolve_cal_table_paths(
 # ---------------------------------------------------------------------------
 
 
+def _find_candidates_with_data(
+    calibrator_list: list[tuple[str, float, float, float]],
+    date: str,
+    db_path: str,
+    obs_dec_deg: float | None,
+    dec_tolerance_deg: float,
+) -> list[tuple[str, float, float, Time, float]]:
+    """Evaluate which calibrators have date-matched HDF5 transit data.
+
+    Parameters
+    ----------
+    calibrator_list :
+        Each entry is ``(name, ra_deg, dec_deg, flux_jy)``.
+    date :
+        Observation date (YYYY-MM-DD).
+    db_path :
+        Pipeline SQLite database path.
+    obs_dec_deg :
+        Observation strip Dec (for filtering).
+    dec_tolerance_deg :
+        Maximum Dec offset from *obs_dec_deg*.
+
+    Returns
+    -------
+    list of (name, ra_deg, dec_deg, transit_time, flux_jy) tuples.
+    """
+    from dsa110_continuum.calibration.transit import find_transits_for_source, next_transit_time
+
+    day_start = Time(f"{date}T00:00:00", scale="utc")
+    candidates: list[tuple[str, float, float, Time, float]] = []
+
+    for cal_name, ra_deg, dec_deg, flux in calibrator_list:
+        if obs_dec_deg is not None and abs(dec_deg - obs_dec_deg) > dec_tolerance_deg:
+            logger.debug(
+                "Skipping %s: Dec %.1f too far from obs Dec %.1f (tol %.1f)",
+                cal_name, dec_deg, obs_dec_deg, dec_tolerance_deg,
+            )
+            continue
+
+        transit = next_transit_time(ra_deg, day_start.mjd)
+        if transit.iso[:10] != date:
+            logger.debug("Skipping %s: transit %s not on %s", cal_name, transit.iso, date)
+            continue
+
+        if not os.path.isfile(db_path):
+            logger.warning("Pipeline DB not found at %s; assuming data available", db_path)
+            candidates.append((cal_name, ra_deg, dec_deg, transit, flux))
+            continue
+
+        matches = find_transits_for_source(
+            db_path=db_path, ra_deg=ra_deg, dec_deg=dec_deg,
+            ra_tolerance_deg=2.0, dec_tolerance_deg=2.0,
+        )
+        date_matches = [m for m in matches if m["group_id"].startswith(date)]
+        if date_matches:
+            logger.info(
+                "Candidate %s: Dec %.1f, transit %s, %d HDF5 groups, %.1f Jy",
+                cal_name, dec_deg, transit.iso, len(date_matches), flux,
+            )
+            candidates.append((cal_name, ra_deg, dec_deg, transit, flux))
+        else:
+            logger.debug("Skipping %s: no HDF5 data near transit on %s", cal_name, date)
+
+    return candidates
+
+
+def _rank_candidates(
+    candidates: list[tuple[str, float, float, Time, float]],
+    obs_dec_deg: float | None,
+) -> list[tuple[str, float, float, Time, float]]:
+    """Sort candidates by Dec proximity (primary) then flux (tiebreaker)."""
+    if obs_dec_deg is not None:
+        candidates.sort(key=lambda c: (abs(c[2] - obs_dec_deg), -c[4]))
+    else:
+        candidates.sort(key=lambda c: c[4], reverse=True)
+    return candidates
+
+
+def _get_bright_fallback_list(
+    obs_dec_deg: float | None,
+    dec_tolerance_deg: float,
+    min_flux_jy: float = BRIGHT_FALLBACK_MIN_FLUX_JY,
+    max_candidates: int = BRIGHT_FALLBACK_MAX_CANDIDATES,
+    vla_cal_db: str = DEFAULT_VLA_CAL_DB,
+) -> list[tuple[str, float, float, float]]:
+    """Query VLA calibrator catalog for bright non-primary fallback candidates.
+
+    Returns list of ``(name, ra_deg, dec_deg, flux_jy)`` tuples.
+    """
+    from pathlib import Path as _Path
+
+    from dsa110_continuum.calibration.fluxscale import PRIMARY_FLUX_CALIBRATORS
+
+    db = _Path(vla_cal_db)
+    if not db.exists():
+        logger.warning("VLA calibrator DB not found at %s; bright fallback unavailable", vla_cal_db)
+        return []
+
+    from dsa110_continuum.catalog.build_vla_calibrators import query_calibrators_by_dec
+
+    if obs_dec_deg is not None:
+        search_dec = obs_dec_deg
+        search_sep = dec_tolerance_deg
+    else:
+        search_dec = 0.0
+        search_sep = 90.0  # full-sky search when no strip Dec specified
+    rows = query_calibrators_by_dec(
+        dec_deg=search_dec,
+        max_separation=search_sep,
+        min_flux_jy=min_flux_jy,
+        band="20cm",
+        db_path=db,
+        use_beam_weighting=False,
+    )
+
+    primary_names = set(PRIMARY_FLUX_CALIBRATORS.keys())
+    primary_alt_names: set[str] = set()
+    for info in PRIMARY_FLUX_CALIBRATORS.values():
+        primary_alt_names.update(info.get("alt_names", []))
+
+    result: list[tuple[str, float, float, float]] = []
+    for row in rows:
+        name = row["name"]
+        if name in primary_names or name in primary_alt_names:
+            continue
+        result.append((name, row["ra_deg"], row["dec_deg"], row["flux_jy"]))
+        if len(result) >= max_candidates:
+            break
+
+    if obs_dec_deg is not None:
+        logger.info(
+            "Bright fallback pool: %d candidates from VLA catalog (min %.1f Jy, Dec %.1f ± %.1f)",
+            len(result), min_flux_jy, search_dec, search_sep,
+        )
+    else:
+        logger.info(
+            "Bright fallback pool: %d candidates from VLA catalog "
+            "(min %.1f Jy, full-sky Dec search)",
+            len(result), min_flux_jy,
+        )
+    return result
+
+
 def select_bandpass_calibrator(
     date: str,
     input_dir: str = DEFAULT_INPUT_DIR,
     db_path: str = DEFAULT_DB_PATH,
     obs_dec_deg: float | None = None,
     dec_tolerance_deg: float = 10.0,
+    bright_fallback_min_flux_jy: float = BRIGHT_FALLBACK_MIN_FLUX_JY,
 ) -> tuple[str, float, float, Time]:
-    """Auto-select the best primary flux calibrator with data on a given date.
+    """Auto-select the best calibrator with data on a given date.
 
-    Iterates over PRIMARY_FLUX_CALIBRATORS, computes each one's transit time
-    for the given date, checks whether HDF5 data exists near the transit in the
-    pipeline DB, and picks the best calibrator.
+    Two-phase selection:
 
-    When *obs_dec_deg* is provided, only calibrators within *dec_tolerance_deg*
-    of the observation declination are considered.  Among those, the closest in
-    Dec is preferred (ties broken by flux).  This ensures the bandpass
-    calibrator's beam response matches the science data.
+    **Phase A — primary flux calibrators** (Perley-Butler 2017 models):
+    preferred because they provide model-anchored absolute flux accuracy.
+
+    **Phase B — bright VLA catalog sources** (fallback): used only when no
+    primary calibrator has date-matched transit data.  These provide a
+    correct bandpass shape but catalog-anchored (not model-anchored) flux.
 
     Parameters
     ----------
@@ -396,12 +549,11 @@ def select_bandpass_calibrator(
     db_path : str
         Path to the pipeline SQLite database.
     obs_dec_deg : float or None
-        Observed declination in degrees.  When provided, calibrators are ranked
-        by Dec proximity rather than raw brightness.
+        Observed declination.  Calibrators are ranked by Dec proximity.
     dec_tolerance_deg : float
-        Maximum Dec offset allowed between calibrator and observation.
-        Default 10deg -- wide enough to always have candidates, narrow enough
-        to keep the beam model representative.
+        Maximum Dec offset from *obs_dec_deg*.
+    bright_fallback_min_flux_jy : float
+        Minimum 20cm flux for VLA catalog fallback candidates.
 
     Returns
     -------
@@ -410,91 +562,123 @@ def select_bandpass_calibrator(
     Raises
     ------
     CalibrationError
-        If no calibrator has data available on the given date.
+        If no usable calibrator (primary or fallback) has data on the date.
     """
     from dsa110_continuum.calibration.fluxscale import PRIMARY_FLUX_CALIBRATORS
-    from dsa110_continuum.calibration.transit import find_transits_for_source, next_transit_time
 
-    # Start of the given UTC day
-    day_start = Time(f"{date}T00:00:00", scale="utc")
-
-    candidates: list[tuple[str, float, float, Time, float]] = []
-
+    # ── Phase A: primary calibrators ──────────────────────────────────────
+    primary_list: list[tuple[str, float, float, float]] = []
     for cal_name, info in PRIMARY_FLUX_CALIBRATORS.items():
-        ra_deg = _parse_ra_deg(info["ra_j2000"])
-        dec_deg = _parse_dec_deg(info["dec_j2000"])
-        flux = info["flux_1400mhz_jy"]
+        primary_list.append((
+            cal_name,
+            _parse_ra_deg(info["ra_j2000"]),
+            _parse_dec_deg(info["dec_j2000"]),
+            info["flux_1400mhz_jy"],
+        ))
 
-        # Dec filter: skip calibrators too far from the observation strip
-        if obs_dec_deg is not None and abs(dec_deg - obs_dec_deg) > dec_tolerance_deg:
-            logger.debug(
-                "Skipping %s: Dec %.1f deg too far from obs Dec %.1f deg (tolerance %.1f deg)",
-                cal_name, dec_deg, obs_dec_deg, dec_tolerance_deg,
-            )
-            continue
-
-        # Compute transit time on this date
-        transit = next_transit_time(ra_deg, day_start.mjd)
-        transit_date = transit.iso[:10]
-
-        # Only consider transits that fall on the requested date
-        if transit_date != date:
-            logger.debug(
-                "Skipping %s: transit %s not on %s", cal_name, transit.iso, date
-            )
-            continue
-
-        # Check if HDF5 data exists near this transit in the pipeline DB
-        if not os.path.isfile(db_path):
-            logger.warning("Pipeline DB not found at %s; cannot verify data availability", db_path)
-            candidates.append((cal_name, ra_deg, dec_deg, transit, flux))
-            continue
-
-        matches = find_transits_for_source(
-            db_path=db_path,
-            ra_deg=ra_deg,
-            dec_deg=dec_deg,
-            ra_tolerance_deg=2.0,
-            dec_tolerance_deg=2.0,
-        )
-
-        # Filter to transits on the target date
-        date_matches = [m for m in matches if m["group_id"].startswith(date)]
-        if date_matches:
-            logger.info(
-                "Calibrator %s: Dec %.1f deg, transit %s, %d HDF5 groups, %.1f Jy",
-                cal_name, dec_deg, transit.iso, len(date_matches), flux,
-            )
-            candidates.append((cal_name, ra_deg, dec_deg, transit, flux))
-        else:
-            logger.debug(
-                "Skipping %s: no HDF5 data near transit on %s", cal_name, date
-            )
-
-    if not candidates:
-        dec_msg = f" near Dec {obs_dec_deg:.1f} deg" if obs_dec_deg is not None else ""
-        raise CalibrationError(
-            f"No primary flux calibrator{dec_msg} has HDF5 data available on {date}. "
-            "Ensure the date is indexed: dsa110 index add --start {date} --end {date}"
-        )
-
-    # Rank by Dec proximity (primary) then flux (tiebreaker)
-    if obs_dec_deg is not None:
-        candidates.sort(key=lambda c: (abs(c[2] - obs_dec_deg), -c[4]))
-    else:
-        candidates.sort(key=lambda c: c[4], reverse=True)
-
-    best = candidates[0]
-    logger.info(
-        "Selected calibrator: %s (Dec %.1f deg, %.1f Jy, transit %s)",
-        best[0], best[2], best[4], best[3].iso,
+    primary_candidates = _find_candidates_with_data(
+        primary_list, date, db_path, obs_dec_deg, dec_tolerance_deg,
     )
-    return best[0], best[1], best[2], best[3]
+    if primary_candidates:
+        ranked = _rank_candidates(primary_candidates, obs_dec_deg)
+        best = ranked[0]
+        logger.info(
+            "Selected PRIMARY calibrator: %s (Dec %.1f, %.1f Jy, transit %s)",
+            best[0], best[2], best[4], best[3].iso,
+        )
+        return best[0], best[1], best[2], best[3]
+
+    logger.warning(
+        "No primary flux calibrator has HDF5 data on %s — "
+        "searching bright VLA catalog sources as fallback",
+        date,
+    )
+
+    # ── Phase B: bright VLA catalog fallback ──────────────────────────────
+    fallback_list = _get_bright_fallback_list(
+        obs_dec_deg, dec_tolerance_deg,
+        min_flux_jy=bright_fallback_min_flux_jy,
+    )
+
+    if fallback_list:
+        fallback_candidates = _find_candidates_with_data(
+            fallback_list, date, db_path, obs_dec_deg, dec_tolerance_deg,
+        )
+        if fallback_candidates:
+            ranked = _rank_candidates(fallback_candidates, obs_dec_deg)
+            best = ranked[0]
+            logger.info(
+                "Selected BRIGHT FALLBACK calibrator: %s (Dec %.1f, %.1f Jy, transit %s)",
+                best[0], best[2], best[4], best[3].iso,
+            )
+            return best[0], best[1], best[2], best[3]
+
+    dec_msg = f" near Dec {obs_dec_deg:.1f} deg" if obs_dec_deg is not None else ""
+    raise CalibrationError(
+        f"No usable calibrator{dec_msg} has HDF5 data on {date}. "
+        f"Primary pool: 0 candidates with date data. "
+        f"Bright fallback (>= {bright_fallback_min_flux_jy} Jy): "
+        f"0 candidates with date data. "
+        f"Ensure the date is indexed: dsa110 index add --start {date} --end {date}"
+    )
 
 
 # ---------------------------------------------------------------------------
 # Table generation
 # ---------------------------------------------------------------------------
+
+
+def _lookup_calibrator_coords(
+    calibrator_name: str,
+) -> tuple[float, float, float, str, str]:
+    """Look up RA, Dec, flux, selection_pool, and flux_anchor for a calibrator.
+
+    Checks PRIMARY_FLUX_CALIBRATORS first; falls back to VLA catalog DB.
+    Returns (ra_deg, dec_deg, flux_jy, selection_pool, flux_anchor).
+    """
+    from dsa110_continuum.calibration.fluxscale import PRIMARY_FLUX_CALIBRATORS
+
+    info = PRIMARY_FLUX_CALIBRATORS.get(calibrator_name)
+    if info is not None:
+        return (
+            _parse_ra_deg(info["ra_j2000"]),
+            _parse_dec_deg(info["dec_j2000"]),
+            info["flux_1400mhz_jy"],
+            "primary",
+            "perley_butler_primary",
+        )
+
+    # Not a primary — query VLA catalog
+    from pathlib import Path as _Path
+
+    db = _Path(DEFAULT_VLA_CAL_DB)
+    if db.exists():
+        import sqlite3
+
+        with sqlite3.connect(str(db)) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT c.ra_deg, c.dec_deg, f.flux_jy
+                FROM calibrators c
+                JOIN fluxes f ON c.name = f.name
+                WHERE c.name = ? AND f.band = '20cm'
+                LIMIT 1
+                """,
+                (calibrator_name,),
+            ).fetchone()
+            if row is not None:
+                return (
+                    row["ra_deg"], row["dec_deg"], row["flux_jy"],
+                    "bright_fallback", "vla_catalog",
+                )
+
+    logger.warning(
+        "Calibrator %s not found in primary list or VLA catalog — "
+        "provenance will have zeroed coordinates",
+        calibrator_name,
+    )
+    return 0.0, 0.0, 0.0, "unknown", "unknown"
 
 
 def generate_bandpass_tables(
@@ -513,14 +697,14 @@ def generate_bandpass_tables(
     Steps:
     1. Convert HDF5 data near the transit to a calibrator MS
     2. Run the full calibration sequence (phaseshift, model, bandpass, gains)
-    3. Write provenance sidecar
+    3. Write provenance sidecar (distinguishes primary vs fallback pool)
 
     Parameters
     ----------
     date : str
         Observation date (YYYY-MM-DD).
     calibrator_name : str
-        Calibrator name (e.g. "3C454.3", "3C286").
+        Calibrator name (e.g. "3C454.3", "3C286", "J0834+555").
     transit_time : Time
         Meridian transit time of the calibrator.
     ms_dir : str
@@ -553,12 +737,10 @@ def generate_bandpass_tables(
         date, calibrator_name, transit_time.iso,
     )
 
-    # Look up calibrator Dec/RA/flux for provenance
-    from dsa110_continuum.calibration.fluxscale import PRIMARY_FLUX_CALIBRATORS
-    cal_info = PRIMARY_FLUX_CALIBRATORS.get(calibrator_name, {})
-    cal_ra = _parse_ra_deg(cal_info["ra_j2000"]) if "ra_j2000" in cal_info else 0.0
-    cal_dec = _parse_dec_deg(cal_info["dec_j2000"]) if "dec_j2000" in cal_info else 0.0
-    cal_flux = cal_info.get("flux_1400mhz_jy", 0.0)
+    # Look up calibrator coords/flux and determine pool
+    cal_ra, cal_dec, cal_flux, sel_pool, flux_anchor = _lookup_calibrator_coords(
+        calibrator_name,
+    )
 
     # Step 1: Convert HDF5 -> calibrator MS
     generator = CalibratorMSGenerator(
@@ -635,6 +817,8 @@ def generate_bandpass_tables(
         cal_date=date,
         bp_table=bp_table,
         g_table=g_table,
+        selection_pool=sel_pool,
+        flux_anchor=flux_anchor,
     )
     write_provenance_sidecar(bp_table, prov)
 
