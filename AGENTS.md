@@ -77,3 +77,40 @@ pipeline logic.
   after only a few overlapping drift tiles (about 3), so hour-scale windowed
   mosaics are the default science product and >1 hour/full-day coadds are
   diagnostic rather than default science products.
+
+## Cursor Cloud specific instructions
+
+### Python environment
+
+The cloud VM does **not** have the CASA conda environment (`/opt/miniforge/envs/casa6/`).
+Use the system Python 3.12 instead:
+
+- Run tests: `PYTHONPATH=/workspace python3 -m pytest tests/ -q`
+- Run lint: `ruff check dsa110_continuum/ scripts/ tests/`
+- Run format check: `ruff format --check dsa110_continuum/ scripts/ tests/`
+- Start monitor server: `PYTHONPATH=/workspace uvicorn scripts.monitor_server:app --host 0.0.0.0 --port 8765`
+
+Always set `PYTHONPATH=/workspace` — the editable install is broken due to the
+`pyproject.toml` `src/` vs `dsa110_continuum/` mismatch.
+
+### `dsa110_contimg` compatibility shim
+
+A compatibility shim at `~/.local/lib/python3.12/site-packages/dsa110_contimg_shim.py`
+(auto-loaded via `.pth` file) redirects `dsa110_contimg.core.*` imports to their
+`dsa110_continuum.*` equivalents and provides no-op stubs for `dsa110_contimg.common.*`,
+`dsa110_contimg.infrastructure.*`, and `dsa110_contimg.workflow.*` paths (old package
+internals not ported to the new codebase). This enables 307/312 tests to pass.
+
+### Known test failures (pre-existing, cloud-only)
+
+Two tests fail due to missing H17-specific resources, not code bugs:
+- `test_ensure_calibration::test_fallback_full_sky_when_no_obs_dec` — needs VLA calibrator
+  DB at `/data/dsa110-contimg/state/catalogs/vla_calibrators.sqlite3`
+- `test_epoch_gaincal::test_wsclean_runs_when_flag_fraction_below_limit` — CASA `flagdata`
+  task unavailable; extra subprocess call changes assertion count
+
+### Data directories
+
+`/data/dsa110-continuum/.pytest_tmp` is created by the update script for pytest basetemp.
+Telescope data paths (`/data/incoming/`, `/stage/dsa110-contimg/ms/`) do not exist in the
+cloud VM — tests and scripts that need them use mocks or skip gracefully.
