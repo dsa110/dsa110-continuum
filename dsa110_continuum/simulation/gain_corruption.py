@@ -84,14 +84,17 @@ def corrupt_uvh5(
     # Map antenna number -> gain index
     ant_to_idx = {int(a): i for i, a in enumerate(ant_nums)}
 
-    # Apply G_i * conj(G_j) to each baseline row
+    # Vectorised application of G_i * conj(G_j) to cross-correlations only.
+    # Autocorrelations (ant_1 == ant_2) are left unchanged — they measure
+    # total power and are not affected by direction-independent gain errors
+    # in interferometric calibration.
+    idx1 = np.array([ant_to_idx[int(a)] for a in uv.ant_1_array])
+    idx2 = np.array([ant_to_idx[int(a)] for a in uv.ant_2_array])
+    cross_mask = idx1 != idx2  # True for cross-correlations
+    factors = gains[idx1] * np.conj(gains[idx2])  # shape (Nblts,)
     data = uv.data_array.copy()  # shape (Nblts, Nfreqs, Npols)
-    for row in range(uv.Nblts):
-        i = ant_to_idx[int(uv.ant_1_array[row])]
-        j = ant_to_idx[int(uv.ant_2_array[row])]
-        factor = gains[i] * np.conj(gains[j])
-        data[row] *= factor
-
+    # Apply factor only to cross-correlation rows; autos untouched
+    data[cross_mask] *= factors[cross_mask, None, None]
     uv.data_array = data.astype(np.complex64)
 
     # Store gain truth in extra_keywords for validation

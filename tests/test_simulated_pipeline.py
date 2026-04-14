@@ -54,8 +54,14 @@ class TestGainCorruption:
     def test_corrupt_uvh5_seed_reproducible(self, tiny_uvh5, tmp_path):
         import pyuvdata
         from dsa110_continuum.simulation.gain_corruption import corrupt_uvh5
-        out1 = corrupt_uvh5(tiny_uvh5, seed=42)
-        out2 = corrupt_uvh5(tiny_uvh5, seed=42)
+        out1 = corrupt_uvh5(tiny_uvh5, seed=42, output_path=tmp_path / "corrupted_42a.uvh5")
+        out2 = corrupt_uvh5(tiny_uvh5, seed=42, output_path=tmp_path / "corrupted_42b.uvh5")
         uv1 = pyuvdata.UVData(); uv1.read(str(out1))
         uv2 = pyuvdata.UVData(); uv2.read(str(out2))
         np.testing.assert_array_equal(uv1.data_array, uv2.data_array)
+
+        # Confirm different seeds produce different results
+        out3 = corrupt_uvh5(tiny_uvh5, seed=99, output_path=tmp_path / "corrupted_99.uvh5")
+        uv3 = pyuvdata.UVData(); uv3.read(str(out3))
+        assert not np.array_equal(uv1.data_array, uv3.data_array), \
+            "Different seeds must produce different corruptions"
