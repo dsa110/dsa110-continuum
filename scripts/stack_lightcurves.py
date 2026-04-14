@@ -3,76 +3,21 @@
 
 Usage:
     python scripts/stack_lightcurves.py [--products-dir /data/dsa110-continuum/products]
+
+Delegates to dsa110_continuum.lightcurves.stacker for all logic.
 """
 import argparse
 import os
-import re
 import sys
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
-from astropy.coordinates import SkyCoord
-import astropy.units as u
+from dsa110_continuum.lightcurves.stacker import (
+    assign_source_ids,
+    parse_epoch_utc,
+    stack_csvs,
+)
 
 PRODUCTS_DIR = Path(os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics")).parent
-
-
-def parse_epoch_utc(filename: str) -> str:
-    """Extract ISO8601 UTC string from forced-phot CSV filename.
-
-    Examples:
-        2026-02-12T0000_forced_phot.csv  ->  2026-02-12T00:00:00
-        2026-01-25T2200_forced_phot.csv  ->  2026-01-25T22:00:00
-    """
-    m = re.search(r"(\d{4}-\d{2}-\d{2})T(\d{2})(\d{2})_forced_phot", filename)
-    if not m:
-        raise ValueError(f"Cannot parse epoch from filename: {filename}")
-    date, hh, mm = m.group(1), m.group(2), m.group(3)
-    return f"{date}T{hh}:{mm}:00"
-
-
-def assign_source_ids(df: pd.DataFrame, match_arcsec: float = 5.0) -> pd.DataFrame:
-    """Assign a stable integer source_id to each row by clustering positions.
-
-    If ``source_name`` column exists (J-name from master catalog), uses
-    ``pd.factorize`` for O(N) grouping.  Falls back to O(N²) SkyCoord
-    matching when ``source_name`` is absent (legacy CSVs).
-    """
-    df = df.copy()
-    if "source_name" in df.columns:
-        codes, _ = pd.factorize(df["source_name"])
-        df["source_id"] = codes
-        return df
-
-    coords = SkyCoord(ra=df["ra_deg"].values * u.deg, dec=df["dec_deg"].values * u.deg)
-    source_ids = np.full(len(df), -1, dtype=int)
-    next_id = 0
-    for i in range(len(df)):
-        if source_ids[i] != -1:
-            continue
-        source_ids[i] = next_id
-        sep = coords[i].separation(coords).arcsec
-        matches = (sep < match_arcsec) & (source_ids == -1)
-        source_ids[matches] = next_id
-        next_id += 1
-    df["source_id"] = source_ids
-    return df
-
-
-def stack_csvs(csv_paths: list, match_arcsec: float = 5.0) -> pd.DataFrame:
-    """Read all forced-phot CSVs, assign source_ids, return stacked DataFrame."""
-    frames = []
-    for path in csv_paths:
-        df = pd.read_csv(path)
-        fname = Path(path).name
-        df["epoch_utc"] = parse_epoch_utc(fname)
-        df["date"] = fname[:10]
-        frames.append(df)
-
-    combined = pd.concat(frames, ignore_index=True)
-    combined = assign_source_ids(combined, match_arcsec=match_arcsec)
-    return combined
 
 
 def main():

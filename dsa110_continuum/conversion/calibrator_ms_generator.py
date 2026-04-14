@@ -5,7 +5,7 @@ This module provides a unified workflow for generating MS files specifically
 targeting the transit of bandpass calibrators for science-quality calibration.
 
 Usage:
-    >>> from dsa110_contimg.core.conversion import CalibratorMSGenerator
+    >>> from dsa110_continuum.conversion import CalibratorMSGenerator
     >>> from pathlib import Path
     >>> from astropy.time import Time
     >>>

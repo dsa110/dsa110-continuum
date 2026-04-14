@@ -3,7 +3,7 @@ Generalized catalog querying interface for NVSS, FIRST, RAX, and other source ca
 
 Supports SQLite databases (per-declination strips or full catalogs).
 
-Ported from dsa110_contimg.core.catalog.query.
+Ported from dsa110_continuum.catalog.query.
 """
 
 from __future__ import annotations
@@ -18,8 +18,16 @@ import numpy as np
 import pandas as pd
 from astropy.coordinates import SkyCoord
 
-# Hardcoded catalog directory (replaces get_env_path)
-_CATALOG_DIR = Path("/data/dsa110-contimg/state/catalogs")
+# Catalog directory resolved from PathConfig (respects DSA110_CATALOG_DIR env var)
+def _get_catalog_dir() -> Path:
+    try:
+        from dsa110_continuum.config import paths
+        return paths.catalog_dir
+    except Exception:
+        return Path("/data/dsa110-contimg/state/catalogs")
+
+
+_CATALOG_DIR = _get_catalog_dir()
 
 
 def resolve_catalog_path(

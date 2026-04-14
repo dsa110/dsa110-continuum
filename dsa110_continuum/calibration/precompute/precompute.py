@@ -41,7 +41,10 @@ from typing import Any
 import numpy as np
 
 # Import shared pointing utilities
-from dsa110_contimg.common.utils.env_utils import get_env_path
+try:
+    from dsa110_contimg.common.utils.env_utils import get_env_path
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 from dsa110_continuum.pointing.utils import (
     detect_dec_change,
     read_uvh5_dec_fast,
@@ -124,7 +127,7 @@ class CalibratorPrediction:
         }
 
 
-# Note: read_uvh5_dec_fast is now imported from dsa110_contimg.core.pointing.utils
+# Note: read_uvh5_dec_fast is now imported from dsa110_continuum.pointing.utils
 
 
 def read_uvh5_metadata_fast(path: Path) -> dict:

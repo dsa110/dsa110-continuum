@@ -6,9 +6,9 @@ Downloads the latest ATNF Pulsar Catalogue and creates a SQLite database
 optimized for spatial queries and pulsar property lookups.
 
 Usage:
-    python -m dsa110_contimg.core.catalog.build_atnf_pulsars
-    python -m dsa110_contimg.core.catalog.build_atnf_pulsars --output /path/to/atnf_pulsars.sqlite3
-    python -m dsa110_contimg.core.catalog.build_atnf_pulsars --min-flux-mjy 1.0
+    python -m dsa110_continuum.catalog.build_atnf_pulsars
+    python -m dsa110_continuum.catalog.build_atnf_pulsars --output /path/to/atnf_pulsars.sqlite3
+    python -m dsa110_continuum.catalog.build_atnf_pulsars --min-flux-mjy 1.0
 """
 
 from __future__ import annotations
@@ -344,16 +344,16 @@ def main(argv: list[str] | None = None) -> int:
         epilog="""
 Examples:
   # Build default database (all pulsars)
-  python -m dsa110_contimg.core.catalog.build_atnf_pulsars
+  python -m dsa110_continuum.catalog.build_atnf_pulsars
 
   # Build with flux threshold
-  python -m dsa110_contimg.core.catalog.build_atnf_pulsars --min-flux-mjy 1.0
+  python -m dsa110_continuum.catalog.build_atnf_pulsars --min-flux-mjy 1.0
 
   # Specify output location
-  python -m dsa110_contimg.core.catalog.build_atnf_pulsars --output /custom/path.sqlite3
+  python -m dsa110_continuum.catalog.build_atnf_pulsars --output /custom/path.sqlite3
 
   # Force rebuild existing database
-  python -m dsa110_contimg.core.catalog.build_atnf_pulsars --force
+  python -m dsa110_continuum.catalog.build_atnf_pulsars --force
         """,
     )
     ap.add_argument(

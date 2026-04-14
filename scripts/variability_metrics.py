@@ -8,71 +8,23 @@ Metrics (Mooley et al. 2016, ApJ 818, 105):
 
 Usage:
     python scripts/variability_metrics.py [--products-dir ...]
+
+Delegates to dsa110_continuum.lightcurves.metrics for all logic.
 """
 import argparse
 import os
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
+from dsa110_continuum.lightcurves.metrics import (
+    VS_THRESHOLD,
+    ETA_THRESHOLD,
+    compute_metrics,
+    flag_candidates,
+)
+
 PRODUCTS_DIR = Path(os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics")).parent
-VS_THRESHOLD = 4.0
-ETA_THRESHOLD = 2.5
-
-
-def compute_metrics(lc: pd.DataFrame) -> pd.DataFrame:
-    """Compute m, Vs, eta for each source. Returns DataFrame indexed by source_id."""
-    records = []
-    for sid, group in lc.groupby("source_id"):
-        n = len(group)
-        fluxes = group["measured_flux_jy"].values
-        errors = group["flux_err_jy"].values
-        ra = group["ra_deg"].iloc[0]
-        dec = group["dec_deg"].iloc[0]
-        cat_flux = group["catalog_flux_jy"].iloc[0]
-
-        mean_s = fluxes.mean()
-        std_s = fluxes.std(ddof=1) if n > 1 else np.nan
-
-        if n >= 2:
-            m = std_s / mean_s if mean_s > 0 else np.nan
-            idx_max = np.argmax(fluxes)
-            idx_min = np.argmin(fluxes)
-            Vs = (fluxes[idx_max] - fluxes[idx_min]) / np.sqrt(
-                errors[idx_max] ** 2 + errors[idx_min] ** 2
-            )
-            weights = 1.0 / errors ** 2
-            mean_w = np.average(fluxes, weights=weights)
-            chi2 = np.sum(((fluxes - mean_w) / errors) ** 2)
-            eta = chi2 / (n - 1)
-        else:
-            m = Vs = eta = np.nan
-
-        rec = {
-            "source_id": sid,
-            "ra_deg": ra,
-            "dec_deg": dec,
-            "catalog_flux_jy": cat_flux,
-            "n_epochs": n,
-            "mean_flux": mean_s,
-            "std_flux": std_s,
-            "m": m,
-            "Vs": Vs,
-            "eta": eta,
-        }
-        if "spectral_index" in group.columns:
-            rec["spectral_index"] = group["spectral_index"].iloc[0]
-        records.append(rec)
-    return pd.DataFrame(records).set_index("source_id")
-
-
-def flag_candidates(metrics: pd.DataFrame) -> pd.DataFrame:
-    metrics = metrics.copy()
-    metrics["is_variable_candidate"] = (
-        (metrics["Vs"] > VS_THRESHOLD) | (metrics["eta"] > ETA_THRESHOLD)
-    )
-    return metrics
 
 
 def main():

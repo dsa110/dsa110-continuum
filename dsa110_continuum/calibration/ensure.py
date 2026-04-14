@@ -27,10 +27,18 @@ from astropy.time import Time
 
 logger = logging.getLogger(__name__)
 
-# Default paths
-DEFAULT_MS_DIR = "/stage/dsa110-contimg/ms"
-DEFAULT_INPUT_DIR = "/data/incoming"
-DEFAULT_DB_PATH = "/data/dsa110-contimg/state/db/pipeline.sqlite3"
+# Default paths — derived from central config so env vars override them
+try:
+    from dsa110_continuum.config import PathConfig as _PathConfig
+    _default_paths = _PathConfig()
+    DEFAULT_MS_DIR = str(_default_paths.ms_dir)
+    DEFAULT_INPUT_DIR = str(_default_paths.incoming_dir)
+    DEFAULT_DB_PATH = str(_default_paths.pipeline_db)
+except ImportError:
+    # Fallback for standalone use
+    DEFAULT_MS_DIR = "/stage/dsa110-contimg/ms"
+    DEFAULT_INPUT_DIR = "/data/incoming"
+    DEFAULT_DB_PATH = "/data/dsa110-contimg/state/db/pipeline.sqlite3"
 
 # Strip compatibility tolerance — reject reused tables whose calibrator Dec
 # differs from the current observation strip by more than this.
@@ -39,7 +47,10 @@ STRIP_COMPAT_TOLERANCE_DEG = 5.0
 # Bright-source fallback: minimum flux and candidate cap for VLA catalog query.
 BRIGHT_FALLBACK_MIN_FLUX_JY = 5.0
 BRIGHT_FALLBACK_MAX_CANDIDATES = 25
-DEFAULT_VLA_CAL_DB = "/data/dsa110-contimg/state/catalogs/vla_calibrators.sqlite3"
+try:
+    DEFAULT_VLA_CAL_DB = str(_default_paths.vla_cal_db)
+except NameError:
+    DEFAULT_VLA_CAL_DB = "/data/dsa110-contimg/state/catalogs/vla_calibrators.sqlite3"
 
 
 @dataclass(frozen=True)
@@ -470,13 +481,10 @@ def _get_bright_fallback_list(
     from pathlib import Path as _Path
 
     from dsa110_continuum.calibration.fluxscale import PRIMARY_FLUX_CALIBRATORS
+    # Import at call site so unittest.mock.patch on the module attribute is in effect
+    from dsa110_continuum.catalog import build_vla_calibrators as _bvc
 
     db = _Path(vla_cal_db)
-    if not db.exists():
-        logger.warning("VLA calibrator DB not found at %s; bright fallback unavailable", vla_cal_db)
-        return []
-
-    from dsa110_continuum.catalog.build_vla_calibrators import query_calibrators_by_dec
 
     if obs_dec_deg is not None:
         search_dec = obs_dec_deg
@@ -484,14 +492,19 @@ def _get_bright_fallback_list(
     else:
         search_dec = 0.0
         search_sep = 90.0  # full-sky search when no strip Dec specified
-    rows = query_calibrators_by_dec(
-        dec_deg=search_dec,
-        max_separation=search_sep,
-        min_flux_jy=min_flux_jy,
-        band="20cm",
-        db_path=db,
-        use_beam_weighting=False,
-    )
+
+    try:
+        rows = _bvc.query_calibrators_by_dec(
+            dec_deg=search_dec,
+            max_separation=search_sep,
+            min_flux_jy=min_flux_jy,
+            band="20cm",
+            db_path=db,
+            use_beam_weighting=False,
+        )
+    except (FileNotFoundError, OSError) as e:
+        logger.warning("VLA calibrator DB unavailable (%s); bright fallback unavailable", e)
+        return []
 
     primary_names = set(PRIMARY_FLUX_CALIBRATORS.keys())
     primary_alt_names: set[str] = set()

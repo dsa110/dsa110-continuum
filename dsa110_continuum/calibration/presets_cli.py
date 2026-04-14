@@ -4,13 +4,13 @@ CLI utility for working with calibration presets.
 
 Usage:
     # List available presets
-    python -m dsa110_contimg.core.calibration.presets_cli list
+    python -m dsa110_continuum.calibration.presets_cli list
 
     # Show preset details
-    python -m dsa110_contimg.core.calibration.presets_cli show standard
+    python -m dsa110_continuum.calibration.presets_cli show standard
 
     # Show customized preset
-    python -m dsa110_contimg.core.calibration.presets_cli show standard --refant=105 --gain_solint=60s
+    python -m dsa110_continuum.calibration.presets_cli show standard --refant=105 --gain_solint=60s
 """
 
 import argparse

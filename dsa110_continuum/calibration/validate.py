@@ -14,12 +14,15 @@ import os
 from dsa110_continuum.adapters import casa_tables as casatables  # type: ignore[import]
 import numpy as np  # type: ignore[import]
 
-from dsa110_contimg.common.utils.antenna_classification import (
-    get_outrigger_antennas,
-    select_outrigger_refant,
-)
+try:
+    from dsa110_contimg.common.utils.antenna_classification import (
+        get_outrigger_antennas,
+        select_outrigger_refant,
+    )
+except ImportError:
+    from dsa110_continuum._compat import classify_antenna, get_outrigger_antenna_ids, get_core_antenna_ids  # stubs (cloud/test env)
 
-table = casatables.table  # noqa: N816
+table = casatables.table if casatables is not None else None  # noqa: N816
 
 logger = logging.getLogger(__name__)
 

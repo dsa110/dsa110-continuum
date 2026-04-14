@@ -28,8 +28,11 @@ from astropy.wcs import WCS  # type: ignore[reportMissingTypeStubs]
 # type: ignore[reportMissingTypeStubs]
 from astropy.wcs.utils import proj_plane_pixel_scales
 
-from dsa110_contimg.common.unified_config import settings
-from dsa110_contimg.common.utils.gpu_utils import get_array_module
+try:
+    from dsa110_contimg.common.unified_config import settings
+    from dsa110_contimg.common.utils.gpu_utils import get_array_module
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 try:
     import scipy.spatial  # type: ignore[reportMissingTypeStubs]
@@ -97,6 +100,9 @@ class ForcedPhotometryResult:
     cluster_id: int | None = None
     # Stable integer identifier: row index in the input catalog (e.g. NVSS)
     source_id: int | None = None
+    # Upper-limit fields: populated when peak_jyb / peak_err_jyb < detect_threshold_sigma
+    is_upper_limit: bool = False
+    upper_limit_jyb: float | None = None  # n_sigma × peak_err_jyb (Jy/beam)
 
 
 # Position angle offset: VAST uses E of N convention
@@ -529,6 +535,36 @@ def _identify_clusters(
     return clusters, in_cluster
 
 
+# ── Upper-limit flagging ─────────────────────────────────────────────────────
+
+def _flag_upper_limit(
+    result: ForcedPhotometryResult,
+    threshold_sigma: float | None,
+) -> ForcedPhotometryResult:
+    """Conditionally set is_upper_limit on a ForcedPhotometryResult.
+
+    If ``threshold_sigma`` is None, returns *result* unchanged.  Otherwise,
+    checks whether ``peak_jyb / peak_err_jyb < threshold_sigma`` and, if so,
+    marks the result as an upper limit with
+    ``upper_limit_jyb = threshold_sigma × peak_err_jyb``.
+
+    The raw ``peak_jyb`` is preserved unchanged for diagnostic purposes.
+    """
+    if threshold_sigma is None:
+        return result
+    snr = (
+        result.peak_jyb / result.peak_err_jyb
+        if (np.isfinite(result.peak_jyb) and np.isfinite(result.peak_err_jyb)
+            and result.peak_err_jyb > 0)
+        else float("-inf")
+    )
+    if snr < threshold_sigma:
+        ul = threshold_sigma * result.peak_err_jyb if np.isfinite(result.peak_err_jyb) else float("nan")
+        result.is_upper_limit = True
+        result.upper_limit_jyb = ul
+    return result
+
+
 def measure_forced_peak(
     fits_path: str,
     ra_deg: float,
@@ -540,6 +576,7 @@ def measure_forced_peak(
     background_map_path: str | None = None,
     nbeam: float = 3.0,
     use_weighted_convolution: bool = True,
+    detect_threshold_sigma: float | None = None,
 ) -> ForcedPhotometryResult:
     """Measure flux using forced photometry with optional weighted convolution.
 
@@ -566,6 +603,12 @@ def measure_forced_peak(
         Size of cutout in units of beam major axis (for weighted convolution), default is 3.0
     use_weighted_convolution : bool, optional
         Use weighted convolution if beam info available, default is True
+    detect_threshold_sigma : float or None, optional
+        If provided, measurements with ``peak_jyb / peak_err_jyb < detect_threshold_sigma``
+        are flagged as upper limits (``is_upper_limit=True``,
+        ``upper_limit_jyb = detect_threshold_sigma × peak_err_jyb``).  The raw
+        ``peak_jyb`` is still stored unchanged for diagnostic purposes.
+        Default ``None`` means no upper-limit flagging is applied.
 
     """
     p = Path(fits_path)
@@ -714,7 +757,7 @@ def measure_forced_peak(
         )
         dof = int(good.sum() - 1)
 
-        return ForcedPhotometryResult(
+        result = ForcedPhotometryResult(
             ra_deg=ra_deg,
             dec_deg=dec_deg,
             peak_jyb=flux,
@@ -725,6 +768,7 @@ def measure_forced_peak(
             chisq=chisq,
             dof=dof,
         )
+        return _flag_upper_limit(result, detect_threshold_sigma)
 
     else:
         # Fall back to simple peak measurement (original method)
@@ -755,7 +799,7 @@ def measure_forced_peak(
             mask = (finite_vals > (m - 3 * s)) & (finite_vals < (m + 3 * s))
             rms = float(np.std(finite_vals[mask])) if np.any(mask) else float("nan")
 
-        return ForcedPhotometryResult(
+        result = ForcedPhotometryResult(
             ra_deg=ra_deg,
             dec_deg=dec_deg,
             peak_jyb=peak,
@@ -764,6 +808,7 @@ def measure_forced_peak(
             pix_y=y0,
             box_size_pix=box_size_pix,
         )
+        return _flag_upper_limit(result, detect_threshold_sigma)
 
 
 def _measure_cluster(

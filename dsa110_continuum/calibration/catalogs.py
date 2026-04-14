@@ -15,8 +15,11 @@ from dsa110_continuum.calibration.beam_model import (
     BeamConfig,
     primary_beam_response,
 )
-from dsa110_contimg.common.utils import get_env_path
-from dsa110_contimg.common.unified_config import settings
+try:
+    from dsa110_contimg.common.utils import get_env_path
+    from dsa110_contimg.common.unified_config import settings
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 
 from .schedule import DSA110_LOCATION
@@ -1255,7 +1258,7 @@ def query_nvss_sources(
             logger.error(
                 f"SQLite query failed ({db_err}). "
                 f"Corrupted strip database: {corrupted_db_path.name}. "
-                f"Regenerate with: from dsa110_contimg.core.catalog import regenerate_nvss_strip_db; "
+                f"Regenerate with: from dsa110_continuum.catalog import regenerate_nvss_strip_db; "
                 f"regenerate_nvss_strip_db({dec_deg:.1f})"
             )
             return pd.DataFrame(columns=["ra_deg", "dec_deg", "flux_mjy"])
@@ -1264,7 +1267,7 @@ def query_nvss_sources(
             # Other SQLite query failures
             logger.error(
                 f"SQLite query failed ({e}). "
-                f"Try regenerating the database: from dsa110_contimg.core.catalog import regenerate_nvss_strip_db; "
+                f"Try regenerating the database: from dsa110_continuum.catalog import regenerate_nvss_strip_db; "
                 f"regenerate_nvss_strip_db({dec_deg:.1f})"
             )
             return pd.DataFrame(columns=["ra_deg", "dec_deg", "flux_mjy"])
@@ -1273,7 +1276,7 @@ def query_nvss_sources(
     if db_path is None:
         logger.error(
             f"NVSS SQLite database not found for Dec {dec_deg:.1f}. "
-            f"Build with: from dsa110_contimg.core.catalog import build_nvss_strip_db; "
+            f"Build with: from dsa110_continuum.catalog import build_nvss_strip_db; "
             f"build_nvss_strip_db({dec_deg:.1f})"
         )
         return pd.DataFrame(columns=["ra_deg", "dec_deg", "flux_mjy"])

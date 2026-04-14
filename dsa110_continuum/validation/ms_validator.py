@@ -16,9 +16,9 @@ Usage:
     print(report.summary())
 
 CLI:
-    python -m dsa110_contimg.core.validation.ms_validator /path/to/file.ms
-    python -m dsa110_contimg.core.validation.ms_validator /path/to/file.ms --json
-    python -m dsa110_contimg.core.validation.ms_validator /path/to/file.ms --calibrator 3C286
+    python -m dsa110_continuum.validation.ms_validator /path/to/file.ms
+    python -m dsa110_continuum.validation.ms_validator /path/to/file.ms --json
+    python -m dsa110_continuum.validation.ms_validator /path/to/file.ms --calibrator 3C286
 """
 
 from __future__ import annotations
@@ -708,17 +708,17 @@ def main():
         epilog="""
 Examples:
   # Basic validation
-  python -m dsa110_contimg.core.validation.ms_validator /path/to/file.ms
+  python -m dsa110_continuum.validation.ms_validator /path/to/file.ms
 
   # With calibrator check
-  python -m dsa110_contimg.core.validation.ms_validator /path/to/file.ms \\
+  python -m dsa110_continuum.validation.ms_validator /path/to/file.ms \\
     --calibrator 3C286 --cal-ra 202.7845 --cal-dec 30.5091
 
   # JSON output
-  python -m dsa110_contimg.core.validation.ms_validator /path/to/file.ms --json
+  python -m dsa110_continuum.validation.ms_validator /path/to/file.ms --json
 
   # Skip data check (faster)
-  python -m dsa110_contimg.core.validation.ms_validator /path/to/file.ms --no-data
+  python -m dsa110_continuum.validation.ms_validator /path/to/file.ms --no-data
         """,
     )
     parser.add_argument("ms_path", help="Path to Measurement Set")

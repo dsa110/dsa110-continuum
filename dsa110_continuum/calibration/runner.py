@@ -2,7 +2,7 @@
 Calibration runner functions for DSA-110.
 
 This module provides the core calibration functions used by the CLI
-(dsa110_contimg.core.calibration.cli) and other modules.
+(dsa110_continuum.calibration.cli) and other modules.
 
 Notes
 -----

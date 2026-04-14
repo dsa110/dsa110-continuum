@@ -9,7 +9,7 @@
 
     Example
 -------
-    >>> from dsa110_contimg.core.simulation.metrics import (
+    >>> from dsa110_continuum.simulation.metrics import (
     ...     flux_recovery_error,
     ...     astrometric_offset,
     ...     detection_completeness,
@@ -44,8 +44,11 @@ import numpy as np
 from astropy.coordinates import SkyCoord
 import astropy.units as u
 
-from dsa110_contimg.common.unified_config import settings
-from dsa110_contimg.common.utils.gpu_utils import get_array_module
+try:
+    from dsa110_contimg.common.unified_config import settings
+    from dsa110_contimg.common.utils.gpu_utils import get_array_module
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

@@ -800,7 +800,7 @@ class Source:
         """Cross-match this source with external catalogs.
 
             Queries external astronomical catalogs to identify the source and retrieve
-            additional information. Uses the dsa110_contimg.core.catalog.multiwavelength module
+            additional information. Uses the dsa110_continuum.catalog.multiwavelength module
             (ported from vast-mw).
 
         Parameters

@@ -52,5 +52,5 @@ if __name__ == "__main__":
         inspect_flags(sys.argv[1])
     else:
         # Default to the path from the user's logs
-        ms_path = "/data/jfaber/stage/dsa110-contimg/test_run_verify_transit/science/2026-01-22/2026-01-22T01:25:35_phaseshift_0137+331.ms"
+        ms_path = os.environ.get("DSA110_DEBUG_MS", "")
         inspect_flags(ms_path)

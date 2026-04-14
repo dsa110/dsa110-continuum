@@ -8,13 +8,13 @@ code should import parameters from this module rather than hardcoding values.
 
 Examples
 --------
->>> from dsa110_contimg.core.simulation.simulation_config import get_config
+>>> from dsa110_continuum.simulation.simulation_config import get_config
 >>> config = get_config()
 >>> print(f"Integration time: {config.integration_time_sec} s")
 >>> print(f"Number of antennas: {config.num_antennas}")
 
 >>> # Or use individual constants
->>> from dsa110_contimg.core.simulation.simulation_config import (
+>>> from dsa110_continuum.simulation.simulation_config import (
 ...     DSA110_NUM_ANTENNAS,
 ...     DSA110_INTEGRATION_TIME_SEC,
 ...     DSA110_NUM_SUBBANDS,

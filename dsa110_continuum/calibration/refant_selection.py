@@ -391,7 +391,7 @@ def recommend_outrigger_refants(
         '104,105,106,107,108,109,110,111,112,113,114,115,116,103,117'
 
         >>> # With antenna health analysis
-        >>> from dsa110_contimg.core.calibration.refant_selection import (
+        >>> from dsa110_continuum.calibration.refant_selection import (
         ...     analyze_antenna_health_from_caltable,
         ...     recommend_outrigger_refants
         ... )

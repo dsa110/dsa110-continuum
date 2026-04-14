@@ -3,7 +3,7 @@
 Compatibility wrapper for NVSS strip catalog build.
 
 Use the unified entry point instead:
-  python -m dsa110_contimg.core.catalog.build_strip_cli nvss ...
+  python -m dsa110_continuum.catalog.build_strip_cli nvss ...
 """
 
 from __future__ import annotations

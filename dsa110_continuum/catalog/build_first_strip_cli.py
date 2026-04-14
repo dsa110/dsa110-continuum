@@ -3,7 +3,7 @@
 Compatibility wrapper for FIRST strip catalog build.
 
 Use the unified entry point instead:
-  python -m dsa110_contimg.core.catalog.build_strip_cli first ...
+  python -m dsa110_continuum.catalog.build_strip_cli first ...
 """
 
 from dsa110_continuum.catalog.build_strip_cli import main as unified_main

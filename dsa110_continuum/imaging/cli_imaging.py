@@ -13,8 +13,8 @@ from typing import TYPE_CHECKING
 from dsa110_continuum.adapters import casa_tables as casatables  # noqa: E402
 import numpy as np  # noqa: E402
 
-# Back-compat symbol for tests that patch dsa110_contimg.core.imaging.cli_imaging.table
-table = casatables.table  # noqa: N816 (kept for test patchability)
+# Back-compat symbol for tests that patch dsa110_continuum.imaging.cli_imaging.table
+table = casatables.table if casatables is not None else None  # noqa: N816
 
 # DEFERRED IMPORTS: casatasks imports are deferred to avoid CASA log file creation
 # at module import time. CASA writes log files to CWD when casatasks is imported.
@@ -79,20 +79,32 @@ except ImportError:  # pragma: no cover - defensive import
 
 from dsa110_continuum.imaging.cli_utils import default_cell_arcsec, detect_datacolumn  # noqa: E402
 from dsa110_continuum.imaging.fov import derive_extent_deg  # noqa: E402
-from dsa110_contimg.common.unified_config import settings  # noqa: E402
-from dsa110_contimg.common.utils.error_context import format_ms_error_with_suggestions  # noqa: E402
-from dsa110_contimg.common.utils.gpu_utils import (  # noqa: E402
-    build_docker_command,
-    get_gpu_config,
-)
-from dsa110_contimg.common.utils.performance import track_performance  # noqa: E402
-from dsa110_contimg.common.utils.runtime_safeguards import require_casa6_python  # noqa: E402
-from dsa110_contimg.common.utils.validation import ValidationError, validate_ms  # noqa: E402
+try:
+    from dsa110_contimg.common.unified_config import settings  # noqa: E402
+    from dsa110_contimg.common.utils.error_context import format_ms_error_with_suggestions  # noqa: E402
+    from dsa110_contimg.common.utils.gpu_utils import (  # noqa: E402
+        build_docker_command,
+        get_gpu_config,
+    )
+    from dsa110_contimg.common.utils.performance import track_performance  # noqa: E402
+    from dsa110_contimg.common.utils.runtime_safeguards import require_casa6_python  # noqa: E402
+    from dsa110_contimg.common.utils.validation import ValidationError, validate_ms  # noqa: E402
+except ImportError:
+    from dsa110_continuum._compat import (  # fallback stubs
+        track_performance,
+        get_gpu_config,
+        ValidationError,
+        validate_ms,
+        require_casa6_python,
+    )
+    settings = None  # type: ignore[assignment]
+    format_ms_error_with_suggestions = None  # type: ignore[assignment]
+    build_docker_command = None  # type: ignore[assignment]
 
 LOG = logging.getLogger(__name__)
 
 # Fixed image extent: defaults to 3.5° x 3.5° unless config opts into derivation
-FIXED_IMAGE_EXTENT_DEG = settings.imaging.fixed_extent_deg
+FIXED_IMAGE_EXTENT_DEG = getattr(getattr(settings, 'imaging', None), 'fixed_extent_deg', 3.5) if 'settings' in dir() else 3.5
 
 
 def _write_imaging_provenance(
@@ -470,15 +482,20 @@ def run_wsclean(
 
     # Execute with configurable timeout
     # Set WSCLEAN_DOCKER_TIMEOUT env var to override default (in seconds)
-    from dsa110_contimg.common.utils import get_env_int
+    try:
+        from dsa110_contimg.common.utils import get_env_int as _get_env_int
+        wsclean_timeout = _get_env_int("WSCLEAN_DOCKER_TIMEOUT", default=1800)
+    except ImportError:
+        wsclean_timeout = int(os.environ.get("WSCLEAN_DOCKER_TIMEOUT", "1800"))
 
-    wsclean_timeout = get_env_int("WSCLEAN_DOCKER_TIMEOUT", default=1800)
     use_docker = len(wsclean_cmd) > 1 and wsclean_cmd[0] == "docker"
     env = None
     if not use_docker:
-        from dsa110_contimg.common.utils.wsclean_utils import build_wsclean_native_env
-
-        env = build_wsclean_native_env()
+        try:
+            from dsa110_contimg.common.utils.wsclean_utils import build_wsclean_native_env as _bwne
+            env = _bwne()
+        except ImportError:
+            env = None  # Use inherited environment
 
     # Get MS info for progress estimation
     try:
@@ -489,21 +506,23 @@ def run_wsclean(
     except Exception:
         n_rows = 1_000_000
 
-    # Use progress monitoring
-    from dsa110_contimg.common.utils.progress import StageProgressMonitor, estimate_imaging_time
-
-    estimated_seconds = estimate_imaging_time(n_rows, imsize, niter)
-
     # WSClean output naming: "-MFS-" suffix only when -channels-out is used (nterms > 1)
     wsclean_suffix = "-MFS-" if nterms > 1 else "-"
 
-    monitor = StageProgressMonitor(
-        "WSClean imaging",
-        output_path=f"{imagename}{wsclean_suffix}image.fits",  # Primary output file
-        poll_interval=10.0,  # Imaging is slow, use longer interval
-        estimated_seconds=estimated_seconds,
-    )
-    monitor.set_context(rows=n_rows, imsize=imsize, niter=niter)
+    # Use progress monitoring if available
+    try:
+        from dsa110_contimg.common.utils.progress import StageProgressMonitor, estimate_imaging_time as _eit
+        estimated_seconds = _eit(n_rows, imsize, niter)
+        monitor: Any = StageProgressMonitor(
+            "WSClean imaging",
+            output_path=f"{imagename}{wsclean_suffix}image.fits",
+            poll_interval=10.0,
+            estimated_seconds=estimated_seconds,
+        )
+        monitor.set_context(rows=n_rows, imsize=imsize, niter=niter)
+    except ImportError:
+        from contextlib import nullcontext
+        monitor = nullcontext()
 
     t0 = time.perf_counter()
     try:
@@ -711,7 +730,7 @@ def image_ms(
         suggestions = [
             "Check MS path is correct and file exists",
             "Verify file permissions",
-            "Run validation: python -m dsa110_contimg.core.calibration.cli validate --ms <path>",
+            "Run validation: python -m dsa110_continuum.calibration.cli validate --ms <path>",
             "Check MS structure and integrity",
         ]
         error_msg = format_ms_error_with_suggestions(e, ms_path, "MS validation", suggestions)

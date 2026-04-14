@@ -6,7 +6,7 @@ diagnostic overlay images from any supported survey catalog.
 
 Examples
 --------
->>> from dsa110_contimg.core.imaging.catalog_tools import create_catalog_mask
+>>> from dsa110_continuum.imaging.catalog_tools import create_catalog_mask
 >>> # Create mask from unified catalog (default)
 >>> mask_path = create_catalog_mask(
 ...     image_path="image.fits",

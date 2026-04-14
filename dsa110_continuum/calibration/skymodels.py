@@ -655,7 +655,7 @@ def predict_from_skymodel_wsclean(
     Examples
     --------
     >>> from pyradiosky import SkyModel
-    >>> from dsa110_contimg.core.calibration.skymodels import predict_from_skymodel_wsclean, make_unified_skymodel
+    >>> from dsa110_continuum.calibration.skymodels import predict_from_skymodel_wsclean, make_unified_skymodel
     >>> sky = make_unified_skymodel(ra_deg, dec_deg, radius_deg=1.0)
     >>> predict_from_skymodel_wsclean("obs.ms", sky, field="0~23")
     """

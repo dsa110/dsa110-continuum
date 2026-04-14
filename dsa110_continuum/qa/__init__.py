@@ -20,47 +20,50 @@ query_calibration_trending: Query calibration trending data
     >>> print(f"Flux scale error: {result.flux_scale_error * 100:.1f}%")
 """
 
-from dsa110_contimg.core.qa.calibration_stability_tracker import (
-    AntennaGainSnapshot,
-    AntennaTrendAnalysis,
-    CalibrationStabilityReport,
-    CalibrationStabilityTracker,
-    get_global_tracker,
-    reset_global_tracker,
-)
-from dsa110_contimg.core.qa.catalog_validation import (
-    AstrometryResult,
-    FluxScaleResult,
-    SourceCountsResult,
-    extract_sources_from_image,
-    run_full_validation,
-    validate_flux_scale,
-)
-from dsa110_contimg.core.qa.delay_validation import (
-    DelayValidationResult,
-    check_delay_solutions,
-    compute_geometric_delay_limits,
-    validate_delay_solutions,
-)
-from dsa110_contimg.core.qa.pipeline_hooks import (
-    CalibrationMetricsRecord,
-    extract_calibration_metrics,
-    hook_calibration_complete,
-    ingest_calibration_metrics,
-    query_calibration_trending,
-    update_calibration_trending,
-)
-from dsa110_contimg.core.qa.pipeline_quality import (
-    check_calibration_quality,
-    check_image_quality,
-    check_ms_after_conversion,
-)
-from dsa110_contimg.core.qa.uvw_validation import (
-    UVWValidationResult,
-    check_uvw_after_phaseshift,
-    compare_uvw_before_after,
-    validate_uvw_geometry,
-)
+try:
+    from dsa110_contimg.core.qa.calibration_stability_tracker import (
+        AntennaGainSnapshot,
+        AntennaTrendAnalysis,
+        CalibrationStabilityReport,
+        CalibrationStabilityTracker,
+        get_global_tracker,
+        reset_global_tracker,
+    )
+    from dsa110_contimg.core.qa.catalog_validation import (
+        AstrometryResult,
+        FluxScaleResult,
+        SourceCountsResult,
+        extract_sources_from_image,
+        run_full_validation,
+        validate_flux_scale,
+    )
+    from dsa110_contimg.core.qa.delay_validation import (
+        DelayValidationResult,
+        check_delay_solutions,
+        compute_geometric_delay_limits,
+        validate_delay_solutions,
+    )
+    from dsa110_contimg.core.qa.pipeline_hooks import (
+        CalibrationMetricsRecord,
+        extract_calibration_metrics,
+        hook_calibration_complete,
+        ingest_calibration_metrics,
+        query_calibration_trending,
+        update_calibration_trending,
+    )
+    from dsa110_contimg.core.qa.pipeline_quality import (
+        check_calibration_quality,
+        check_image_quality,
+        check_ms_after_conversion,
+    )
+    from dsa110_contimg.core.qa.uvw_validation import (
+        UVWValidationResult,
+        check_uvw_after_phaseshift,
+        compare_uvw_before_after,
+        validate_uvw_geometry,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 __all__ = [
     # Catalog validation

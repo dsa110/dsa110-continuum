@@ -14,9 +14,25 @@ import sqlite3
 import time
 from dataclasses import dataclass
 
-from dsa110_contimg.workflow.pipeline import Job, JobResult, register_job
+try:
+    from dsa110_contimg.workflow.pipeline import Job, JobResult, register_job
+except ImportError:
+    # dsa110_contimg not installed (cloud/test env) — define no-op stubs
+    def register_job(cls):  # type: ignore[misc]
+        """No-op decorator when dsa110_contimg is unavailable."""
+        return cls
+
+    class JobResult:  # type: ignore[no-redef]
+        pass
+
+    class Job:  # type: ignore[no-redef]
+        pass
+
 from dsa110_continuum.mosaic.jobs import MosaicJobConfig
-from dsa110_contimg.workflow.dagster.jobs.science_mosaic import science_mosaic_workflow
+try:
+    from dsa110_contimg.workflow.dagster.jobs.science_mosaic import science_mosaic_workflow
+except ImportError:
+    science_mosaic_workflow = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 

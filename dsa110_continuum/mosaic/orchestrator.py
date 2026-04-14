@@ -20,7 +20,18 @@ from pathlib import Path
 from typing import Any
 import statistics
 
-from dsa110_contimg.common.utils.decorators import timed
+try:
+    from dsa110_contimg.common.utils.decorators import timed
+except ImportError:
+    # dsa110_contimg not installed (cloud/test env) — define no-op stub
+    import functools
+    def timed(name: str = ""):  # type: ignore[misc]
+        def _decorator(fn):
+            @functools.wraps(fn)
+            def _wrapper(*args, **kwargs):
+                return fn(*args, **kwargs)
+            return _wrapper
+        return _decorator
 
 logger = logging.getLogger(__name__)
 

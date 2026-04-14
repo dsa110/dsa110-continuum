@@ -38,9 +38,12 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-from dsa110_contimg.infrastructure.database.hdf5_index import (
-    parse_subband_filename,
-)
+try:
+    from dsa110_contimg.infrastructure.database.hdf5_index import (
+        parse_subband_filename,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

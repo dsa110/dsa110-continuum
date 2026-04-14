@@ -61,6 +61,7 @@ dependencies = [
     "apscheduler>=3.10.0",
     "pandas>=2.0.0",
     "matplotlib>=3.0.0",
+    "scienceplots>=2.0.0",  # Publication-quality plot styles (science + notebook standard)
     "casatools>=6.7.3",
     "casatasks>=6.7.3",
     "httpx>=0.27.0",  # HTTP client for Slack webhooks
@@ -143,7 +144,7 @@ dsa110-health = "dsa110_contimg.validation.package_health:main"
 dsa110-validate = "dsa110_contimg.validation.package_health:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
 
 [tool.pytest.ini_options]
 # Keep pytest tmp_path output on the /data filesystem (not /tmp which is on a

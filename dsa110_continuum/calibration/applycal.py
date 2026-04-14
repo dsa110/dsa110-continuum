@@ -25,14 +25,30 @@ from dsa110_continuum.calibration.casa_service import CASAService
 from dsa110_continuum.calibration.validate import (
     validate_caltables_for_use,
 )
-from dsa110_contimg.common.utils import timed
-from dsa110_contimg.common.utils.gpu_safety import (
-    check_gpu_memory_available,
-    gpu_safe,
-    is_gpu_available,
-    memory_safe,
-)
-from dsa110_contimg.common.utils.ms_permissions import ensure_ms_writable
+try:
+    from dsa110_contimg.common.utils import timed
+    from dsa110_contimg.common.utils.gpu_safety import (
+        check_gpu_memory_available,
+        gpu_safe,
+        is_gpu_available,
+        memory_safe,
+    )
+    from dsa110_contimg.common.utils.ms_permissions import ensure_ms_writable
+except ImportError:
+    from dsa110_continuum._compat import (
+        timed,
+        gpu_safe,
+        memory_safe,
+    )
+
+    def check_gpu_memory_available(*_a: object, **_kw: object) -> bool:
+        return False
+
+    def is_gpu_available() -> bool:
+        return False
+
+    def ensure_ms_writable(path: object) -> None:  # type: ignore[misc]
+        pass
 
 logger = logging.getLogger("applycal")
 

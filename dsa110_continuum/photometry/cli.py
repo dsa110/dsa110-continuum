@@ -13,13 +13,13 @@ CLI for forced photometry on FITS images.
 
 Examples:
   # Single coordinate
-  python -m dsa110_contimg.core.photometry.cli peak \
+  python -m dsa110_continuum.photometry.cli peak \
     --fits /path/to/image.pbcor.fits \
     --ra 128.725 --dec 55.573 \
     --box 5 --annulus 12 20
 
   # Multiple coordinates
-  python -m dsa110_contimg.core.photometry.cli peak-many \
+  python -m dsa110_continuum.photometry.cli peak-many \
     --fits /path/to/image.pbcor.fits \
     --coords "128.725,55.573; 129.002,55.610"
 """
@@ -38,10 +38,13 @@ from astropy.wcs import WCS  # type: ignore[reportMissingTypeStubs]
 from matplotlib.colors import Normalize
 
 from dsa110_continuum.catalog.query import query_sources
-from dsa110_contimg.infrastructure.database import (
-    ensure_pipeline_db,
-    photometry_insert,
-)
+try:
+    from dsa110_contimg.infrastructure.database import (
+        ensure_pipeline_db,
+        photometry_insert,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 from dsa110_continuum.photometry.ese_detection import detect_ese_candidates
 
 from .adaptive_binning import AdaptiveBinningConfig

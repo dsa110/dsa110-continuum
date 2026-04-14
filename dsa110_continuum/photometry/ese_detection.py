@@ -22,7 +22,10 @@ from dsa110_continuum.photometry.scoring import (
     get_confidence_level,
 )
 from datetime import timezone
-from dsa110_contimg.common.utils.decorators import timed
+try:
+    from dsa110_contimg.common.utils.decorators import timed
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

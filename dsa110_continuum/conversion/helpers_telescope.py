@@ -7,7 +7,13 @@ import astropy.units as u
 import numpy as np
 from astropy.coordinates import EarthLocation
 
-from dsa110_contimg.common.utils.runtime_safeguards import require_casa6_python
+try:
+    from dsa110_contimg.common.utils.runtime_safeguards import require_casa6_python
+except ImportError:
+    # dsa110_contimg not installed — provide a no-op decorator stub
+    def require_casa6_python(fn):  # type: ignore[misc]
+        """No-op stub: CASA 6 runtime guard not available in cloud/test env."""
+        return fn
 
 logger = logging.getLogger("dsa110_contimg.conversion.helpers")
 

@@ -27,25 +27,34 @@ from pathlib import Path
 
 import numpy as np
 
-from dsa110_contimg.infrastructure.database import (
-    ensure_pipeline_db,
-    get_active_applylist,
-    images_insert,
-    ms_index_upsert,
-)
+try:
+    from dsa110_contimg.infrastructure.database import (
+        ensure_pipeline_db,
+        get_active_applylist,
+        images_insert,
+        ms_index_upsert,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 from dsa110_continuum._lazy_init import require_gpu_safety
-from dsa110_contimg.common.utils.gpu_safety import (
-    check_gpu_memory_available,
-    gpu_safe,
-    is_gpu_available,
-    memory_safe,
-)
+try:
+    from dsa110_contimg.common.utils.gpu_safety import (
+        check_gpu_memory_available,
+        gpu_safe,
+        is_gpu_available,
+        memory_safe,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 from dsa110_continuum.conversion.ms_utils import (
     inject_provenance_metadata,
 )
-from dsa110_contimg.infrastructure.tracking.provenance import (
-    ProvenanceTracker,
-)
+try:
+    from dsa110_contimg.infrastructure.tracking.provenance import (
+        ProvenanceTracker,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger("imaging_worker")
 

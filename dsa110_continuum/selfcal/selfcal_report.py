@@ -12,9 +12,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from dsa110_contimg.infrastructure.database.models import ImageComparison, QAPlot, SelfCalIteration
-from dsa110_contimg.infrastructure.database.session import get_session
-from dsa110_contimg.common.utils.template_styles import get_shared_css
+try:
+    from dsa110_contimg.infrastructure.database.models import ImageComparison, QAPlot, SelfCalIteration
+    from dsa110_contimg.infrastructure.database.session import get_session
+    from dsa110_contimg.common.utils.template_styles import get_shared_css
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

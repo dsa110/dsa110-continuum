@@ -13,7 +13,7 @@
 
 Examples
 --------
-    >>> from dsa110_contimg.core.catalog.external import simbad_search, ned_search, gaia_search
+    >>> from dsa110_continuum.catalog.external import simbad_search, ned_search, gaia_search
     >>> from astropy.coordinates import SkyCoord
     >>> import astropy.units as u
     >>>

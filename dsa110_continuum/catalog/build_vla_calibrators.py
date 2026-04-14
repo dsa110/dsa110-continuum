@@ -18,12 +18,12 @@ Views:
   - vla_20cm: calibrators with 20cm flux measurements
 
 Usage:
-  python -m dsa110_contimg.core.catalog.build_vla_calibrators \\
+  python -m dsa110_continuum.catalog.build_vla_calibrators \\
     --source /path/to/vlacalibrators.txt \\
     --out /data/dsa110-contimg/state/catalogs/vla_calibrators.sqlite3
 
   # Or to download from NRAO and build:
-  python -m dsa110_contimg.core.catalog.build_vla_calibrators --download
+  python -m dsa110_continuum.catalog.build_vla_calibrators --download
 """
 
 from __future__ import annotations
@@ -626,7 +626,7 @@ def query_calibrators_by_dec(
     if not db_path.exists():
         raise FileNotFoundError(
             f"VLA calibrator database not found: {db_path}. "
-            f"Run: python -m dsa110_contimg.core.catalog.build_vla_calibrators --download"
+            f"Run: python -m dsa110_continuum.catalog.build_vla_calibrators --download"
         )
 
     dec_min = dec_deg - max_separation

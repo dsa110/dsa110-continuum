@@ -28,10 +28,13 @@ from typing import Any
 
 import numpy as np
 
-from dsa110_contimg.common.utils.casa_init import (
-    casa_log_environment,
-    get_casa_task,
-)
+try:
+    from dsa110_contimg.common.utils.casa_init import (
+        casa_log_environment,
+        get_casa_task,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 
 logger = logging.getLogger(__name__)

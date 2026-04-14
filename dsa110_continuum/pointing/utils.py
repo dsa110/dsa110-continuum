@@ -15,7 +15,7 @@ from astropy.time import Time
 
 from dsa110_continuum.adapters import casa_tables as casatables  # noqa: E402
 
-table = casatables.table  # noqa: N816
+table = casatables.table if casatables is not None else None  # noqa: N816
 
 from dsa110_continuum.calibration.schedule import DSA110_LOCATION  # noqa: E402
 

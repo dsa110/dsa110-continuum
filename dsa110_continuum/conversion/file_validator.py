@@ -20,7 +20,7 @@ For 60k files with 16 subbands each (~3750 groups):
 
 Examples
 --------
->>> from dsa110_contimg.core.conversion.file_validator import RollingFileValidator
+>>> from dsa110_continuum.conversion.file_validator import RollingFileValidator
 >>>
 >>> validator = RollingFileValidator(window_size=100, max_workers=16)
 >>>
@@ -43,10 +43,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from dsa110_contimg.common.utils.exceptions import (
-    ConversionError,
-    ErrorCode,
-)
+try:
+    from dsa110_contimg.common.utils.exceptions import (
+        ConversionError,
+        ErrorCode,
+    )
+except ImportError:
+    # dsa110_contimg not installed (cloud/test env) — provide minimal stubs
+    class ConversionError(Exception):  # type: ignore[no-redef]
+        """Fallback conversion error for cloud/test environments."""
+
+    class ErrorCode:  # type: ignore[no-redef]
+        """Fallback error-code stub."""
+        UNKNOWN = "UNKNOWN"
 
 logger = logging.getLogger(__name__)
 

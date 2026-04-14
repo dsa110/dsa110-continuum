@@ -23,7 +23,10 @@ from typing import Any
 import yaml
 
 from .config_loader import load_thresholds_config
-from dsa110_contimg.common.utils import get_env_path
+try:
+    from dsa110_contimg.common.utils import get_env_path
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

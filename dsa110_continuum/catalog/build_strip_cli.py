@@ -103,9 +103,9 @@ def main(argv: list[str] | None = None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python -m dsa110_contimg.core.catalog.build_strip_cli nvss --hdf5 /path/file.hdf5
-  python -m dsa110_contimg.core.catalog.build_strip_cli first --hdf5 /path/file.hdf5 --dec-range 4.0
-  python -m dsa110_contimg.core.catalog.build_strip_cli atnf --hdf5 /path/file.hdf5 --min-flux-mjy 10
+  python -m dsa110_continuum.catalog.build_strip_cli nvss --hdf5 /path/file.hdf5
+  python -m dsa110_continuum.catalog.build_strip_cli first --hdf5 /path/file.hdf5 --dec-range 4.0
+  python -m dsa110_continuum.catalog.build_strip_cli atnf --hdf5 /path/file.hdf5 --min-flux-mjy 10
 """,
     )
 

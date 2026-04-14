@@ -16,13 +16,31 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from dsa110_contimg.workflow.pipeline import (
-    NotificationConfig,
-    Pipeline,
-    RetryBackoff,
-    RetryPolicy,
-    register_pipeline,
-)
+try:
+    from dsa110_contimg.workflow.pipeline import (
+        NotificationConfig,
+        Pipeline,
+        RetryBackoff,
+        RetryPolicy,
+        register_pipeline,
+    )
+except ImportError:
+    # dsa110_contimg not installed (cloud/test env) — define no-op stubs
+    def register_pipeline(cls):  # type: ignore[misc]
+        """No-op decorator when dsa110_contimg is unavailable."""
+        return cls
+
+    class Pipeline:  # type: ignore[no-redef]
+        pass
+
+    class RetryPolicy:  # type: ignore[no-redef]
+        pass
+
+    class RetryBackoff:  # type: ignore[no-redef]
+        pass
+
+    class NotificationConfig:  # type: ignore[no-redef]
+        pass
 
 from .jobs import (
     MosaicBuildJob,

@@ -3,7 +3,7 @@
 Compatibility wrapper for RAX strip catalog build.
 
 Use the unified entry point instead:
-  python -m dsa110_contimg.core.catalog.build_strip_cli rax ...
+  python -m dsa110_continuum.catalog.build_strip_cli rax ...
 """
 
 from dsa110_continuum.catalog.build_strip_cli import main as unified_main

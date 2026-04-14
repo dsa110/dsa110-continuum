@@ -14,7 +14,10 @@ import time
 
 import numpy as np
 
-from dsa110_contimg.common.unified_config import settings
+try:
+    from dsa110_contimg.common.unified_config import settings
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

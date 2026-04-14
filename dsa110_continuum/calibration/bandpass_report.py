@@ -16,7 +16,10 @@ from pathlib import Path
 
 import numpy as np
 
-from dsa110_contimg.common.utils.templates import render_template
+try:
+    from dsa110_contimg.common.utils.templates import render_template
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

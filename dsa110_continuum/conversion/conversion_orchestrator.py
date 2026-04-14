@@ -20,31 +20,88 @@ from pathlib import Path
 import numpy as np
 import pyuvdata
 
-from dsa110_contimg.common.unified_config import settings
-from dsa110_contimg.common.utils import FastMeta, timed, timed_debug
-from dsa110_contimg.common.utils.antpos_local import get_itrf
-from dsa110_contimg.common.utils.exceptions import (
-    ConversionError,
-    IncompleteSubbandGroupError,
-    MSWriteError,
-    UVH5ReadError,
-    is_recoverable,
-    wrap_exception,
-)
-from dsa110_contimg.common.utils.logging import log_context, log_exception
+try:
+    from dsa110_contimg.common.unified_config import settings
+    from dsa110_contimg.common.utils import FastMeta, timed, timed_debug
+    from dsa110_contimg.common.utils.antpos_local import get_itrf
+    from dsa110_contimg.common.utils.exceptions import (
+        ConversionError,
+        IncompleteSubbandGroupError,
+        MSWriteError,
+        UVH5ReadError,
+        is_recoverable,
+        wrap_exception,
+    )
+    from dsa110_contimg.common.utils.logging import log_context, log_exception
+except ImportError:
+    # dsa110_contimg not installed (cloud/test env) — minimal stubs so module loads
+    def timed(name):  # type: ignore[misc]
+        def decorator(fn): return fn
+        return decorator
+
+    def timed_debug(name):  # type: ignore[misc]
+        def decorator(fn): return fn
+        return decorator
+
+    class FastMeta(type): pass  # type: ignore[no-redef]
+
+    class ConversionError(Exception): pass  # type: ignore[no-redef]
+    class IncompleteSubbandGroupError(ConversionError): pass  # type: ignore[no-redef]
+    class MSWriteError(ConversionError): pass  # type: ignore[no-redef]
+    class UVH5ReadError(ConversionError): pass  # type: ignore[no-redef]
+    def is_recoverable(e): return False  # type: ignore[misc]
+    def wrap_exception(e, cls, **kw): return e  # type: ignore[misc]
+    def log_context(**kw):  # type: ignore[misc]
+        from contextlib import nullcontext; return nullcontext()
+    def log_exception(logger, e, **kw): logger.exception(str(e))  # type: ignore[misc]
+
+    class _Settings:  # type: ignore[misc]
+        class conversion:
+            cluster_tolerance_s = 120.0
+            skip_incomplete = True
+            skip_existing = True
+            stage_to_tmpfs = False
+            expected_subbands = 16
+            writer = "direct-subband"
+            parallel_loading = False
+            io_max_workers = 4
+    settings = _Settings()  # type: ignore[assignment]
+    get_itrf = None  # type: ignore[assignment]
 from dsa110_continuum.conversion.file_validator import (
     MissingInputFilesError,
     RollingFileValidator,
 )
 from dsa110_continuum.conversion.writers import get_writer
-from dsa110_contimg.infrastructure.database.hdf5_index import (
-    parse_subband_filename,
-    query_subband_groups,
-)
-from dsa110_contimg.infrastructure.monitoring.pipeline_metrics import (
-    PipelineStage,
-    record_stage_timing,
-)
+try:
+    from dsa110_contimg.infrastructure.database.hdf5_index import (
+        parse_subband_filename,
+        query_subband_groups,
+    )
+    from dsa110_contimg.infrastructure.monitoring.pipeline_metrics import (
+        PipelineStage,
+        record_stage_timing,
+    )
+except ImportError:
+    # Minimal stubs for cloud/test environment
+    def parse_subband_filename(filename):  # type: ignore[misc]
+        """Stub: parse subband filename without dsa110_contimg."""
+        import re as _re
+        m = _re.search(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})', str(filename))
+        sb = _re.search(r'_sb(\d{2})', str(filename))
+        return type('ParsedSubband', (), {
+            'group_id': m.group(1) if m else 'unknown',
+            'subband_code': f'sb{sb.group(1)}' if sb else 'sb00',
+            'subband_num': int(sb.group(1)) if sb else 0,
+        })()
+
+    def query_subband_groups(*a, **kw):  # type: ignore[misc]
+        raise NotImplementedError("query_subband_groups requires dsa110_contimg")
+
+    class PipelineStage:  # type: ignore[no-redef]
+        CONVERSION = "conversion"
+
+    def record_stage_timing(*a, **kw):  # type: ignore[misc]
+        pass
 
 logger = logging.getLogger(__name__)
 

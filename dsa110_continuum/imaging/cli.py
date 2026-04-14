@@ -8,11 +8,14 @@ Performs primary-beam correction and exports FITS products.
 Supports hybrid workflow: CASA ft() for model seeding + WSClean for fast imaging.
 """
 
-from dsa110_contimg.common.utils.cli_helpers import (
-    configure_logging_from_args,
-    ensure_scratch_dirs,
-    setup_casa_environment,
-)
+try:
+    from dsa110_contimg.common.utils.cli_helpers import (
+        configure_logging_from_args,
+        ensure_scratch_dirs,
+        setup_casa_environment,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 from .cli_imaging import image_ms
 
@@ -73,7 +76,7 @@ def main(argv: list | None = None) -> None:
             "WSClean is the default backend for faster imaging. "
             "Automatically selects CORRECTED_DATA when present, otherwise uses DATA.\n\n"
             "Example:\n"
-            "  python -m dsa110_contimg.core.imaging.cli image \\\n"
+            "  python -m dsa110_continuum.imaging.cli image \\\n"
             "    --ms /data/ms/target.ms --imagename /data/images/target \\\n"
             "    --imsize 2048 --cell-arcsec 1.0 --quality-tier standard"
         ),
@@ -244,7 +247,7 @@ def main(argv: list | None = None) -> None:
             "Create a mask for CLEAN imaging from any supported catalog.\n"
             "Supports: nvss, first, vlass, unicat (default), atnf, rax\n\n"
             "Example:\n"
-            "  python -m dsa110_contimg.core.imaging.cli create-mask \\\n"
+            "  python -m dsa110_continuum.imaging.cli create-mask \\\n"
             "    --image observation.fits --catalog unicat --min-mjy 5.0"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -276,7 +279,7 @@ def main(argv: list | None = None) -> None:
             "Overlay catalog sources on a FITS image for visual inspection.\n"
             "Supports: nvss, first, vlass, unicat (default), atnf, rax\n\n"
             "Example:\n"
-            "  python -m dsa110_contimg.core.imaging.cli create-overlay \\\n"
+            "  python -m dsa110_continuum.imaging.cli create-overlay \\\n"
             "    --image observation.fits --out overlay.png --catalog nvss"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,

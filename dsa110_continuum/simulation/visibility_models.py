@@ -15,8 +15,11 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from dsa110_contimg.common.utils.paths import get_repo_root
-from dsa110_contimg.common.utils.stability import Stability, stability
+try:
+    from dsa110_contimg.common.utils.paths import get_repo_root
+    from dsa110_contimg.common.utils.stability import Stability, stability
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

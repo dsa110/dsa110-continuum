@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from dsa110_continuum.adapters import casa_tables as casatables
 import numpy as np
 
-table = casatables.table  # noqa: N816
+table = casatables.table if casatables is not None else None  # noqa: N816
 
 from dsa110_continuum.qa.calibration_quality import (
     CalibrationQualityMetrics,

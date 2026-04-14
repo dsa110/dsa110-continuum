@@ -12,7 +12,7 @@
 
     Example
 -------
-    >>> from dsa110_contimg.core.simulation.variability_models import FlareModel
+    >>> from dsa110_continuum.simulation.variability_models import FlareModel
     >>> flare = FlareModel(
     ...     peak_time_mjd=60000.5,
     ...     rise_time_hours=0.5,

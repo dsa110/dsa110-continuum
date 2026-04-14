@@ -17,35 +17,38 @@ GPU-accelerated visibility prediction (degridding) is available for
 multi-source sky model calibration.
 """
 
-from dsa110_contimg.core.imaging.catalog_tools import (
-    create_catalog_fits_mask,
-    create_catalog_mask,
-    create_catalog_overlay,
-)
-from dsa110_contimg.core.imaging.gpu_gridding import (
-    DegridConfig,
-    DegridResult,
-    GriddingConfig,
-    GriddingResult,
-    clear_w_kernel_cache,
-    cpu_grid_visibilities,
-    gpu_degrid_visibilities,
-    gpu_grid_visibilities,
-)
-from dsa110_contimg.core.imaging.gpu_predict import (
-    CatalogSourceAdapter,
-    PredictConfig,
-    PredictResult,
-    SourceModel,
-    predict_model_for_ms,
-    predict_model_from_catalog,
-    predict_visibilities_gpu,
-    render_sources_to_image,
-)
-from dsa110_contimg.core.imaging.params import (
-    ImagingParams,
-    image_ms_with_params,
-)
+try:
+    from dsa110_contimg.core.imaging.catalog_tools import (
+        create_catalog_fits_mask,
+        create_catalog_mask,
+        create_catalog_overlay,
+    )
+    from dsa110_contimg.core.imaging.gpu_gridding import (
+        DegridConfig,
+        DegridResult,
+        GriddingConfig,
+        GriddingResult,
+        clear_w_kernel_cache,
+        cpu_grid_visibilities,
+        gpu_degrid_visibilities,
+        gpu_grid_visibilities,
+    )
+    from dsa110_contimg.core.imaging.gpu_predict import (
+        CatalogSourceAdapter,
+        PredictConfig,
+        PredictResult,
+        SourceModel,
+        predict_model_for_ms,
+        predict_model_from_catalog,
+        predict_visibilities_gpu,
+        render_sources_to_image,
+    )
+    from dsa110_contimg.core.imaging.params import (
+        ImagingParams,
+        image_ms_with_params,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 __all__ = [
     # Catalog tools

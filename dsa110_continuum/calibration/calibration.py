@@ -10,7 +10,10 @@ import logging
 import os
 from typing import Any
 
-from dsa110_contimg.common.utils import timed
+try:
+    from dsa110_contimg.common.utils import timed
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 from dsa110_continuum.calibration.casa_service import CASAService
 from dsa110_continuum.calibration.validate import (
     validate_caltables_for_use,
@@ -1652,7 +1655,7 @@ def _check_coherent_phasing(
             f"  RA scatter: {ra_scatter_arcsec:.1f} arcsec > {max_ra_scatter_arcsec:.1f} threshold\n"
             f"  RA span: {ra_span_arcsec:.1f} arcsec (~{est_duration_min:.1f} min LST drift)\n\n"
             f"Data is still MERIDIAN-phased (RA=LST). Use phaseshift_ms() to rephase:\n"
-            f"  from dsa110_contimg.core.calibration.runner import phaseshift_ms\n"
+            f"  from dsa110_continuum.calibration.runner import phaseshift_ms\n"
             f"  phaseshift_ms('{ms}', mode='calibrator', calibrator_name='<CAL>')\n\n"
             f"This handles both phaseshift and REFERENCE_DIR sync for ft().\n"
             f"Then recalculate MODEL_DATA to match the new phase center."

@@ -45,235 +45,241 @@ Usage:
     generate_structure_diagram("/path/to/source", "output_diagram.svg")
 """
 
-from dsa110_contimg.core.visualization.antenna_correlation import (
-    AntennaGainData,
-    CorrelationStatistics,
-    compute_gain_correlation_matrix,
-    extract_gains_from_caltable,
-    generate_correlation_diagnostic_report,
-    identify_correlated_groups,
-    plot_correlation_network,
-    plot_correlation_summary,
-    plot_gain_correlation_matrix,
-    plot_temporal_correlation_evolution,
-)
-from dsa110_contimg.core.visualization.antenna_plots import (
-    compute_antenna_statistics_from_ms,
-    plot_antenna_flagging_summary,
-    plot_antenna_gain_spectrum,
-    plot_antenna_gain_time_series,
-    plot_antenna_statistics_grid,
-)
-from dsa110_contimg.core.visualization.beam_plots import (
-    fit_2d_gaussian,
-    plot_beam_comparison,
-    plot_primary_beam_pattern,
-    plot_psf_2d,
-    plot_psf_radial_profile,
-    plot_sidelobe_analysis,
-)
-from dsa110_contimg.core.visualization.calibration_plots import (
-    plot_bandpass,
-    plot_delays,
-    plot_dterm_scatter,
-    plot_dynamic_spectrum,
-    plot_flagging_diagnostics,
-    plot_gain_comparison,
-    plot_gain_snr,
-    plot_gains,
-)
-from dsa110_contimg.core.visualization.calibration_stability_plots import (
-    plot_calibration_stability,
-)
+try:
+    from dsa110_contimg.core.visualization.antenna_correlation import (
+        AntennaGainData,
+        CorrelationStatistics,
+        compute_gain_correlation_matrix,
+        extract_gains_from_caltable,
+        generate_correlation_diagnostic_report,
+        identify_correlated_groups,
+        plot_correlation_network,
+        plot_correlation_summary,
+        plot_gain_correlation_matrix,
+        plot_temporal_correlation_evolution,
+    )
+    from dsa110_contimg.core.visualization.antenna_plots import (
+        compute_antenna_statistics_from_ms,
+        plot_antenna_flagging_summary,
+        plot_antenna_gain_spectrum,
+        plot_antenna_gain_time_series,
+        plot_antenna_statistics_grid,
+    )
+    from dsa110_contimg.core.visualization.beam_plots import (
+        fit_2d_gaussian,
+        plot_beam_comparison,
+        plot_primary_beam_pattern,
+        plot_psf_2d,
+        plot_psf_radial_profile,
+        plot_sidelobe_analysis,
+    )
+    from dsa110_contimg.core.visualization.calibration_plots import (
+        plot_bandpass,
+        plot_delays,
+        plot_dterm_scatter,
+        plot_dynamic_spectrum,
+        plot_flagging_diagnostics,
+        plot_gain_comparison,
+        plot_gain_snr,
+        plot_gains,
+    )
+    from dsa110_contimg.core.visualization.calibration_stability_plots import (
+        plot_calibration_stability,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 # CARTA integration and HDF5 IDIA conversion
-from dsa110_contimg.core.visualization.carta_scripting import (
-    CARTARegion,
-    CARTAScriptingClient,
-    CARTASessionState,
-    MomentMapResult,
-    MomentType,
-    RegionStatistics,
-)
-from dsa110_contimg.core.visualization.closure_phase_plots import (
-    compute_closure_phases,
-    extract_closure_phases_from_ms,
-    plot_closure_phase_antenna_contribution,
-    plot_closure_phase_histogram,
-    plot_closure_phase_per_triangle,
-    plot_closure_phase_vs_time,
-)
-from dsa110_contimg.core.visualization.config import FigureConfig, PlotStyle
-from dsa110_contimg.core.visualization.convergence_plots import (
-    ConvergenceData,
-    TimeFreqConvergenceData,
-    compute_convergence_quality_score,
-    compute_time_freq_convergence,
-    extract_convergence_from_selfcal_result,
-    plot_antenna_solution_quality,
-    plot_chi_squared_improvement,
-    plot_clean_convergence,
-    plot_convergence_comparison,
-    plot_per_antenna_convergence_heatmap,
-    plot_selfcal_convergence,
-    plot_time_freq_convergence_animation,
-    plot_time_freq_convergence_heatmap,
-    plot_time_freq_difference_heatmap,
-)
-from dsa110_contimg.core.visualization.elevation_plots import (
-    compute_azimuth,
-    compute_elevation,
-    compute_parallactic_angle,
-    extract_geometry_from_hdf5,
-    extract_geometry_from_ms,
-    plot_azel_track,
-    plot_elevation_histogram,
-    plot_elevation_vs_time,
-    plot_hour_angle_coverage,
-    plot_observation_summary,
-    plot_parallactic_angle_vs_time,
-)
-from dsa110_contimg.core.visualization.fits_plots import (
-    plot_cutout,
-    plot_fits_image,
-    plot_mosaic_overview,
-    save_quicklook_png,
-)
-from dsa110_contimg.core.visualization.fits_viewer import (
-    AVAILABLE_COLORMAPS,
-    DEFAULT_COLORMAP,
-    VIEWER_ALADIN,
-    VIEWER_CARTA,
-    VIEWER_JS9,
-    FITSFileError,
-    FITSViewerMetadata,
-    FITSParsingError,
-    FITSViewerConfig,
-    FITSViewerException,
-    FITSViewerManager,
-    format_resolution_degrees,
-    get_axis_label,
-    get_file_size_mb,
-    validate_fits_file,
-)
-from dsa110_contimg.core.visualization.fits_viewer_templates import (
-    get_css_styles,
-    render_download_button,
-    render_fits_image_block,
-    render_inline_js9_viewer,
-    render_js9_script_includes,
-    render_metadata_tooltip,
-    render_viewer_button,
-    render_viewer_button_group,
-)
-from dsa110_contimg.core.visualization.hdf5_idia import (
-    ConversionResult,
-    check_idia_format,
-    convert_fits_to_idia_hdf5,
-    find_fits2idia,
-)
-from dsa110_contimg.core.visualization.hdf5_idia import (
-    batch_convert as batch_convert_to_idia,
-)
-from dsa110_contimg.core.visualization.image_comparison import (
-    compare_fits_images,
-    compute_comparison_metrics,
-    plot_image_comparison,
-    plot_pixel_scatter,
-    plot_residual_map,
-)
-from dsa110_contimg.core.visualization.mosaic_plots import (
-    plot_coverage_map,
-    plot_mosaic_footprints,
-    plot_tile_grid,
-)
-from dsa110_contimg.core.visualization.photometry_plots import (
-    plot_aperture_photometry,
-    plot_catalog_comparison,
-    plot_field_sources,
-    plot_photometry_summary,
-    plot_snr_map,
-)
-from dsa110_contimg.core.visualization.plot_context import (
-    PerformanceLogger,
-    PlotContext,
-    detect_context_from_path,
-    get_file_extension,
-    should_generate_interactive,
-)
-from dsa110_contimg.core.visualization.qa_plots import (
-    plot_dynamic_range_map,
-    plot_psf_correlation,
-    plot_residual_histogram,
-)
-from dsa110_contimg.core.visualization.report import (
-    ReportMetadata,
-    ReportSection,
-    create_diagnostic_report,
-    generate_html_report,
-    generate_pdf_report,
-)
-from dsa110_contimg.core.visualization.residual_diagnostics import (
-    ResidualData,
-    ResidualStatistics,
-    compute_residual_statistics,
-    extract_residuals_from_ms,
-    generate_residual_diagnostic_report,
-    plot_residual_amplitude_vs_baseline,
-    plot_residual_complex_scatter,
-    plot_residual_per_antenna,
-    plot_residual_phase_vs_time,
-)
-from dsa110_contimg.core.visualization.residual_diagnostics import (
-    plot_residual_histogram as plot_visibility_residual_histogram,
-)
-from dsa110_contimg.core.visualization.rfi_plots import (
-    plot_rfi_spectrum,
-    plot_rfi_waterfall,
-)
-from dsa110_contimg.core.visualization.source_plots import (
-    plot_lightcurve,
-    plot_monitoring_lightcurve,
-    plot_source_comparison,
-    plot_spectrum,
-)
-from dsa110_contimg.core.visualization.lightcurve_data import get_photometry_data
-from dsa110_contimg.core.visualization.spectral_plots import (
-    compute_spectral_index,
-    compute_spectral_index_from_fits,
-    plot_multi_frequency_mosaic,
-    plot_sed,
-    plot_spectral_index_error_map,
-    plot_spectral_index_histogram,
-    plot_spectral_index_map,
-)
-from dsa110_contimg.core.visualization.tsys_plots import (
-    detect_tsys_anomalies,
-    extract_tsys_from_ms,
-    plot_tsys_elevation,
-    plot_tsys_heatmap,
-    plot_tsys_histogram,
-    plot_tsys_summary,
-    plot_tsys_time_series,
-    plot_tsys_vs_elevation,
-)
-from dsa110_contimg.core.visualization.uv_plots import (
-    extract_uv_from_ms,
-    plot_baseline_distribution,
-    plot_uv_coverage,
-    plot_uv_density,
-    plot_visibility_amplitude_vs_time,
-    plot_visibility_amplitude_vs_uvdist,
-    plot_visibility_phase_vs_time,
-)
-from dsa110_contimg.core.visualization.vega_specs import (
-    create_residual_histogram_spec,
-    create_rfi_spectrum_spec,
-    create_rfi_waterfall_spec,
-    create_scatter_spec,
-    save_vega_spec,
-)
-from dsa110_contimg.core.visualization.structure import generate_structure_diagram
+try:
+    from dsa110_contimg.core.visualization.carta_scripting import (
+        CARTARegion,
+        CARTAScriptingClient,
+        CARTASessionState,
+        MomentMapResult,
+        MomentType,
+        RegionStatistics,
+    )
+    from dsa110_contimg.core.visualization.closure_phase_plots import (
+        compute_closure_phases,
+        extract_closure_phases_from_ms,
+        plot_closure_phase_antenna_contribution,
+        plot_closure_phase_histogram,
+        plot_closure_phase_per_triangle,
+        plot_closure_phase_vs_time,
+    )
+    from dsa110_contimg.core.visualization.config import FigureConfig, PlotStyle
+    from dsa110_contimg.core.visualization.convergence_plots import (
+        ConvergenceData,
+        TimeFreqConvergenceData,
+        compute_convergence_quality_score,
+        compute_time_freq_convergence,
+        extract_convergence_from_selfcal_result,
+        plot_antenna_solution_quality,
+        plot_chi_squared_improvement,
+        plot_clean_convergence,
+        plot_convergence_comparison,
+        plot_per_antenna_convergence_heatmap,
+        plot_selfcal_convergence,
+        plot_time_freq_convergence_animation,
+        plot_time_freq_convergence_heatmap,
+        plot_time_freq_difference_heatmap,
+    )
+    from dsa110_contimg.core.visualization.elevation_plots import (
+        compute_azimuth,
+        compute_elevation,
+        compute_parallactic_angle,
+        extract_geometry_from_hdf5,
+        extract_geometry_from_ms,
+        plot_azel_track,
+        plot_elevation_histogram,
+        plot_elevation_vs_time,
+        plot_hour_angle_coverage,
+        plot_observation_summary,
+        plot_parallactic_angle_vs_time,
+    )
+    from dsa110_contimg.core.visualization.fits_plots import (
+        plot_cutout,
+        plot_fits_image,
+        plot_mosaic_overview,
+        save_quicklook_png,
+    )
+    from dsa110_contimg.core.visualization.fits_viewer import (
+        AVAILABLE_COLORMAPS,
+        DEFAULT_COLORMAP,
+        VIEWER_ALADIN,
+        VIEWER_CARTA,
+        VIEWER_JS9,
+        FITSFileError,
+        FITSViewerMetadata,
+        FITSParsingError,
+        FITSViewerConfig,
+        FITSViewerException,
+        FITSViewerManager,
+        format_resolution_degrees,
+        get_axis_label,
+        get_file_size_mb,
+        validate_fits_file,
+    )
+    from dsa110_contimg.core.visualization.fits_viewer_templates import (
+        get_css_styles,
+        render_download_button,
+        render_fits_image_block,
+        render_inline_js9_viewer,
+        render_js9_script_includes,
+        render_metadata_tooltip,
+        render_viewer_button,
+        render_viewer_button_group,
+    )
+    from dsa110_contimg.core.visualization.hdf5_idia import (
+        ConversionResult,
+        check_idia_format,
+        convert_fits_to_idia_hdf5,
+        find_fits2idia,
+    )
+    from dsa110_contimg.core.visualization.hdf5_idia import (
+        batch_convert as batch_convert_to_idia,
+    )
+    from dsa110_contimg.core.visualization.image_comparison import (
+        compare_fits_images,
+        compute_comparison_metrics,
+        plot_image_comparison,
+        plot_pixel_scatter,
+        plot_residual_map,
+    )
+    from dsa110_contimg.core.visualization.mosaic_plots import (
+        plot_coverage_map,
+        plot_mosaic_footprints,
+        plot_tile_grid,
+    )
+    from dsa110_contimg.core.visualization.photometry_plots import (
+        plot_aperture_photometry,
+        plot_catalog_comparison,
+        plot_field_sources,
+        plot_photometry_summary,
+        plot_snr_map,
+    )
+    from dsa110_contimg.core.visualization.plot_context import (
+        PerformanceLogger,
+        PlotContext,
+        detect_context_from_path,
+        get_file_extension,
+        should_generate_interactive,
+    )
+    from dsa110_contimg.core.visualization.qa_plots import (
+        plot_dynamic_range_map,
+        plot_psf_correlation,
+        plot_residual_histogram,
+    )
+    from dsa110_contimg.core.visualization.report import (
+        ReportMetadata,
+        ReportSection,
+        create_diagnostic_report,
+        generate_html_report,
+        generate_pdf_report,
+    )
+    from dsa110_contimg.core.visualization.residual_diagnostics import (
+        ResidualData,
+        ResidualStatistics,
+        compute_residual_statistics,
+        extract_residuals_from_ms,
+        generate_residual_diagnostic_report,
+        plot_residual_amplitude_vs_baseline,
+        plot_residual_complex_scatter,
+        plot_residual_per_antenna,
+        plot_residual_phase_vs_time,
+    )
+    from dsa110_contimg.core.visualization.residual_diagnostics import (
+        plot_residual_histogram as plot_visibility_residual_histogram,
+    )
+    from dsa110_contimg.core.visualization.rfi_plots import (
+        plot_rfi_spectrum,
+        plot_rfi_waterfall,
+    )
+    from dsa110_contimg.core.visualization.source_plots import (
+        plot_lightcurve,
+        plot_monitoring_lightcurve,
+        plot_source_comparison,
+        plot_spectrum,
+    )
+    from dsa110_contimg.core.visualization.lightcurve_data import get_photometry_data
+    from dsa110_contimg.core.visualization.spectral_plots import (
+        compute_spectral_index,
+        compute_spectral_index_from_fits,
+        plot_multi_frequency_mosaic,
+        plot_sed,
+        plot_spectral_index_error_map,
+        plot_spectral_index_histogram,
+        plot_spectral_index_map,
+    )
+    from dsa110_contimg.core.visualization.tsys_plots import (
+        detect_tsys_anomalies,
+        extract_tsys_from_ms,
+        plot_tsys_elevation,
+        plot_tsys_heatmap,
+        plot_tsys_histogram,
+        plot_tsys_summary,
+        plot_tsys_time_series,
+        plot_tsys_vs_elevation,
+    )
+    from dsa110_contimg.core.visualization.uv_plots import (
+        extract_uv_from_ms,
+        plot_baseline_distribution,
+        plot_uv_coverage,
+        plot_uv_density,
+        plot_visibility_amplitude_vs_time,
+        plot_visibility_amplitude_vs_uvdist,
+        plot_visibility_phase_vs_time,
+    )
+    from dsa110_contimg.core.visualization.vega_specs import (
+        create_residual_histogram_spec,
+        create_rfi_spectrum_spec,
+        create_rfi_waterfall_spec,
+        create_scatter_spec,
+        save_vega_spec,
+    )
+    from dsa110_contimg.core.visualization.structure import generate_structure_diagram
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 __all__ = [
     # Config
