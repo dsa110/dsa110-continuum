@@ -13,7 +13,7 @@ except ImportError:
     casatables = None  # type: ignore[assignment]  # casacore not installed
 import numpy as np
 
-table = casatables.table  # noqa: N816
+table = casatables.table if casatables is not None else None  # noqa: N816
 
 from dsa110_continuum.qa.calibration_quality import (
     CalibrationQualityMetrics,
