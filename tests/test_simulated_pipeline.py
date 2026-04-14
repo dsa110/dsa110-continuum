@@ -65,3 +65,44 @@ class TestGainCorruption:
         uv3 = pyuvdata.UVData(); uv3.read(str(out3))
         assert not np.array_equal(uv1.data_array, uv3.data_array), \
             "Different seeds must produce different corruptions"
+
+
+class TestCalibratorGeneration:
+    def test_generate_calibrator_subband_creates_file(self, tmp_path):
+        from dsa110_continuum.simulation.harness import SimulationHarness
+        h = SimulationHarness(n_antennas=4, seed=0, use_real_positions=False)
+        path = h.generate_calibrator_subband(tmp_path, flux_jy=10.0)
+        assert Path(path).exists()
+        assert "_cal_" in Path(path).name
+
+    def test_calibrator_subband_has_single_source_at_phase_centre(self, tmp_path):
+        """Visibilities for a source at phase centre should be nearly real."""
+        import pyuvdata
+        from dsa110_continuum.simulation.harness import SimulationHarness
+        h = SimulationHarness(n_antennas=4, seed=0, use_real_positions=False)
+        path = h.generate_calibrator_subband(tmp_path, flux_jy=5.0)
+        uv = pyuvdata.UVData()
+        uv.read(str(path))
+        # Cross-correlations only
+        cross_mask = uv.ant_1_array != uv.ant_2_array
+        data = uv.data_array[cross_mask, :, 0]  # XX pol
+        # For a source exactly at phase centre all visibilities are real
+        # (stored as conj(V) in the harness, but conj of real = real)
+        imag_frac = np.abs(data.imag) / (np.abs(data.real) + 1e-10)
+        assert float(imag_frac.mean()) < 0.01, \
+            f"Mean imag/real fraction {imag_frac.mean():.4f} should be < 0.01"
+
+    def test_calibrator_subband_amplitude_matches_flux(self, tmp_path):
+        """Cross-correlation amplitude should equal flux_jy / 2 (XX = I/2)."""
+        import pyuvdata
+        from dsa110_continuum.simulation.harness import SimulationHarness
+        h = SimulationHarness(n_antennas=4, seed=0, use_real_positions=False)
+        flux = 8.0
+        path = h.generate_calibrator_subband(tmp_path, flux_jy=flux)
+        uv = pyuvdata.UVData()
+        uv.read(str(path))
+        cross_mask = uv.ant_1_array != uv.ant_2_array
+        cross = uv.data_array[cross_mask, :, 0]
+        mean_amp = float(np.abs(cross).mean())
+        assert mean_amp == pytest.approx(flux / 2.0, rel=0.05), \
+            f"Mean cross-corr amplitude {mean_amp:.3f} should be ≈ flux/2 = {flux/2:.3f}"

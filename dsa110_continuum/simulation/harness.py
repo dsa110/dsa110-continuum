@@ -822,6 +822,78 @@ class SimulationHarness:
             paths.append(self.generate_subband(sb, out, start_time=start_time, sky=sky))
         return paths
 
+    def generate_calibrator_subband(
+        self,
+        output_dir: "Path | str",
+        *,
+        flux_jy: float = 10.0,
+        subband_index: int = 0,
+    ) -> Path:
+        """Generate a calibrator-observation UVH5 with one bright point source at phase centre.
+
+        The calibrator sits exactly at (pointing_ra_deg, pointing_dec_deg) so
+        all baseline phases are zero and the visibility amplitude equals
+        flux_jy / 2 (XX = YY = I/2 convention).  Thermal noise is suppressed.
+        This file is used by SimulatedPipeline._calibrate() to derive per-antenna
+        gain solutions without requiring CASA.
+
+        Parameters
+        ----------
+        output_dir:
+            Directory in which to write the output file.
+        flux_jy:
+            Flux density of the calibrator source (Jy).  Default 10 Jy, typical
+            for VLA calibrators used by DSA-110 (e.g. 3C 309.1 ≈ 9 Jy at 1.4 GHz).
+        subband_index:
+            Which subband frequency to simulate (0-indexed, default 0).
+
+        Returns
+        -------
+        Path
+            Path to the written calibrator UVH5.
+        """
+        import pyradiosky
+        from astropy.coordinates import Longitude, Latitude
+        from astropy import units
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        out_path = output_dir / f"sim_cal_sb{subband_index:02d}.uvh5"
+
+        # Build a single-source SkyModel exactly at phase centre
+        freq_hz = float(self.subband_freqs(subband_index).mean())
+        stokes = np.zeros((4, 1, 1), dtype=float)
+        stokes[0, 0, 0] = flux_jy  # Stokes I only
+        sky = pyradiosky.SkyModel(
+            name=np.array(["SIM_CAL"]),
+            ra=Longitude([self.pointing_ra_deg], unit="deg"),
+            dec=Latitude([self.pointing_dec_deg], unit="deg"),
+            stokes=stokes * units.Jy,
+            spectral_type="spectral_index",
+            reference_frequency=np.array([freq_hz]) * units.Hz,
+            spectral_index=np.array([0.0]),
+            frame="icrs",
+        )
+
+        # Suppress noise and background sources for a clean calibrator observation
+        orig_noise = self.noise_jy
+        orig_n_src = self.n_sky_sources
+        self.noise_jy = 0.0
+        self.n_sky_sources = 0
+
+        try:
+            self.generate_subband(subband_index, out_path, sky=sky)
+        finally:
+            # Always restore original state even if generate_subband raises
+            self.noise_jy = orig_noise
+            self.n_sky_sources = orig_n_src
+
+        logger.info(
+            "Wrote calibrator UVH5 (%.1f Jy at phase centre, sb=%d) -> %s",
+            flux_jy, subband_index, out_path,
+        )
+        return out_path
+
     def load_subband(self, uvh5_path: Path | str) -> UVData:
         """Read a previously-written UVH5 subband file back into a UVData object."""
         uv = UVData()
