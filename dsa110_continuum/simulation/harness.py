@@ -354,10 +354,16 @@ class SimulationHarness:
                 phase = 2 * np.pi * phase_spatial[:, 0] / wave  # shape (n_blts,)
                 # Source flux at this frequency (spectral index scaling)
                 stokes_i = float(sky.stokes[0, 0, s_idx].to(u.Jy).value)
-                # Simple spectral index scaling from reference freq
-                ref_freq = float(sky.reference_frequency[s_idx].to(u.Hz).value)
-                alpha    = float(sky.spectral_index[s_idx])
-                flux_jy  = stokes_i * (freq / ref_freq) ** alpha
+                # Spectral index scaling: guard against flat-spectrum sky models
+                # where reference_frequency is None.
+                ref_freq_arr = sky.reference_frequency
+                if ref_freq_arr is not None:
+                    ref_freq = float(ref_freq_arr[s_idx].to(u.Hz).value)
+                    alpha    = float(sky.spectral_index[s_idx])
+                    flux_jy  = stokes_i * (freq / ref_freq) ** alpha
+                else:
+                    # spectral_type='flat': flux constant across frequency
+                    flux_jy = stokes_i
 
                 contrib = (flux_jy / 2.0) * np.exp(-1j * phase)  # XX = YY = I/2
                 vis[:, f_idx, 0] += contrib  # XX
@@ -467,9 +473,20 @@ class SimulationHarness:
             blts_are_rectangular=False,
         )
 
-        # ── Pass 2: compute visibilities from pyuvdata's own UVW ──────────────
-        # Use the UVW array pyuvdata computed (already phased to phase center)
-        uvw = uv.uvw_array  # shape (n_blts, 3)
+        # ── Pass 2: compute visibilities using our geometrically-phased UVW ─────
+        # pyuvdata's set_uvws_from_antenna_positions (called internally by
+        # UVData.new) computes UVW in a frame where the w-axis points toward the
+        # *local zenith at the array midpoint*, NOT toward the field phase centre.
+        # For a source at Dec +16° that leaves a large w component (~|w|/|u|≈1.2)
+        # which causes baseline-to-baseline phase cancellation and destroys all
+        # source coherence in the dirty image.
+        #
+        # Instead we use our own _compute_uvw(), which builds the standard
+        # Earth-rotation-synthesis UVW referenced to the field phase centre
+        # (pointing_ra_deg, pointing_dec_deg).  We then write those coordinates
+        # back into uv.uvw_array so the file is self-consistent.
+        uvw = self._compute_uvw(ant1_all, ant2_all, times_jd_blts)  # shape (n_blts, 3)
+        uv.uvw_array = uvw.astype(np.float64)  # overwrite with phased UVW
 
         vis = self._compute_visibilities(uvw, freqs, sky)
 

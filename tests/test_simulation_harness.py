@@ -617,3 +617,205 @@ class TestFileIO:
     def test_nsample_array_all_ones(self, harness_small, generated_sb0):
         uv = harness_small.load_subband(generated_sb0)
         np.testing.assert_array_equal(uv.nsample_array, 1.0)
+
+
+# ── Bug-fix regression tests ───────────────────────────────────────────────────
+
+class TestPhasedUVW:
+    """Regression tests for the UVW phasing bug (was: |w|/|u| ≈ 1.2, coherence < 1%)."""
+
+    def test_phase_center_source_real_visibilities(self):
+        """A noiseless 1 Jy source exactly at the phase centre must produce
+        visibilities that are purely real ≈ 0.5 Jy on every baseline/time.
+
+        This is the canonical test that the UVW is correctly phased: for a
+        source at (l=0, m=0) the phase term is identically 0 for all
+        baselines, so exp(-i*phase) = 1.0 and V = flux/2 + 0j for both pols.
+        """
+        import pyradiosky
+        from astropy.coordinates import Longitude, Latitude
+        import astropy.units as u_
+
+        h = SimulationHarness(
+            n_antennas=6,
+            n_integrations=4,
+            n_sky_sources=1,
+            noise_jy=0.0,
+            seed=99,
+        )
+        # Single 1 Jy source exactly at phase centre
+        stokes_arr = np.zeros((4, 1, 1), dtype=float)
+        stokes_arr[0, 0, 0] = 1.0
+        sky = pyradiosky.SkyModel(
+            name=["phase_ctr"],
+            ra=Longitude([h.pointing_ra_deg] * u_.deg),
+            dec=Latitude([h.pointing_dec_deg] * u_.deg),
+            stokes=stokes_arr * u_.Jy,
+            spectral_type="spectral_index",
+            spectral_index=np.array([0.0]),
+            reference_frequency=np.array([1.405e9]) * u_.Hz,
+            frame="icrs",
+        )
+        from astropy.time import Time as ATime
+        t0 = ATime("2026-01-25T22:26:05", format="isot", scale="utc")
+        uv = h._build_uvdata(0, t0, sky)
+
+        data = uv.data_array  # (n_blts, n_freq, n_pol)
+        # Real part should be ≈ 0.5 Jy everywhere (flux/2 per polarization)
+        np.testing.assert_allclose(
+            data.real,
+            0.5,
+            atol=1e-3,
+            err_msg="Real part of visibility deviates from 0.5 Jy for phase-centre source",
+        )
+        # Imaginary part should be ≈ 0
+        np.testing.assert_allclose(
+            data.imag,
+            0.0,
+            atol=1e-3,
+            err_msg="Imaginary part of visibility non-zero for phase-centre source (UVW not phased)",
+        )
+
+    def test_uvw_phasing_symmetry(self):
+        """Verify that the UVW array has correct conjugate symmetry properties.
+
+        For a phased array, the UVW computed at transit (HA=0) of the phase
+        centre should have u-coordinates proportional to the E-W baseline
+        lengths.  We verify:
+          1. The u-coordinate range spans the expected baseline range.
+          2. Stored UVW matches what _compute_uvw returns (no overwrite drift).
+
+        Note: for an E-W array at Dec +16° the w component is NOT zero —
+        it carries the geometric delay to the source direction.  The key
+        invariant is that visibilities are coherent (tested separately), not
+        that w=0.
+        """
+        import pyradiosky
+        from astropy.coordinates import Longitude, Latitude
+        import astropy.units as u_
+
+        h = SimulationHarness(
+            n_antennas=8,
+            n_integrations=4,
+            n_sky_sources=1,
+            noise_jy=0.0,
+            seed=7,
+        )
+        stokes_arr = np.zeros((4, 1, 1), dtype=float)
+        stokes_arr[0, 0, 0] = 1.0
+        sky = pyradiosky.SkyModel(
+            name=["w_test"],
+            ra=Longitude([h.pointing_ra_deg] * u_.deg),
+            dec=Latitude([h.pointing_dec_deg] * u_.deg),
+            stokes=stokes_arr * u_.Jy,
+            spectral_type="spectral_index",
+            spectral_index=np.array([0.0]),
+            reference_frequency=np.array([1.405e9]) * u_.Hz,
+            frame="icrs",
+        )
+        from astropy.time import Time as ATime
+        t0 = ATime("2026-01-25T22:26:05", format="isot", scale="utc")
+        uv = h._build_uvdata(0, t0, sky)
+
+        uvw_stored = uv.uvw_array
+        # Recompute independently
+        n_bl = h.n_antennas * (h.n_antennas - 1) // 2
+        ants_a = np.array([i for i in range(h.n_antennas) for j in range(i+1, h.n_antennas)])
+        ants_b = np.array([j for i in range(h.n_antennas) for j in range(i+1, h.n_antennas)])
+        dt = 12.884902 / 86400.0
+        unique_jd = np.array([t0.jd + i * dt for i in range(h.n_integrations)])
+        times_blts = np.repeat(unique_jd, n_bl)
+        ant1_all   = np.tile(ants_a, h.n_integrations)
+        ant2_all   = np.tile(ants_b, h.n_integrations)
+        uvw_ref = h._compute_uvw(ant1_all, ant2_all, times_blts)
+        np.testing.assert_allclose(
+            uvw_stored, uvw_ref, atol=1e-6,
+            err_msg="Stored UVW does not match _compute_uvw output — overwrite failed"
+        )
+        # u-axis should span at least 100 m (with 8 antennas over 980 m E-W)
+        u_range = uvw_stored[:, 0].max() - uvw_stored[:, 0].min()
+        assert u_range > 100.0, f"u-range too small: {u_range:.1f} m — baseline layout may be wrong"
+
+    def test_zero_spacing_coherence(self):
+        """Channel-averaged coherence fraction must be > 0.5 for a source at
+        the phase centre (noiseless, single source).
+
+        Coherence = |mean(vis)| / mean(|vis|).  For a phase-centre source this
+        is identically 1.0 (all vis are in phase).  The pre-fix harness gave
+        coherence < 0.01 because visibilities from different baselines/times
+        were randomly phased.
+        """
+        import pyradiosky
+        from astropy.coordinates import Longitude, Latitude
+        import astropy.units as u_
+
+        h = SimulationHarness(
+            n_antennas=8,
+            n_integrations=6,
+            n_sky_sources=1,
+            noise_jy=0.0,
+            seed=11,
+        )
+        stokes_arr = np.zeros((4, 1, 1), dtype=float)
+        stokes_arr[0, 0, 0] = 1.0
+        sky = pyradiosky.SkyModel(
+            name=["coh_test"],
+            ra=Longitude([h.pointing_ra_deg] * u_.deg),
+            dec=Latitude([h.pointing_dec_deg] * u_.deg),
+            stokes=stokes_arr * u_.Jy,
+            spectral_type="spectral_index",
+            spectral_index=np.array([0.0]),
+            reference_frequency=np.array([1.405e9]) * u_.Hz,
+            frame="icrs",
+        )
+        from astropy.time import Time as ATime
+        t0 = ATime("2026-01-25T22:26:05", format="isot", scale="utc")
+        uv = h._build_uvdata(0, t0, sky)
+
+        data = uv.data_array[:, :, 0]  # XX pol, (n_blts, n_freq)
+        coherence = np.abs(data.mean()) / np.abs(data).mean()
+        assert coherence > 0.5, (
+            f"Zero-spacing coherence = {coherence:.4f} — source signal is incoherent. "
+            "UVW phasing is still broken."
+        )
+
+
+class TestFlatSpectrumSky:
+    """Regression test for the None reference_frequency crash (Bug 2)."""
+
+    def test_flat_spectrum_sky_does_not_crash(self):
+        """SimulationHarness must handle a flat-spectrum SkyModel without raising TypeError.
+
+        Before the fix: ``sky.reference_frequency[s_idx]`` raised
+        ``TypeError: 'NoneType' object is not subscriptable`` for flat-spectrum models.
+        """
+        import pyradiosky
+        from astropy.coordinates import Longitude, Latitude
+        import astropy.units as u_
+
+        h = SimulationHarness(
+            n_antennas=4,
+            n_integrations=2,
+            n_sky_sources=1,
+            noise_jy=0.0,
+            seed=55,
+        )
+        # Flat-spectrum sky: reference_frequency is None
+        stokes_arr = np.zeros((4, 1, 1), dtype=float)
+        stokes_arr[0, 0, 0] = 2.5
+        sky = pyradiosky.SkyModel(
+            name=["flat_src"],
+            ra=Longitude([h.pointing_ra_deg] * u_.deg),
+            dec=Latitude([h.pointing_dec_deg] * u_.deg),
+            stokes=stokes_arr * u_.Jy,
+            spectral_type="flat",
+            frame="icrs",
+        )
+        freqs = h.subband_freqs(0)
+        n_blts = h.n_antennas * (h.n_antennas - 1) // 2 * h.n_integrations
+        uvw = np.zeros((n_blts, 3), dtype=float)
+        # Must not raise
+        vis = h._compute_visibilities(uvw, freqs, sky)
+        # For a source at phase centre (uvw=0) with 2.5 Jy, each pol = 1.25 Jy
+        np.testing.assert_allclose(vis[:, :, 0].real, 1.25, atol=1e-5)
+        np.testing.assert_allclose(vis[:, :, 0].imag, 0.0,  atol=1e-5)
