@@ -124,7 +124,7 @@ def load_bandpass_report_data(
     BandpassReportData
         Container with all report data
     """
-    from casacore.tables import table
+    from dsa110_continuum.adapters.casa_tables import table
     from scipy import stats as scipy_stats
 
     report = BandpassReportData(

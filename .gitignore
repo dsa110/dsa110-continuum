@@ -39,3 +39,4 @@ docs/quarto/.quarto/
 .vscode/
 .windsurf/
 .windsurfrules
+*.log

@@ -268,14 +268,14 @@ def _measure_image_stats(image_path: str) -> tuple[float, float, float]:
         else:
             # Try CASA image
             try:
-                from casacore.images import image as casa_image
-
-                img = casa_image(image_path)
+                import casatools as _ct
+                ia = _ct.image()
+                ia.open(image_path)
                 try:
-                    data = img.getdata()
+                    data = ia.getchunk()
                 finally:
                     try:
-                        img.close()
+                        ia.close()
                     except Exception:
                         pass
 

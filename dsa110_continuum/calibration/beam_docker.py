@@ -97,7 +97,7 @@ def evaluate_beam_docker(
 
     # Extract pointing center from MS FIELD table
     try:
-        from casacore.tables import table
+        from dsa110_continuum.adapters.casa_tables import table
 
         with table(ms_path + "::FIELD") as tf:
             phase_dir = tf.getcol("PHASE_DIR")

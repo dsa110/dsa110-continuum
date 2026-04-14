@@ -101,13 +101,29 @@ A compatibility shim at `~/.local/lib/python3.12/site-packages/dsa110_contimg_sh
 `dsa110_contimg.infrastructure.*`, and `dsa110_contimg.workflow.*` paths (old package
 internals not ported to the new codebase). This enables 307/312 tests to pass.
 
+### CASA table access
+
+All `casacore.tables` imports have been replaced with `dsa110_continuum.adapters.casa_tables`,
+a drop-in wrapper backed by `casatools.table`. This avoids the C++ shared-library conflict
+between `python-casacore` and `casatools` that caused segfaults when both were loaded.
+
+Key difference handled by the wrapper: casatools uses column-major array layout (row axis
+last) while python-casacore uses row-major (row axis first). The wrapper transposes
+automatically via `_rows_first`/`_rows_last`.
+
+After installing `casatools`, you must fix the bundled SQLite conflict:
+```
+rm ~/.local/lib/python3.12/site-packages/casatools/__casac__/lib/libsqlite3.so.0
+ln -s /usr/lib/x86_64-linux-gnu/libsqlite3.so.0 ~/.local/lib/python3.12/site-packages/casatools/__casac__/lib/libsqlite3.so.0
+```
+
 ### Known test failures (pre-existing, cloud-only)
 
 Two tests fail due to missing H17-specific resources, not code bugs:
 - `test_ensure_calibration::test_fallback_full_sky_when_no_obs_dec` — needs VLA calibrator
   DB at `/data/dsa110-contimg/state/catalogs/vla_calibrators.sqlite3`
-- `test_epoch_gaincal::test_wsclean_runs_when_flag_fraction_below_limit` — CASA `flagdata`
-  task unavailable; extra subprocess call changes assertion count
+- `test_epoch_gaincal::test_wsclean_runs_when_flag_fraction_below_limit` — mock expects
+  single `subprocess.run` call but epoch gaincal makes two WSClean invocations
 
 ### Data directories
 
