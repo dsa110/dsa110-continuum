@@ -106,3 +106,63 @@ class TestCalibratorGeneration:
         mean_amp = float(np.abs(cross).mean())
         assert mean_amp == pytest.approx(flux / 2.0, rel=0.05), \
             f"Mean cross-corr amplitude {mean_amp:.3f} should be ≈ flux/2 = {flux/2:.3f}"
+
+
+class TestSimulatedCalibration:
+    @pytest.fixture
+    def corrupted_ms(self, tmp_path):
+        """Tiny corrupted MS ready for calibration.
+
+        Both the target subband and the calibrator observation are corrupted
+        with the same per-antenna gains (same seed), matching the physical
+        scenario where the calibrator transits through the same corrupted
+        instrument as the science target.
+        """
+        import pyuvdata
+        from dsa110_continuum.simulation.harness import SimulationHarness
+        from dsa110_continuum.simulation.gain_corruption import corrupt_uvh5
+        h = SimulationHarness(n_antennas=4, n_sky_sources=1, seed=42,
+                              use_real_positions=False)
+        paths = h.generate_subbands(output_dir=tmp_path, n_subbands=1)
+        corrupted = corrupt_uvh5(paths[0], amp_scatter=0.10,
+                                  phase_scatter_deg=10.0, seed=7)
+        cal_path = h.generate_calibrator_subband(tmp_path, flux_jy=10.0)
+        # Apply the same gain errors to the calibrator observation so the
+        # Jacobi solver can recover the instrument gains.
+        cal_path = corrupt_uvh5(cal_path, amp_scatter=0.10,
+                                phase_scatter_deg=10.0, seed=7,
+                                output_path=tmp_path / "sim_cal_sb00_corrupted.uvh5")
+
+        uv = pyuvdata.UVData()
+        uv.read(str(corrupted))
+        ms_path = tmp_path / "target.ms"
+        uv.write_ms(str(ms_path))
+        return ms_path, cal_path, tmp_path
+
+    def test_calibrate_creates_corrected_data_column(self, corrupted_ms):
+        import casacore.tables as ct
+        from dsa110_continuum.simulation.pipeline import SimulatedPipeline
+        ms_path, cal_path, work_dir = corrupted_ms
+        p = SimulatedPipeline(work_dir=work_dir)
+        p._calibrate(target_ms=ms_path, cal_uvh5=cal_path,
+                     cal_flux_jy=10.0, work_dir=work_dir)
+        with ct.table(str(ms_path), readonly=True, ack=False) as t:
+            cols = t.colnames()
+        assert "CORRECTED_DATA" in cols, "CORRECTED_DATA column must be added by calibration"
+
+    def test_calibrate_reduces_phase_scatter(self, corrupted_ms):
+        """After calibration, cross-corr phases should be more tightly clustered."""
+        import casacore.tables as ct
+        import numpy as np
+        from dsa110_continuum.simulation.pipeline import SimulatedPipeline
+        ms_path, cal_path, work_dir = corrupted_ms
+        p = SimulatedPipeline(work_dir=work_dir)
+        p._calibrate(target_ms=ms_path, cal_uvh5=cal_path,
+                     cal_flux_jy=10.0, work_dir=work_dir)
+        with ct.table(str(ms_path), readonly=True, ack=False) as t:
+            raw = t.getcol("DATA")
+            corr = t.getcol("CORRECTED_DATA")
+        phase_raw  = np.angle(raw).std()
+        phase_corr = np.angle(corr).std()
+        assert phase_corr < phase_raw, \
+            f"Calibration should reduce phase scatter: raw={phase_raw:.3f}, corr={phase_corr:.3f}"
