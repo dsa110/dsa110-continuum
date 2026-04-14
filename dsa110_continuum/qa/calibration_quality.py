@@ -14,7 +14,10 @@ from typing import Any
 import numpy as np
 
 # Import wrap_phase_deg for angle wrapping
-from dsa110_contimg.common.utils.angles import wrap_phase_deg
+try:
+    from dsa110_contimg.common.utils.angles import wrap_phase_deg
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 from dsa110_continuum.calibration.caltables import discover_caltables
 
 # casacore is only available inside the CASA / casa6 environment. Guard the
@@ -1544,7 +1547,7 @@ def inspect_kcal_simple(
             print(f"\n No K-calibration tables found in: {ms_dir}")
             print("\nTo create one, run:")
             print(
-                f"  python -m dsa110_contimg.core.calibration.cli calibrate --ms {ms_path} --field 0 --refant 103 --do-k"
+                f"  python -m dsa110_continuum.calibration.cli calibrate --ms {ms_path} --field 0 --refant 103 --do-k"
             )
         return
 

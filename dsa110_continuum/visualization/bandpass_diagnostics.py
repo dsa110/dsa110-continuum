@@ -20,14 +20,20 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
-from casacore.tables import table
+try:
+    from casacore.tables import table
+except ImportError:
+    table = None  # type: ignore[assignment]  # casacore not installed
 from scipy import stats
 
-from dsa110_contimg.common.utils.antenna_classification import OUTRIGGER_ANTENNAS
-from dsa110_contimg.common.utils.plotting import (
-    apply_science_style,
-    get_figure_size,
-)
+try:
+    from dsa110_contimg.common.utils.antenna_classification import OUTRIGGER_ANTENNAS
+    from dsa110_contimg.common.utils.plotting import (
+        apply_science_style,
+        get_figure_size,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 # Convert integer IDs to string names for comparison with MS antenna names
 OUTRIGGER_NAMES = {str(ant) for ant in OUTRIGGER_ANTENNAS}

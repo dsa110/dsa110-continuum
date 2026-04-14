@@ -17,7 +17,7 @@
 
     Example
 -------
-    >>> from dsa110_contimg.core.qa.catalog_validation import validate_flux_scale
+    >>> from dsa110_continuum.qa.catalog_validation import validate_flux_scale
     >>> result = validate_flux_scale("image.fits", catalog="nvss", min_snr=5.0)
     >>> print(f"Matched {result.n_matched} sources")
     >>> print(f"Mean flux ratio: {result.mean_flux_ratio:.3f}")
@@ -37,7 +37,10 @@ from astropy.io import fits
 from astropy.stats import mad_std, sigma_clipped_stats
 from astropy.wcs import WCS
 
-from dsa110_contimg.common.utils.fits_utils import get_2d_data_and_wcs
+try:
+    from dsa110_contimg.common.utils.fits_utils import get_2d_data_and_wcs
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

@@ -4,7 +4,7 @@ Build per-declination strip SQLite databases from source catalogs.
 These databases are optimized for fast spatial queries during long-term
 drift scan operations at fixed declinations.
 
-Ported from dsa110_contimg.core.catalog.builders.
+Ported from dsa110_continuum.catalog.builders.
 Only strip-from-full functions are included; download functions are omitted.
 """
 
@@ -19,8 +19,16 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Hardcoded base paths (replaces get_env_path)
-_CATALOG_DIR = Path("/data/dsa110-contimg/state/catalogs")
+# Catalog directory resolved from PathConfig (respects DSA110_CATALOG_DIR env var)
+def _get_catalog_dir() -> Path:
+    try:
+        from dsa110_continuum.config import paths
+        return paths.catalog_dir
+    except Exception:
+        return Path("/data/dsa110-contimg/state/catalogs")
+
+
+_CATALOG_DIR = _get_catalog_dir()
 
 # Catalog coverage limits (declination ranges)
 CATALOG_COVERAGE_LIMITS = {

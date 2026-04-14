@@ -17,7 +17,10 @@ from typing import Any
 
 import numpy as np
 
-from dsa110_contimg.common.utils.template_styles import get_shared_css
+try:
+    from dsa110_contimg.common.utils.template_styles import get_shared_css
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

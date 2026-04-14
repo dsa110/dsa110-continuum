@@ -511,7 +511,7 @@ def plot_monitoring_lightcurve(
 
     Example
     -------
-    >>> from dsa110_contimg.core.visualization import (
+    >>> from dsa110_continuum.visualization import (
     ...     get_photometry_data,
     ...     plot_monitoring_lightcurve
     ... )

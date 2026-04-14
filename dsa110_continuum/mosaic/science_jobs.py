@@ -14,9 +14,15 @@ import sqlite3
 import time
 from dataclasses import dataclass
 
-from dsa110_contimg.workflow.pipeline import Job, JobResult, register_job
+try:
+    from dsa110_contimg.workflow.pipeline import Job, JobResult, register_job
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 from dsa110_continuum.mosaic.jobs import MosaicJobConfig
-from dsa110_contimg.workflow.dagster.jobs.science_mosaic import science_mosaic_workflow
+try:
+    from dsa110_contimg.workflow.dagster.jobs.science_mosaic import science_mosaic_workflow
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

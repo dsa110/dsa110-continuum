@@ -1032,7 +1032,7 @@ def generate_structure_diagram(directory_path: str, output_file: str) -> bool:
 
     Example
     -------
-    >>> from dsa110_contimg.core.visualization import generate_structure_diagram
+    >>> from dsa110_continuum.visualization import generate_structure_diagram
     >>> generate_structure_diagram("/path/to/source", "output_diagram.svg")
     """
     try:

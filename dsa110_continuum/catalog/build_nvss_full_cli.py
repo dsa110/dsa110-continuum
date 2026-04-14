@@ -3,7 +3,7 @@
 Compatibility wrapper for NVSS full catalog build.
 
 Use the unified entry point instead:
-  python -m dsa110_contimg.core.catalog.build_full_catalogs_cli nvss ...
+  python -m dsa110_continuum.catalog.build_full_catalogs_cli nvss ...
 """
 
 from __future__ import annotations

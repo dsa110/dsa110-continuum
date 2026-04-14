@@ -3,7 +3,7 @@
 Compatibility wrapper for master catalog build (SQLite sources).
 
 Use the unified entry point instead:
-  python -m dsa110_contimg.core.catalog.build_master_cli sqlite ...
+  python -m dsa110_continuum.catalog.build_master_cli sqlite ...
 """
 
 from __future__ import annotations

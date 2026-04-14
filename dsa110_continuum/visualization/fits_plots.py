@@ -26,7 +26,10 @@ if TYPE_CHECKING:
     from matplotlib.figure import Figure
     from numpy.typing import NDArray
 
-from dsa110_contimg.common.utils.fits_utils import get_2d_data_and_wcs as _get_2d_data_and_wcs
+try:
+    from dsa110_contimg.common.utils.fits_utils import get_2d_data_and_wcs as _get_2d_data_and_wcs
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 from dsa110_continuum.visualization.config import FigureConfig, PlotStyle
 
 logger = logging.getLogger(__name__)

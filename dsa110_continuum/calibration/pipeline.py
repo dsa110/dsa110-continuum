@@ -17,10 +17,13 @@ from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 
-from dsa110_contimg.workflow.pipeline import (
-    Pipeline,
-    register_pipeline,
-)
+try:
+    from dsa110_contimg.workflow.pipeline import (
+        Pipeline,
+        register_pipeline,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 from .jobs import (
     CalibrationApplyJob,

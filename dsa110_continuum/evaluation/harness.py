@@ -35,7 +35,10 @@ from pathlib import Path
 from typing import Any
 import statistics
 
-from dsa110_contimg.common.utils import get_env_path
+try:
+    from dsa110_contimg.common.utils import get_env_path
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 from .config_loader import load_thresholds_config as load_thresholds_config_helper
 from .evaluators import create_evaluators

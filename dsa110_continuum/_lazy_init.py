@@ -34,9 +34,11 @@ def require_casa() -> None:
     with _casa_lock:
         if _casa_ready:
             return
-        from dsa110_contimg.common.utils.casa_init import ensure_casa_path
-
-        ensure_casa_path()
+        try:
+            from dsa110_contimg.common.utils.casa_init import ensure_casa_path
+            ensure_casa_path()
+        except ImportError:
+            pass  # dsa110_contimg not installed
         _casa_ready = True
 
 
@@ -54,9 +56,11 @@ def require_gpu_safety() -> None:
     with _gpu_lock:
         if _gpu_ready:
             return
-        from dsa110_contimg.common.utils.gpu_safety import initialize_gpu_safety
-
-        initialize_gpu_safety()
+        try:
+            from dsa110_contimg.common.utils.gpu_safety import initialize_gpu_safety
+            initialize_gpu_safety()
+        except ImportError:
+            pass  # dsa110_contimg not installed
         _gpu_ready = True
 
 

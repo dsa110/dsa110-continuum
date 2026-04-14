@@ -70,7 +70,10 @@ from pathlib import Path
 
 
 import astropy.units as u  # noqa: E402
-import casacore.tables as tb  # noqa: E402
+try:
+    import casacore.tables as tb  # noqa: E402
+except ImportError:
+    tb = None  # type: ignore[assignment]  # casacore not installed
 import numpy as np  # noqa: E402
 from astropy.coordinates import SkyCoord  # noqa: E402
 

@@ -14,18 +14,18 @@ instead of re-downloading/parsing raw catalog files.
 
 Usage:
     # Build all available catalogs
-    python -m dsa110_contimg.core.catalog.build_full_catalogs_cli --all
+    python -m dsa110_continuum.catalog.build_full_catalogs_cli --all
 
     # Build specific catalog
-    python -m dsa110_contimg.core.catalog.build_full_catalogs_cli nvss
-    python -m dsa110_contimg.core.catalog.build_full_catalogs_cli first
-    python -m dsa110_contimg.core.catalog.build_full_catalogs_cli atnf
+    python -m dsa110_continuum.catalog.build_full_catalogs_cli nvss
+    python -m dsa110_continuum.catalog.build_full_catalogs_cli first
+    python -m dsa110_continuum.catalog.build_full_catalogs_cli atnf
 
     # Check status of all catalogs
-    python -m dsa110_contimg.core.catalog.build_full_catalogs_cli --status
+    python -m dsa110_continuum.catalog.build_full_catalogs_cli --status
 
     # Force rebuild
-    python -m dsa110_contimg.core.catalog.build_full_catalogs_cli nvss --force
+    python -m dsa110_continuum.catalog.build_full_catalogs_cli nvss --force
 """
 
 from __future__ import annotations
@@ -187,19 +187,19 @@ def main(argv: list[str] | None = None) -> int:
         epilog="""
 Examples:
     # Show status of all catalogs
-    python -m dsa110_contimg.core.catalog.build_full_catalogs_cli --status
+    python -m dsa110_continuum.catalog.build_full_catalogs_cli --status
 
     # Build NVSS database
-    python -m dsa110_contimg.core.catalog.build_full_catalogs_cli nvss
+    python -m dsa110_continuum.catalog.build_full_catalogs_cli nvss
 
     # Build ATNF database (requires psrqpy)
-    python -m dsa110_contimg.core.catalog.build_full_catalogs_cli atnf
+    python -m dsa110_continuum.catalog.build_full_catalogs_cli atnf
 
     # Build all available catalogs
-    python -m dsa110_contimg.core.catalog.build_full_catalogs_cli --all
+    python -m dsa110_continuum.catalog.build_full_catalogs_cli --all
 
     # Force rebuild
-    python -m dsa110_contimg.core.catalog.build_full_catalogs_cli nvss --force
+    python -m dsa110_continuum.catalog.build_full_catalogs_cli nvss --force
 """,
     )
 
@@ -249,8 +249,8 @@ Examples:
     # No action specified
     print_status()
     print("\nTo build a catalog, run:")
-    print("  python -m dsa110_contimg.core.catalog.build_full_catalogs_cli <catalog>")
-    print("  python -m dsa110_contimg.core.catalog.build_full_catalogs_cli --all")
+    print("  python -m dsa110_continuum.catalog.build_full_catalogs_cli <catalog>")
+    print("  python -m dsa110_continuum.catalog.build_full_catalogs_cli --all")
     return 0
 
 

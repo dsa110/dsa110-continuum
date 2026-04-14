@@ -35,8 +35,11 @@ from typing import Any
 
 import numpy as np
 
-from dsa110_contimg.common.utils import get_env_path
-from dsa110_contimg.interfaces.api.db_adapters.query_builder import QueryBuilder
+try:
+    from dsa110_contimg.common.utils import get_env_path
+    from dsa110_contimg.interfaces.api.db_adapters.query_builder import QueryBuilder
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

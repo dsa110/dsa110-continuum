@@ -3,7 +3,7 @@
 Compatibility wrapper for ATNF strip catalog build.
 
 Use the unified entry point instead:
-  python -m dsa110_contimg.core.catalog.build_strip_cli atnf ...
+  python -m dsa110_continuum.catalog.build_strip_cli atnf ...
 """
 
 from dsa110_continuum.catalog.build_strip_cli import main as unified_main

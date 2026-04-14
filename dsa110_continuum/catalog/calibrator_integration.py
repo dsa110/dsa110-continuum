@@ -15,7 +15,10 @@ from dsa110_continuum.calibration.catalogs import (
     load_vla_catalog_from_sqlite,
     resolve_vla_catalog_path,
 )
-from dsa110_contimg.infrastructure.database.unified import get_db
+try:
+    from dsa110_contimg.infrastructure.database.unified import get_db
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 
 # =============================================================================

@@ -12,12 +12,18 @@ import shutil
 import numpy as np
 
 
-import casacore.tables as casatables  # type: ignore[import]
+try:
+    import casacore.tables as casatables  # type: ignore[import]
+except ImportError:
+    casatables = None  # type: ignore[assignment]  # casacore not installed
 
 table = casatables.table  # noqa: N816
 
 
-from dsa110_contimg.common.utils.runtime_safeguards import require_casa6_python
+try:
+    from dsa110_contimg.common.utils.runtime_safeguards import require_casa6_python
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 # Use canonical angular_separation with numba→astropy fallback chain
 from dsa110_continuum.conversion.helpers_coordinates import angular_separation

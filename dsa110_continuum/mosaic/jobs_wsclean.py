@@ -27,7 +27,10 @@ from pathlib import Path
 
 from astropy.time import Time
 
-from dsa110_contimg.workflow.pipeline import Job, JobResult, register_job
+try:
+    from dsa110_contimg.workflow.pipeline import Job, JobResult, register_job
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 from .wsclean_mosaic import (
     WSCleanMosaicConfig,

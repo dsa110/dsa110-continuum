@@ -10,7 +10,10 @@ import sys
 
 from dsa110_continuum.calibration.catalogs import load_vla_catalog_from_sqlite
 from dsa110_continuum.calibration.transit import find_transits_for_source
-from dsa110_contimg.infrastructure.database.unified import get_pipeline_db_path
+try:
+    from dsa110_contimg.infrastructure.database.unified import get_pipeline_db_path
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 
 def main():

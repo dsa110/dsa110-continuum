@@ -14,8 +14,8 @@
 
     Example
 -------
-    >>> from dsa110_contimg.core.simulation.time_domain import generate_multi_epoch_uvh5
-    >>> from dsa110_contimg.core.simulation.variability_models import FlareModel
+    >>> from dsa110_continuum.simulation.time_domain import generate_multi_epoch_uvh5
+    >>> from dsa110_continuum.simulation.variability_models import FlareModel
     >>>
     >>> # Define epochs (4 observations over 1 week)
     >>> epochs = [

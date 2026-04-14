@@ -16,7 +16,10 @@ from __future__ import annotations
 
 import os
 
-from dsa110_contimg.common.utils.runtime_safeguards import require_casa6_python
+try:
+    from dsa110_contimg.common.utils.runtime_safeguards import require_casa6_python
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 
 def _ensure_imaging_columns_exist(ms_path: str) -> None:
@@ -1099,7 +1102,7 @@ def configure_ms_for_imaging(
     --------
         Basic usage after converting UVH5 to MS:
 
-        >>> from dsa110_contimg.core.conversion.ms_utils import configure_ms_for_imaging
+        >>> from dsa110_continuum.conversion.ms_utils import configure_ms_for_imaging
         >>> configure_ms_for_imaging("/path/to/observation.ms")
 
         Configure only essential columns (skip weight initialization):

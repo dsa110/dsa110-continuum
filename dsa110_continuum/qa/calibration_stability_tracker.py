@@ -21,7 +21,7 @@ Use Cases:
 
 Examples
 --------
->>> from dsa110_contimg.core.qa.calibration_stability_tracker import (
+>>> from dsa110_continuum.qa.calibration_stability_tracker import (
 ...     CalibrationStabilityTracker,
 ...     get_global_tracker,
 ... )
@@ -44,7 +44,10 @@ from threading import Lock
 from typing import Any
 
 import numpy as np
-from dsa110_contimg.common.utils import get_env_path
+try:
+    from dsa110_contimg.common.utils import get_env_path
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

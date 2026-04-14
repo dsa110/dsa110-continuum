@@ -9,7 +9,7 @@ derived spectral index and compactness/confusion flags.
 
 Usage examples:
 
-  python -m dsa110_contimg.core.catalog.build_master \
+  python -m dsa110_continuum.catalog.build_master \
       --nvss /data/catalogs/NVSS.csv \
       --vlass /data/catalogs/VLASS.csv \
       --first /data/catalogs/FIRST.csv \
@@ -44,7 +44,10 @@ import numpy as np
 import pandas as pd
 from astropy.coordinates import SkyCoord
 from astropy.table import Table
-from dsa110_contimg.common.utils import get_env_path
+try:
+    from dsa110_contimg.common.utils import get_env_path
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 
@@ -684,7 +687,7 @@ def build_master_from_sqlite(
 
         Example
     -------
-        >>> from dsa110_contimg.core.catalog.build_master import build_master_from_sqlite
+        >>> from dsa110_continuum.catalog.build_master import build_master_from_sqlite
         >>> db_path = build_master_from_sqlite()
         >>> print(f"Built master catalog at {db_path}")
     """

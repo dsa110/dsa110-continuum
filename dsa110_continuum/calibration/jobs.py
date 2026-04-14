@@ -20,7 +20,10 @@ import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from dsa110_contimg.workflow.pipeline import Job, JobResult, register_job
+try:
+    from dsa110_contimg.workflow.pipeline import Job, JobResult, register_job
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

@@ -29,7 +29,10 @@ from pathlib import Path
 import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
-from casacore.tables import table
+try:
+    from casacore.tables import table
+except ImportError:
+    table = None  # type: ignore[assignment]
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 

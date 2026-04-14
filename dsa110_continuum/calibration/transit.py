@@ -19,7 +19,10 @@ from astropy.utils import iers
 from astropy.utils.exceptions import AstropyWarning
 from astropy.utils.iers import IERSDegradedAccuracyWarning
 
-from dsa110_contimg.common.utils.constants import DSA110_LOCATION
+try:
+    from dsa110_contimg.common.utils.constants import DSA110_LOCATION
+except ImportError:
+    from dsa110_continuum._compat import DSA110_LOCATION  # OVRO fallback stub
 
 # Sidereal day in solar days
 SIDEREAL_RATE = 1.002737909350795  # sidereal days per solar day
@@ -177,7 +180,7 @@ def transit_times(
     Examples
     --------
         >>> from astropy.time import Time
-        >>> from dsa110_contimg.core.calibration.transit import transit_times
+        >>> from dsa110_continuum.calibration.transit import transit_times
         >>> # Find all transits of 0834+555 (RA=128.47°) in January 2025
         >>> start = Time("2025-01-01T00:00:00")
         >>> end = Time("2025-01-31T23:59:59")
@@ -320,7 +323,7 @@ def find_transits_for_source(
 
     Examples
     --------
-        >>> from dsa110_contimg.core.calibration.transit import find_transits_for_source
+        >>> from dsa110_continuum.calibration.transit import find_transits_for_source
         >>> results = find_transits_for_source(
         ...     db_path=os.environ.get('PIPELINE_DB', '/data/dsa110-contimg/state/db/pipeline.sqlite3'),
         ...     ra_deg=128.6083,  # 0834+555

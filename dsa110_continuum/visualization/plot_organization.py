@@ -11,7 +11,10 @@ import os
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from dsa110_contimg.common.utils import get_env_path
+try:
+    from dsa110_contimg.common.utils import get_env_path
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 
