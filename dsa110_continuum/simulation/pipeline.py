@@ -90,6 +90,7 @@ class SimulatedPipeline:
         niter: int = 1000,
         cell_arcsec: float = 20.0,
         image_size: int = 512,
+        wsclean_mem_gb: float | None = None,
     ) -> None:
         self.work_dir = Path(work_dir)
         self.work_dir.mkdir(parents=True, exist_ok=True)
@@ -97,6 +98,7 @@ class SimulatedPipeline:
         self.niter = niter
         self.cell_arcsec = cell_arcsec
         self.image_size = image_size
+        self.wsclean_mem_gb = wsclean_mem_gb
 
     # ------------------------------------------------------------------ #
     # Stage 2 — Calibration (CASA-free Jacobi solver)                     #
@@ -360,8 +362,10 @@ class SimulatedPipeline:
             "-data-column", data_column,
             "-make-psf",
             "-no-update-model-required",
-            str(ms_path),
         ]
+        if self.wsclean_mem_gb is not None:
+            cmd += ["-abs-mem", str(self.wsclean_mem_gb)]
+        cmd.append(str(ms_path))
         logger.info("Running WSClean: %s", " ".join(cmd))
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
@@ -472,3 +476,277 @@ class SimulatedPipeline:
             )
 
         return results
+
+    # ------------------------------------------------------------------ #
+    # Top-level orchestrator                                               #
+    # ------------------------------------------------------------------ #
+
+    def run(
+        self,
+        harness: "SimulationHarness",
+        *,
+        n_tiles: int = 2,
+        n_subbands: int = 4,
+        amp_scatter: float = 0.05,
+        phase_scatter_deg: float = 5.0,
+        cal_flux_jy: float = 10.0,
+        mjd: float = 60310.0,
+    ) -> "SimulatedPipelineResult":
+        """Run all five pipeline stages end-to-end on simulated data.
+
+        Parameters
+        ----------
+        harness:
+            Configured SimulationHarness (sky model + antenna positions).
+        n_tiles:
+            Number of simulated transit tiles (default 2).  Each tile is
+            imaged independently; tiles are then mosaicked together.
+        n_subbands:
+            Subbands per tile (default 4).  Each tile produces n_subbands
+            UVH5 files which are concatenated into one MS before imaging.
+        amp_scatter:
+            Per-antenna amplitude gain error (fractional). Default 0.05.
+        phase_scatter_deg:
+            Per-antenna phase gain error (degrees). Default 5.
+        cal_flux_jy:
+            Calibrator source flux (Jy). Default 10.
+        mjd:
+            Observation MJD for ground-truth flux prediction.
+
+        Returns
+        -------
+        SimulatedPipelineResult
+        """
+        from astropy.io import fits as astrofits
+        from dsa110_continuum.simulation.gain_corruption import corrupt_uvh5
+        from dsa110_continuum.simulation.ground_truth import GroundTruthRegistry
+        import gc
+
+        # Cap WSClean memory to leave headroom for Python / pyuvdata data.
+        # If wsclean_mem_gb is not explicitly set, use half of available RAM
+        # (floor at 1.5 GB, cap at 3 GB) to avoid OOM kills in CI.
+        if self.wsclean_mem_gb is None:
+            try:
+                import psutil
+                avail_gb = psutil.virtual_memory().available / 2**30
+                _mem_cap = max(1.5, min(3.0, avail_gb / 2))
+            except ImportError:
+                _mem_cap = 2.0
+            self.wsclean_mem_gb = _mem_cap
+            _reset_mem = True  # restore None after run() exits
+        else:
+            _reset_mem = False
+
+        errors: list[str] = []
+        tile_images: list[Path] = []
+        calibration_passed = True
+        imaging_passed = True
+        mosaic_path: Path | None = None
+
+        # ── Build ground-truth registry from harness sky model ─────────────
+        # IMPORTANT: generate the sky ONCE and reuse it for both the registry
+        # and generate_subbands().  If make_sky_model() were called a second
+        # time inside generate_subbands(), the RNG would advance and produce a
+        # *different* sky — so WSClean would image sources at positions the
+        # photometry stage never looks for.
+        registry = GroundTruthRegistry(test_run_id="simulated_pipeline")
+        sky = harness.make_sky_model()
+        for idx in range(sky.Ncomponents):
+            ra_deg  = float(sky.ra[idx].deg)
+            dec_deg = float(sky.dec[idx].deg)
+            # Stokes I from sky model.  WSClean -pol I from linear XX/YY feeds
+            # outputs (XX + YY) / 2 = I/2 (since V_XX = V_YY = I/2 by convention).
+            # Register the *image* flux (I/2) as the ground truth so that the
+            # photometry comparison is in the same units as the WSClean FITS.
+            stokes_i = float(sky.stokes[0, 0, idx].value)
+            flux_jy  = stokes_i / 2.0   # WSClean I-pol image units: (XX+YY)/2
+            registry.register_source(
+                source_id=f"SIM_S{idx:03d}",
+                ra_deg=ra_deg,
+                dec_deg=dec_deg,
+                baseline_flux_jy=flux_jy,
+            )
+        registry.register_epoch(mjd)
+
+        # Pre-generate clean calibrator subbands (shared across tiles).
+        # Each subband is corrupted inside the per-tile loop using the same
+        # seeds as the target — modelling simultaneous instrument gain errors.
+        cal_dir = self.work_dir / "calibrator"
+        cal_dir.mkdir(parents=True, exist_ok=True)
+        cal_clean_paths = [
+            harness.generate_calibrator_subband(
+                cal_dir / f"sb{sb:02d}",
+                flux_jy=cal_flux_jy,
+                subband_index=sb,
+            )
+            for sb in range(n_subbands)
+        ]
+
+        # ── Per-tile loop ──────────────────────────────────────────────────
+        for tile_idx in range(n_tiles):
+            tile_dir = self.work_dir / f"tile_{tile_idx:02d}"
+            tile_dir.mkdir(parents=True, exist_ok=True)
+
+            # Stage 1: Generate and corrupt target visibilities.
+            # The same per-subband seeds are applied to the calibrator below
+            # (same physical instrument, same gain errors).
+            seed = 100 * (tile_idx + 1)
+            uvh5_paths = harness.generate_subbands(
+                output_dir=tile_dir, n_subbands=n_subbands, sky=sky
+            )
+            corrupted_paths = [
+                corrupt_uvh5(
+                    p,
+                    amp_scatter=amp_scatter,
+                    phase_scatter_deg=phase_scatter_deg,
+                    seed=seed + i,
+                )
+                for i, p in enumerate(uvh5_paths)
+            ]
+
+            # Corrupt calibrator subbands with the same gain errors as the target
+            # so that the Jacobi solver can recover the instrument gains.
+            corrupted_cal_paths = [
+                corrupt_uvh5(
+                    cp,
+                    amp_scatter=amp_scatter,
+                    phase_scatter_deg=phase_scatter_deg,
+                    seed=seed + i,
+                    output_path=tile_dir / f"sim_cal_sb{i:02d}_corrupted.uvh5",
+                )
+                for i, cp in enumerate(cal_clean_paths)
+            ]
+
+            # Concatenate corrupted calibrator subbands (freq axis, same timestamps)
+            cal_uvs_tile: list[pyuvdata.UVData] = []
+            for cp in corrupted_cal_paths:
+                uv = pyuvdata.UVData()
+                uv.read(str(cp))
+                cal_uvs_tile.append(uv)
+            for uv in cal_uvs_tile:
+                for key in uv.phase_center_catalog:
+                    uv.phase_center_catalog[key]["cat_name"] = "SIM_TILE"
+            combined_cal = cal_uvs_tile[0].fast_concat(
+                cal_uvs_tile[1:], "freq", inplace=False
+            ) if len(cal_uvs_tile) > 1 else cal_uvs_tile[0]
+            cal_uvh5 = tile_dir / "sim_cal_combined.uvh5"
+            combined_cal.write_uvh5(str(cal_uvh5))
+            del combined_cal, cal_uvs_tile
+            # Remove corrupted calibrator UVH5 intermediates
+            for cp in corrupted_cal_paths:
+                try:
+                    Path(cp).unlink(missing_ok=True)
+                except Exception:
+                    pass
+            gc.collect()
+
+            # Concatenate corrupted subbands → single MS
+            uvs: list[pyuvdata.UVData] = []
+            for cp in corrupted_paths:
+                uv = pyuvdata.UVData()
+                uv.read(str(cp))
+                uvs.append(uv)
+            # Harmonise phase_center_catalog cat_name before concatenation
+            for uv in uvs:
+                for key in uv.phase_center_catalog:
+                    uv.phase_center_catalog[key]["cat_name"] = "SIM_TILE"
+            combined = uvs[0]
+            for uv in uvs[1:]:
+                combined = combined + uv
+
+            ms_path = tile_dir / f"tile_{tile_idx:02d}.ms"
+            combined.write_ms(str(ms_path))
+            # Free visibility data from memory before calibration/imaging
+            del combined, uvs
+            gc.collect()
+            # Remove intermediate UVH5 files to recover disk space
+            import shutil
+            for p_uvh5 in uvh5_paths + corrupted_paths:
+                try:
+                    Path(p_uvh5).unlink(missing_ok=True)
+                except Exception:
+                    pass
+
+            # UVW sign convention note:
+            # pyuvdata.UVData stores uvw_array with a sign convention such that
+            # write_ms() negates the UVW (MS_uvw = -uvh5_uvw_array).  The
+            # harness generates data with uvh5_uvw_array pointing in the
+            # *opposite* direction to the standard CASA/WSClean convention, so
+            # after write_ms the sign becomes correct for WSClean.  No further
+            # correction is needed.
+
+            # Stage 2: Calibrate using the per-tile corrupted calibrator
+            try:
+                self._calibrate(
+                    target_ms=ms_path,
+                    cal_uvh5=cal_uvh5,
+                    cal_flux_jy=cal_flux_jy,
+                    work_dir=tile_dir,
+                )
+            except Exception as exc:
+                errors.append(f"Tile {tile_idx} calibration: {exc}")
+                calibration_passed = False
+                continue  # skip imaging for this tile
+
+            # Stage 3: Image (with CLEAN deconvolution)
+            try:
+                img_results = self._image(ms_path=ms_path, work_dir=tile_dir)
+                restored = img_results.get("restored")
+                if restored and restored.exists():
+                    tile_images.append(restored)
+                else:
+                    errors.append(f"Tile {tile_idx}: restored image missing")
+                    imaging_passed = False
+            except Exception as exc:
+                errors.append(f"Tile {tile_idx} imaging: {exc}")
+                imaging_passed = False
+
+        # Stage 4: Mosaic tile images
+        if len(tile_images) >= 2:
+            try:
+                mosaic_path = self._mosaic(
+                    image_paths=tile_images, work_dir=self.work_dir
+                )
+            except Exception as exc:
+                errors.append(f"Mosaicking failed: {exc}")
+                # Fall back to first tile image for photometry
+                mosaic_path = tile_images[0] if tile_images else None
+        elif len(tile_images) == 1:
+            # Only one tile — use it directly (no mosaic needed)
+            mosaic_path = tile_images[0]
+            logger.info("Only 1 tile image; skipping mosaic, using tile directly")
+        else:
+            errors.append("No tile images produced; skipping mosaic and photometry")
+
+        # Stage 5: Forced photometry on mosaic (or best available image)
+        source_results: list[SourceFluxResult] = []
+        if mosaic_path and mosaic_path.exists():
+            try:
+                with astrofits.open(str(mosaic_path)) as hdul:
+                    img_data = np.squeeze(hdul[0].data)
+                finite_vals = img_data[np.isfinite(img_data)]
+                noise = float(np.std(finite_vals)) if finite_vals.size > 0 else 1e-3
+
+                source_results = self._photometry(
+                    image_path=mosaic_path,
+                    ground_truth=registry,
+                    mjd=mjd,
+                    noise_jy_beam=noise,
+                    box_pix=10,           # wider search box for imperfect WCS
+                    flux_tolerance=0.40,  # relaxed: CLEAN won't perfectly recover flux
+                )
+            except Exception as exc:
+                errors.append(f"Photometry failed: {exc}")
+
+        if _reset_mem:
+            self.wsclean_mem_gb = None
+
+        return SimulatedPipelineResult(
+            work_dir=self.work_dir,
+            n_tiles=n_tiles,
+            calibration_passed=calibration_passed,
+            imaging_passed=imaging_passed,
+            mosaic_path=mosaic_path,
+            source_results=source_results,
+            errors=errors,
+        )

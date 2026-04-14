@@ -790,6 +790,7 @@ class SimulationHarness:
         n_subbands: int = _N_SUBBANDS,
         start_time: Time | None = None,
         filename_template: str = "sim_tile_sb{sb_index:02d}.uvh5",
+        sky: "pyradiosky.SkyModel | None" = None,
     ) -> list[Path]:
         """Generate multiple UVH5 subband files into *output_dir*.
 
@@ -803,6 +804,12 @@ class SimulationHarness:
             Observation start time.
         filename_template:
             Format string with ``{sb_index}`` placeholder.
+        sky:
+            Pre-built sky model to use for all subbands.  If *None* (default),
+            ``make_sky_model()`` is called internally.  Pass an existing sky
+            to ensure that the simulated visibilities match a ground-truth
+            registry built from the same sky object — otherwise the random
+            number generator will produce a different sky on the second call.
 
         Returns
         -------
@@ -813,8 +820,10 @@ class SimulationHarness:
         if start_time is None:
             start_time = Time("2026-01-25T22:26:05", format="isot", scale="utc")
 
-        # Shared sky model across all subbands (same field)
-        sky = self.make_sky_model()
+        # Shared sky model across all subbands (same field).
+        # Use the caller-supplied sky if provided to avoid consuming extra RNG state.
+        if sky is None:
+            sky = self.make_sky_model()
 
         paths: list[Path] = []
         for sb in range(n_subbands):

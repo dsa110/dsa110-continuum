@@ -345,3 +345,60 @@ class TestSimulatedPhotometry:
                                 mjd=60000.0, noise_jy_beam=0.001)
         assert not results[0].passed
         assert np.isnan(results[0].recovered_flux_jy)
+
+
+@pytest.mark.slow
+class TestEndToEnd:
+    """Full pipeline: corruption → calibration → imaging → mosaic → photometry.
+
+    Marked slow — WSClean runs with niter=200. Excluded from default suite
+    by -m 'not slow'. Run explicitly for integration validation.
+    """
+
+    def test_full_pipeline_recovers_sources(self, tmp_path):
+        from dsa110_continuum.simulation.harness import SimulationHarness
+        from dsa110_continuum.simulation.pipeline import SimulatedPipeline
+
+        h = SimulationHarness(
+            n_antennas=96, n_sky_sources=1, seed=42, use_real_positions=True
+        )
+        p = SimulatedPipeline(
+            work_dir=tmp_path,
+            niter=200,
+            cell_arcsec=20.0,
+            image_size=512,  # 512×20" = 2.84 deg FOV; S0 with seed=42 is ~1 deg from centre
+        )
+        result = p.run(
+            harness=h,
+            n_tiles=2,
+            n_subbands=4,
+            amp_scatter=0.05,
+            phase_scatter_deg=5.0,
+            cal_flux_jy=10.0,
+        )
+        assert result.calibration_passed, \
+            f"Calibration stage failed: {result.errors}"
+        assert result.imaging_passed, \
+            f"Imaging stage failed: {result.errors}"
+        assert result.mosaic_path is not None and result.mosaic_path.exists(), \
+            f"Mosaic missing: {result.errors}"
+        assert result.n_recovered >= 1, \
+            f"Expected >=1 recovered source; got {result.n_recovered}/{len(result.source_results)}"
+
+    def test_full_pipeline_result_is_serializable(self, tmp_path):
+        import dataclasses
+        from dsa110_continuum.simulation.harness import SimulationHarness
+        from dsa110_continuum.simulation.pipeline import SimulatedPipeline
+        h = SimulationHarness(
+            n_antennas=8, n_sky_sources=1, seed=1, use_real_positions=False
+        )
+        p = SimulatedPipeline(
+            work_dir=tmp_path, niter=50, cell_arcsec=30.0, image_size=128
+        )
+        result = p.run(
+            harness=h, n_tiles=2, n_subbands=1,
+            amp_scatter=0.03, phase_scatter_deg=2.0,
+        )
+        d = dataclasses.asdict(result)
+        assert "source_results" in d
+        assert "errors" in d
