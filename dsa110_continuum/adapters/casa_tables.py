@@ -24,7 +24,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import casatools
+try:
+    import casatools as _casatools
+except ModuleNotFoundError:  # pragma: no cover — only absent in non-CASA envs
+    _casatools = None  # type: ignore[assignment]
 import numpy as np
 
 __all__ = [
@@ -51,7 +54,12 @@ class table:
         _from_query: bool = False,
     ):
         """Create a table wrapper and open *tablename* when given."""
-        self._tb = casatools.table()
+        if _casatools is None:
+            raise RuntimeError(
+                "casatools is not installed in this environment. "
+                "Install the modular CASA 6 package to use casa_tables."
+            )
+        self._tb = _casatools.table()
         self._name = tablename
         self._from_query = _from_query
         if tablename and not _from_query:
@@ -305,7 +313,9 @@ class table:
 
 def taql(command: str) -> table:
     """Execute a TaQL command and return the result as a :class:`table`."""
-    tb = casatools.table()
+    if _casatools is None:
+        raise RuntimeError("casatools is not installed in this environment.")
+    tb = _casatools.table()
     result = tb.taql(command)
     wrapper = table.__new__(table)
     wrapper._tb = result
@@ -363,7 +373,9 @@ def default_ms(name: str) -> "table":
     (FIELD, OBSERVATION, SPECTRAL_WINDOW, DATA_DESCRIPTION, POLARIZATION,
     ANTENNA, FEED, etc.) already present.
     """
-    sim = casatools.simulator()
+    if _casatools is None:
+        raise RuntimeError("casatools is not installed in this environment.")
+    sim = _casatools.simulator()
     sim.open(name)
     sim.close()
     return table(name, readonly=False)

@@ -29,7 +29,9 @@ from pathlib import Path
 import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
-from dsa110_continuum.adapters.casa_tables import table
+# casa_tables (wraps casatools) is imported lazily inside functions that
+# need it so that the rest of this module remains importable in environments
+# where casatools is not installed (e.g. CI, unit tests with mocks).
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -177,6 +179,7 @@ PB_CUTOFF = 0.2  # 20 % of peak response
 
 def find_valid_ms(cfg: TileConfig) -> list[str]:
     """Return sorted list of valid (non-corrupt) raw MS paths for the configured date."""
+    from dsa110_continuum.adapters.casa_tables import table  # noqa: PLC0415
     candidates = sorted(glob.glob(f"{cfg.ms_dir}/{cfg.date}T*.ms"))
     candidates = [p for p in candidates if "meridian" not in p and "flagversion" not in p]
     valid = []
@@ -198,6 +201,7 @@ def get_meridian_path(ms_path: str) -> str:
 
 def needs_calibration(ms_path: str) -> bool:
     """Return True if CORRECTED_DATA doesn't exist or has ratio close to 1."""
+    from dsa110_continuum.adapters.casa_tables import table  # noqa: PLC0415
     try:
         with table(ms_path, readonly=True, ack=False) as t:
             if "CORRECTED_DATA" not in t.colnames():
@@ -377,6 +381,7 @@ def process_ms(
 
         # Verify CORRECTED_DATA isn't all zeros (silent applycal failure mode)
         try:
+            from dsa110_continuum.adapters.casa_tables import table  # noqa: PLC0415
             with table(meridian_ms, readonly=True, ack=False) as t:
                 if "CORRECTED_DATA" in t.colnames():
                     cd = t.getcol("CORRECTED_DATA", nrow=2048)
