@@ -140,7 +140,7 @@ class TestSimulatedCalibration:
         return ms_path, cal_path, tmp_path
 
     def test_calibrate_creates_corrected_data_column(self, corrupted_ms):
-        from dsa110_continuum.adapters import casa_tables as ct
+        import casacore.tables as ct
         from dsa110_continuum.simulation.pipeline import SimulatedPipeline
         ms_path, cal_path, work_dir = corrupted_ms
         p = SimulatedPipeline(work_dir=work_dir)
@@ -152,7 +152,7 @@ class TestSimulatedCalibration:
 
     def test_calibrate_reduces_phase_scatter(self, corrupted_ms):
         """After calibration, cross-corr phases should be more tightly clustered."""
-        from dsa110_continuum.adapters import casa_tables as ct
+        import casacore.tables as ct
         import numpy as np
         from dsa110_continuum.simulation.pipeline import SimulatedPipeline
         ms_path, cal_path, work_dir = corrupted_ms
