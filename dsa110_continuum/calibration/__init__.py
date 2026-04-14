@@ -47,7 +47,11 @@ try:
         primary_beam_response,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    # Fall back to the local beam model implementation
+    from dsa110_continuum.calibration.beam_model import (  # type: ignore[no-redef]
+        BeamConfig,
+        primary_beam_response,
+    )
 
 # Catalog registry (unified catalog query interface)
 try:

@@ -49,7 +49,13 @@ try:
         ErrorCode,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    # dsa110_contimg not installed (cloud/test env) — provide minimal stubs
+    class ConversionError(Exception):  # type: ignore[no-redef]
+        """Fallback conversion error for cloud/test environments."""
+
+    class ErrorCode:  # type: ignore[no-redef]
+        """Fallback error-code stub."""
+        UNKNOWN = "UNKNOWN"
 
 logger = logging.getLogger(__name__)
 
