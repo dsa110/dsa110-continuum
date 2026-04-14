@@ -139,7 +139,8 @@ class TestSimulatedCalibration:
         uv = pyuvdata.UVData()
         uv.read(str(corrupted))
         ms_path = tmp_path / "target.ms"
-        uv.write_ms(str(ms_path))
+        from dsa110_continuum.adapters.ms_write import uvdata_to_ms
+        uvdata_to_ms(uv, ms_path)
         return ms_path, cal_path, tmp_path
 
     def test_calibrate_creates_corrected_data_column(self, corrupted_ms):
@@ -247,7 +248,8 @@ class TestSimulatedImaging:
         uv = pyuvdata.UVData()
         uv.read(str(corrupted))
         ms_path = tmp_path / "cal_target.ms"
-        uv.write_ms(str(ms_path))
+        from dsa110_continuum.adapters.ms_write import uvdata_to_ms
+        uvdata_to_ms(uv, ms_path)
         p = SimulatedPipeline(work_dir=tmp_path, niter=100,
                               cell_arcsec=30.0, image_size=256)
         p._calibrate(target_ms=ms_path, cal_uvh5=cal_path,
