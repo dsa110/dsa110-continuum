@@ -13,9 +13,11 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 # ---------------------------------------------------------------------------
-# Skip entire module if casacore is not installed (e.g., CI without CASA env)
+# Skip entire module if casatools is not installed (e.g., CI without CASA env)
+# The adapter module itself is always importable; we need the backing library.
 # ---------------------------------------------------------------------------
-ct = pytest.importorskip("dsa110_continuum.adapters.casa_tables", reason="casacore required for MS table tests")
+pytest.importorskip("casatools", reason="casatools (modular CASA 6) required for MS table tests")
+import dsa110_continuum.adapters.casa_tables as ct  # noqa: E402
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────

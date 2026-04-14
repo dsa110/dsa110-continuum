@@ -54,6 +54,10 @@ class table:
         _from_query: bool = False,
     ):
         """Create a table wrapper and open *tablename* when given."""
+        if tablename and not isinstance(tablename, str):
+            raise TypeError(
+                f"tablename must be a str, got {type(tablename).__name__!r}"
+            )
         if _casatools is None:
             raise RuntimeError(
                 "casatools is not installed in this environment. "
