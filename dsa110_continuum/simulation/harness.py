@@ -27,6 +27,7 @@ and integration testing.
 """
 from __future__ import annotations
 
+import csv
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -70,27 +71,69 @@ _N_INTEGRATIONS   = 24          # integrations per tile (~5.08 min)
 # Dish diameter (for UVData telescope info only)
 _DISH_DIAM_M      = 4.65
 
-# ── Synthetic antenna positions ───────────────────────────────────────────────
+# ── Antenna positions ─────────────────────────────────────────────────────────
 
-def _make_antenna_enu(n_antennas: int, rng: np.random.Generator) -> np.ndarray:
-    """Generate E-N-U antenna positions (metres) for a 1-D east-west drift-scan array.
+# Path to the canonical antenna position CSV (relative to this file).
+# The CSV has 117 rows (all allocated station slots); 96 are active in
+# the operational array (47 E-W + 35 N-S + 14 outriggers; Connor et al. 2025).
+_DEFAULT_ANT_CSV = Path(__file__).parent / "pyuvsim" / "antennas.csv"
 
-    DSA-110 is a linear E-W array at OVRO.  Antennas are separated by
-    roughly 3–4 m (compact core) to several hundred metres (outriggers).
-    For simulation purposes we place antennas along the east axis with a
-    random perturbation to break degeneracies:
 
-      E ~ uniform in [0, 980 m]    (spans ~1 km E-W)
-      N ~ N(0, 5 m)                (small N-S scatter)
-      U ~ N(0, 0.5 m)              (small height scatter)
+def _load_antenna_enu_from_csv(
+    n_antennas: int,
+    csv_path: Path | str | None = None,
+) -> np.ndarray:
+    """Load real DSA-110 ENU antenna positions from the station coordinates CSV.
 
-    With 96 antennas the resulting baselines span ~10–900 m → resolution
-    ~arcminutes at L-band, which is representative of DSA-110.
+    The CSV (``dsa110_continuum/simulation/pyuvsim/antennas.csv``) contains
+    117 rows with columns ``antenna_name``, ``antenna_number``, ``east_m``,
+    ``north_m``, ``up_m``.  The coordinates are projected ENU offsets from a
+    common reference origin (large absolute values; NOT raw ECEF geocentric).
+
+    We subtract the first row (DSA001) so that all positions are relative
+    to DSA001, giving a local ENU frame centred on the western end of the
+    E-W arm.  This is sufficient for computing baselines; the overall array
+    location is handled separately by ``_enu_to_ecef``.
+
+    Parameters
+    ----------
+    n_antennas:
+        Number of antennas to return.  Must be ≤ 117 (the number of rows
+        in the CSV).  Use 96 for the operational DSA-110 configuration.
+        Use 117 to include all allocated station slots.
+    csv_path:
+        Path to the CSV file.  Defaults to the bundled ``antennas.csv``.
+
+    Returns
+    -------
+    np.ndarray of shape (n_antennas, 3) with columns [east_m, north_m, up_m]
+    relative to DSA001 (the first row in the CSV).
     """
-    east   = np.sort(rng.uniform(0, 980.0, n_antennas))
-    north  = rng.normal(0.0, 5.0, n_antennas)
-    up     = rng.normal(0.0, 0.5, n_antennas)
-    return np.column_stack([east, north, up])  # shape (N, 3)
+    if csv_path is None:
+        csv_path = _DEFAULT_ANT_CSV
+    csv_path = Path(csv_path)
+
+    rows: list[tuple[float, float, float]] = []
+    with csv_path.open(newline="") as fh:
+        reader = csv.DictReader(fh)
+        for row in reader:
+            rows.append((
+                float(row["east_m"]),
+                float(row["north_m"]),
+                float(row["up_m"]),
+            ))
+
+    if n_antennas > len(rows):
+        raise ValueError(
+            f"Requested n_antennas={n_antennas} but CSV has only {len(rows)} rows."
+        )
+
+    arr = np.array(rows[:n_antennas], dtype=float)  # shape (n_antennas, 3)
+
+    # Subtract DSA001 so positions are local-ENU relative to the first antenna.
+    arr -= arr[0]
+
+    return arr  # columns: east_m, north_m, up_m
 
 
 def _enu_to_ecef(enu: np.ndarray, lat_deg: float, lon_deg: float, alt_m: float) -> np.ndarray:
@@ -182,8 +225,10 @@ class SimulationHarness:
     Parameters
     ----------
     n_antennas:
-        Number of antennas (8 for fast tests, 64 for realistic baselines,
-        96 for full DSA-110 equivalent).
+        Number of antennas to simulate.  For fast unit tests use 8 or 16;
+        for realistic DSA-110 UV coverage use 96 (operational array) or
+        117 (all allocated slots).  Must be ≤ 117 when
+        ``use_real_positions=True``.
     n_integrations:
         Number of time integrations per tile.  Default 24 ≈ 5-minute tile.
     pointing_ra_deg:
@@ -197,14 +242,24 @@ class SimulationHarness:
         Typical DSA-110 value: ~1 Jy (per-baseline), mosaic ~10 mJy/beam.
     seed:
         Random seed for reproducibility.
+    use_real_positions:
+        If True (default), load antenna positions from the bundled
+        ``antennas.csv`` (real DSA-110 T-array geometry: E-W arm, N-S arm,
+        outriggers).  If False, generate synthetic 1-D east-west positions
+        (legacy; only for tests that do not require realistic UV coverage).
+    ant_csv_path:
+        Override path to the antenna position CSV.  Only used when
+        ``use_real_positions=True``.  Defaults to the bundled CSV.
     """
-    n_antennas:       int   = 8
-    n_integrations:   int   = 24
-    pointing_ra_deg:  float = 343.5
-    pointing_dec_deg: float = 16.15
-    n_sky_sources:    int   = 20
-    noise_jy:         float = 1.0
-    seed:             int   = 42
+    n_antennas:         int   = 8
+    n_integrations:     int   = 24
+    pointing_ra_deg:    float = 343.5
+    pointing_dec_deg:   float = 16.15
+    n_sky_sources:      int   = 20
+    noise_jy:           float = 1.0
+    seed:               int   = 42
+    use_real_positions: bool  = True
+    ant_csv_path:       object = None  # Path | str | None
 
     def __post_init__(self) -> None:
         self._rng = np.random.default_rng(self.seed)
@@ -216,8 +271,41 @@ class SimulationHarness:
 
     @property
     def antenna_enu(self) -> np.ndarray:
+        """Local-ENU antenna positions (metres) relative to DSA001.
+
+        By default (``use_real_positions=True``) these are loaded from the
+        bundled ``antennas.csv``, which contains the real DSA-110 T-array
+        geometry (E-W arm + N-S arm + outriggers).  Set
+        ``use_real_positions=False`` to use synthetic 1-D east-west positions
+        (legacy; adequate only for closure/format tests, not for imaging).
+        """
         if self._ant_enu is None:
-            self._ant_enu = _make_antenna_enu(self.n_antennas, self._rng)
+            if self.use_real_positions:
+                try:
+                    self._ant_enu = _load_antenna_enu_from_csv(
+                        self.n_antennas,
+                        csv_path=self.ant_csv_path,
+                    )
+                    logger.debug(
+                        "Loaded %d real DSA-110 antenna positions from CSV",
+                        self.n_antennas,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "Could not load real antenna positions (%s); "
+                        "falling back to synthetic 1-D east-west layout.",
+                        exc,
+                    )
+                    east  = np.sort(self._rng.uniform(0, 980.0, self.n_antennas))
+                    north = self._rng.normal(0.0, 5.0, self.n_antennas)
+                    up    = self._rng.normal(0.0, 0.5, self.n_antennas)
+                    self._ant_enu = np.column_stack([east, north, up])
+            else:
+                # Explicitly requested synthetic 1-D east-west positions.
+                east  = np.sort(self._rng.uniform(0, 980.0, self.n_antennas))
+                north = self._rng.normal(0.0, 5.0, self.n_antennas)
+                up    = self._rng.normal(0.0, 0.5, self.n_antennas)
+                self._ant_enu = np.column_stack([east, north, up])
         return self._ant_enu
 
     @property

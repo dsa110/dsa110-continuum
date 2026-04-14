@@ -28,9 +28,10 @@ been made.
 
 | Parameter | Value | Source |
 |---|---|---|
-| Total antennas | 117 | Instrument design |
-| Core antennas (within ~500 m) | 102 | Instrument design |
-| Outrigger antennas (to ~2.6 km, IDs 103–117) | 15 | Instrument design |
+| Total allocated antenna slots (CSV) | 117 | dsa110-antpos position CSV |
+| **Active antennas** | **96** | Connor et al. 2025 (arxiv:2510.18136) |
+| Dense core antennas (b < 485 m) | 82 (47 E-W + 35 N-S) | Connor et al. 2025 |
+| Outrigger antennas (to ~2.6 km, IDs 103–117) | 14 active (15 allocated slots) | Connor et al. 2025 |}
 | **Dish diameter** | **4.65 m** ± 0.01 m | Measured (dsa110_measured_parameters.yaml) |
 | Observing band | L-band (1.28–1.53 GHz nominal) | Instrument design |
 | **Science frequency range** | **1311.25–1498.75 MHz** | Observed band (confirmed) |

@@ -37,7 +37,7 @@ from dsa110_continuum.simulation.harness import (
     _CHAN_WIDTH_HZ,
     _INTEGRATION_SEC,
     _make_sky_model,
-    _make_antenna_enu,
+    _load_antenna_enu_from_csv,
     _enu_to_ecef,
 )
 
@@ -90,16 +90,18 @@ def generated_sb7(harness_small, tmp_path_factory):
 class TestHelpers:
     """Unit tests for standalone helper functions."""
 
-    def test_make_antenna_enu_shape(self):
-        rng = np.random.default_rng(42)
-        enu = _make_antenna_enu(8, rng)
+    def test_load_antenna_enu_shape(self):
+        """Loading from real CSV gives correct shape and 3 columns."""
+        enu = _load_antenna_enu_from_csv(8)
         assert enu.shape == (8, 3)
 
-    def test_make_antenna_enu_east_span(self):
-        """East axis should span up to ~980 m for a realistic array."""
-        rng = np.random.default_rng(42)
-        enu = _make_antenna_enu(96, rng)
-        assert enu[:, 0].max() - enu[:, 0].min() > 500.0  # at least 500 m
+    def test_load_antenna_enu_t_array_span(self):
+        """Real DSA-110 positions: T-array should span > 100 m in both E and N."""
+        enu = _load_antenna_enu_from_csv(96)
+        east_span = enu[:, 0].max() - enu[:, 0].min()
+        north_span = enu[:, 1].max() - enu[:, 1].min()
+        assert east_span > 100.0, f"E-W span too small: {east_span:.1f} m"
+        assert north_span > 100.0, f"N-S span too small: {north_span:.1f} m"
 
     def test_enu_to_ecef_origin(self):
         """ENU (0,0,0) should map to the OVRO reference ECEF point."""
@@ -732,9 +734,13 @@ class TestPhasedUVW:
             uvw_stored, uvw_ref, atol=1e-6,
             err_msg="Stored UVW does not match _compute_uvw output — overwrite failed"
         )
-        # u-axis should span at least 100 m (with 8 antennas over 980 m E-W)
+        # u-axis should span a non-trivial range: with 8 real antennas from the E-W
+        # arm (DSA001-DSA008, ~5.74 m spacing), the longest baseline is ~40 m,
+        # which after Earth-rotation synthesis and projection yields u-values spanning
+        # at least a few metres.  We verify > 5 m (not 100 m) since these are
+        # genuinely close-packed antennas, not synthetic random positions.
         u_range = uvw_stored[:, 0].max() - uvw_stored[:, 0].min()
-        assert u_range > 100.0, f"u-range too small: {u_range:.1f} m — baseline layout may be wrong"
+        assert u_range > 5.0, f"u-range too small: {u_range:.1f} m — baseline layout may be wrong"
 
     def test_zero_spacing_coherence(self):
         """Channel-averaged coherence fraction must be > 0.5 for a source at

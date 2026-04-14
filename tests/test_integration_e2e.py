@@ -140,21 +140,22 @@ class TestStage2Geometry:
         assert uv.uvw_array.shape == (n_bls * n_ints, 3)
 
     def test_uvw_u_axis_dominant_for_ew_array(self, tmp_path):
-        """DSA-110 is an E-W array → u-coverage should span a wide range.
+        """DSA-110 real antenna positions → UV coverage should span a meaningful range.
 
-        Note: with correct Earth-rotation-synthesis UVW (phased to the field
-        centre), u and v both rotate with hour angle, so mean|u| > mean|v| does
-        NOT hold in general.  Instead we verify that the u-axis spans a range
-        consistent with the ~980 m E-W baseline extent at L-band.
+        With real positions (n_antennas=8 loads DSA001-DSA008, which are the
+        first 8 E-W antennas at ~5.74 m spacing), the physical baseline span
+        is ~40 m.  We use n_antennas=60 to cover both E-W and N-S arms,
+        giving E-W span > 300 m and N-S span > 100 m.
         """
-        h = _make_small_harness(n_antennas=8, noise_jy=0.0)
+        h = _make_small_harness(n_antennas=60, noise_jy=0.0)
         p = tmp_path / "ew.uvh5"
         h.generate_subband(0, p)
         uv = h.load_subband(p)
-        # u-coverage range must be > 100 m (8 antennas over ~980 m baseline)
+        # u-coverage range: with 60 real antennas covering E-W + N-S arm,
+        # u (projected baseline) should span > 100 m over 3 integrations.
         u_range = uv.uvw_array[:, 0].max() - uv.uvw_array[:, 0].min()
         assert u_range > 100.0, (
-            f"u-coverage range {u_range:.1f} m is too small for an 8-antenna E-W array. "
+            f"u-coverage range {u_range:.1f} m is too small for a 60-antenna T-array. "
             "Expected > 100 m."
         )
 
