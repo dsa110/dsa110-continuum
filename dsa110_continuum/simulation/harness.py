@@ -691,8 +691,16 @@ class SimulationHarness:
             ).astype(np.complex64) * (self.noise_jy / np.sqrt(2.0))
             vis = vis + noise
 
-        # Write sky-model visibilities back (no UVW recalculation triggered)
-        uv.data_array = vis
+        # Conjugate before storing: pyuvdata writes the MS UVW column as
+        # -(our phased UVW) because its internal convention is ant1-ant2
+        # while ours is ant2-ant1.  The MS standard requires the DATA column
+        # to satisfy V(u,v,w) stored for UVW as written, so we store conj(vis)
+        # here; when pyuvdata negates the UVW on MS write, the pair
+        # (−UVW, conj(V)) is equivalent to (UVW, V) and WSClean images
+        # correctly.  The UVH5 file stores the same conjugated visibilities
+        # together with our phased UVW, so the UVH5 is internally consistent
+        # with pyuvdata's read-back convention.
+        uv.data_array = vis.conj().astype(np.complex64)
 
         # Store extra provenance in extra_keywords
         uv.extra_keywords = {
