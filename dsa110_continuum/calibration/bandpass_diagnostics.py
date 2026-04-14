@@ -22,8 +22,16 @@ try:
 except ImportError:
     casatables = None  # type: ignore[assignment]  # casacore not installed
 
-table = casatables.table
 
+def table(*args: Any, **kwargs: Any) -> Any:
+    """Return a casacore table, or raise a clear error if casacore is unavailable."""
+    if casatables is None:
+        raise ImportError(
+            "casacore is required for bandpass table diagnostics but is not installed. "
+            "Install `casacore` to use functions in dsa110_continuum.calibration.bandpass_diagnostics "
+            "that access CASA tables."
+        )
+    return casatables.table(*args, **kwargs)
 logger = logging.getLogger(__name__)
 
 
