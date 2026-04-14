@@ -21,7 +21,19 @@ from pathlib import Path
 try:
     from dsa110_contimg.workflow.pipeline import Job, JobResult, register_job
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    # dsa110_contimg not installed (cloud/test env) — define no-op stubs
+    import functools
+    from dataclasses import dataclass as _dataclass
+
+    def register_job(cls):  # type: ignore[misc]
+        """No-op decorator when dsa110_contimg is unavailable."""
+        return cls
+
+    class JobResult:  # type: ignore[no-redef]
+        pass
+
+    class Job:  # type: ignore[no-redef]
+        pass
 
 logger = logging.getLogger(__name__)
 

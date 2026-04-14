@@ -25,7 +25,22 @@ try:
         register_pipeline,
     )
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    # dsa110_contimg not installed (cloud/test env) — define no-op stubs
+    def register_pipeline(cls):  # type: ignore[misc]
+        """No-op decorator when dsa110_contimg is unavailable."""
+        return cls
+
+    class Pipeline:  # type: ignore[no-redef]
+        pass
+
+    class RetryPolicy:  # type: ignore[no-redef]
+        pass
+
+    class RetryBackoff:  # type: ignore[no-redef]
+        pass
+
+    class NotificationConfig:  # type: ignore[no-redef]
+        pass
 
 from .jobs import (
     MosaicBuildJob,

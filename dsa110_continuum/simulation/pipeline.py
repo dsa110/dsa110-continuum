@@ -252,6 +252,58 @@ class SimulatedPipeline:
         return target_ms
 
     # ------------------------------------------------------------------ #
+    # Stage 4 — Image-plane mosaicking (QUICKLOOK tier)                   #
+    # ------------------------------------------------------------------ #
+
+    def _mosaic(
+        self,
+        *,
+        image_paths: list[Path | str],
+        work_dir: Path | str,
+        output_name: str = "epoch_mosaic.fits",
+    ) -> Path:
+        """Co-add tile FITS images into a single epoch mosaic.
+
+        Delegates to the production ``build_mosaic()`` (PB-weighted linear
+        coaddition, QUICKLOOK tier).  Primary beam correction is disabled
+        because no beam model is available in the cloud sandbox; the SCIENCE
+        tier would use WSClean visibility-domain joint deconvolution instead.
+
+        Parameters
+        ----------
+        image_paths:
+            List of tile FITS paths to co-add (minimum 2).
+        work_dir:
+            Output directory for the mosaic file.
+        output_name:
+            Filename for the output mosaic FITS (default ``epoch_mosaic.fits``).
+
+        Returns
+        -------
+        Path
+            Path to the written mosaic FITS file.
+        """
+        from dsa110_continuum.mosaic.builder import build_mosaic
+
+        work_dir    = Path(work_dir)
+        output_path = work_dir / output_name
+
+        result = build_mosaic(
+            image_paths=[Path(p) for p in image_paths],
+            output_path=output_path,
+            apply_pb_correction=False,  # no beam model in cloud sandbox
+            write_weight_map=False,
+        )
+
+        logger.info(
+            "Mosaic: %d tiles \u2192 %s  (median RMS %.3f mJy/beam)",
+            len(image_paths),
+            result.output_path,
+            result.median_rms * 1e3,
+        )
+        return result.output_path
+
+    # ------------------------------------------------------------------ #
     # Stage 3 — WSClean imaging with CLEAN deconvolution                  #
     # ------------------------------------------------------------------ #
 

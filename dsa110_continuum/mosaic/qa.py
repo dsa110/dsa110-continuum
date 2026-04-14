@@ -23,7 +23,15 @@ from astropy.stats import mad_std
 try:
     from dsa110_contimg.common.utils.decorators import timed
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    # dsa110_contimg not installed (cloud/test env) — define no-op stub
+    import functools
+    def timed(name: str = ""):  # type: ignore[misc]
+        def _decorator(fn):
+            @functools.wraps(fn)
+            def _wrapper(*args, **kwargs):
+                return fn(*args, **kwargs)
+            return _wrapper
+        return _decorator
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray

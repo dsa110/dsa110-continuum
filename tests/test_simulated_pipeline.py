@@ -210,3 +210,60 @@ class TestSimulatedImaging:
         with fits.open(str(result["restored"])) as hdul:
             wcs = WCS(hdul[0].header)
         assert wcs.naxis >= 2
+
+
+class TestSimulatedMosaic:
+    @pytest.fixture
+    def two_tile_fits(self, tmp_path):
+        """Two minimal synthetic FITS tiles with overlapping footprints."""
+        import numpy as np
+        from astropy.io import fits
+        from astropy.wcs import WCS
+
+        def make_tile(ra_center, filename):
+            data = np.zeros((64, 64), dtype=np.float32)
+            data[32, 32] = 0.5  # fake source at centre
+            w = WCS(naxis=2)
+            w.wcs.crpix = [32, 32]
+            w.wcs.cdelt = [-20.0 / 3600, 20.0 / 3600]
+            w.wcs.crval = [ra_center, 16.15]
+            w.wcs.ctype = ["RA---SIN", "DEC--SIN"]
+            hdr = w.to_header()
+            hdr["BUNIT"] = "JY/BEAM"
+            hdr["BMAJ"] = 329.0 / 3600
+            hdr["BMIN"] = 76.0 / 3600
+            hdr["BPA"] = -132.0
+            path = tmp_path / filename
+            fits.writeto(str(path), data, hdr, overwrite=True)
+            return path
+
+        t1 = make_tile(343.5,  "tile1.fits")
+        t2 = make_tile(343.55, "tile2.fits")
+        return [t1, t2], tmp_path
+
+    def test_mosaic_creates_output_fits(self, two_tile_fits):
+        from dsa110_continuum.simulation.pipeline import SimulatedPipeline
+        tiles, work_dir = two_tile_fits
+        p = SimulatedPipeline(work_dir=work_dir)
+        mosaic_path = p._mosaic(image_paths=tiles, work_dir=work_dir)
+        assert mosaic_path.exists(), "Mosaic FITS must be created"
+
+    def test_mosaic_has_larger_or_equal_footprint(self, two_tile_fits):
+        """Mosaic should cover at least as many pixels as one input tile."""
+        from astropy.io import fits
+        from dsa110_continuum.simulation.pipeline import SimulatedPipeline
+        tiles, work_dir = two_tile_fits
+        p = SimulatedPipeline(work_dir=work_dir)
+        mosaic_path = p._mosaic(image_paths=tiles, work_dir=work_dir)
+        with fits.open(str(tiles[0])) as h0, fits.open(str(mosaic_path)) as hm:
+            n_pix_tile   = h0[0].data.size
+            n_pix_mosaic = hm[0].data.size
+        assert n_pix_mosaic >= n_pix_tile, \
+            f"Mosaic ({n_pix_mosaic} px) should be >= one tile ({n_pix_tile} px)"
+
+    def test_mosaic_returns_path_object(self, two_tile_fits):
+        from dsa110_continuum.simulation.pipeline import SimulatedPipeline
+        tiles, work_dir = two_tile_fits
+        p = SimulatedPipeline(work_dir=work_dir)
+        result = p._mosaic(image_paths=tiles, work_dir=work_dir)
+        assert isinstance(result, Path)
