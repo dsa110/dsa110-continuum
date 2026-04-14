@@ -9,7 +9,7 @@ Usage:
     python scripts/validate_package.py
 
     # Or from anywhere with package installed:
-    python -m dsa110_contimg.core.validation.package_health
+    python -m dsa110_continuum.validation.package_health
 
 Exit codes:
     0 - All checks passed
@@ -21,7 +21,10 @@ from __future__ import annotations
 import importlib
 import sys
 from pathlib import Path
-from dsa110_contimg.common.utils import get_env_path
+try:
+    from dsa110_contimg.common.utils import get_env_path
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 
 # ANSI color codes

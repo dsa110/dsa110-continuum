@@ -11,15 +11,18 @@ from pathlib import Path
 
 # Import original function
 from dsa110_continuum.photometry.ese_detection import detect_ese_candidates as _detect_ese_candidates
-from dsa110_contimg.workflow.pipeline.caching import (
-    get_cached_variability_stats,
-)
-from dsa110_contimg.workflow.pipeline.metrics import record_ese_detection
-from dsa110_contimg.workflow.pipeline.structured_logging import (
-    get_logger,
-    log_ese_detection,
-    set_correlation_id,
-)
+try:
+    from dsa110_contimg.workflow.pipeline.caching import (
+        get_cached_variability_stats,
+    )
+    from dsa110_contimg.workflow.pipeline.metrics import record_ese_detection
+    from dsa110_contimg.workflow.pipeline.structured_logging import (
+        get_logger,
+        log_ese_detection,
+        set_correlation_id,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = get_logger(__name__)
 

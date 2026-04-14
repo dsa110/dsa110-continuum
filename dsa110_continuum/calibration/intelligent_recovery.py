@@ -9,7 +9,7 @@
 
 Examples
 --------
-    >>> from dsa110_contimg.core.calibration.intelligent_recovery import CalibrationRecoveryManager
+    >>> from dsa110_continuum.calibration.intelligent_recovery import CalibrationRecoveryManager
     >>>
     >>> # Define calibration function
     >>> def calibrate(ms_path, **params):

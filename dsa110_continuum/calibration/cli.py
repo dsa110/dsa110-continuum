@@ -5,14 +5,14 @@ Provides command-line interface for calibrating Measurement Sets.
 
 Example usage:
     # Full calibration sequence for 0834+555
-    python -m dsa110_contimg.core.calibration.cli calibrate \
+    python -m dsa110_continuum.calibration.cli calibrate \
         --ms "${CONTIMG_STAGING_DIR}/ms/2025-12-05T12:30:00.ms" \
         --calibrator 0834+555 \
         --field 12 \
         --refant 3
 
     # Phaseshift only (no calibration)
-    python -m dsa110_contimg.core.calibration.cli phaseshift \
+    python -m dsa110_continuum.calibration.cli phaseshift \
         --ms "${CONTIMG_STAGING_DIR}/ms/obs.ms" \
         --calibrator 0834+555 \
         --field 12 \
@@ -209,18 +209,18 @@ def cmd_check_flux_calibrator(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     """Build argument parser."""
     parser = argparse.ArgumentParser(
-        prog="dsa110_contimg.core.calibration.cli",
+        prog="dsa110_continuum.calibration.cli",
         description="DSA-110 Calibration CLI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   # Full calibration for 0834+555
-  python -m dsa110_contimg.core.calibration.cli calibrate \\
+  python -m dsa110_continuum.calibration.cli calibrate \\
       --ms "${CONTIMG_STAGING_DIR}/ms/obs.ms" \\
       --calibrator 0834+555 --field 12 --refant 3
 
   # Phaseshift only
-  python -m dsa110_contimg.core.calibration.cli phaseshift \\
+  python -m dsa110_continuum.calibration.cli phaseshift \\
       --ms "${CONTIMG_STAGING_DIR}/ms/obs.ms" --calibrator 0834+555 --field 12
 """,
     )

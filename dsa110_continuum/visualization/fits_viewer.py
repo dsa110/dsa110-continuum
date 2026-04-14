@@ -25,7 +25,10 @@ from urllib.parse import urlencode
 
 from astropy.io import fits
 from astropy.wcs import WCS
-from dsa110_contimg.common.utils import get_env_path
+try:
+    from dsa110_contimg.common.utils import get_env_path
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 # Logging
 logger = logging.getLogger(__name__)

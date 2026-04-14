@@ -7,33 +7,36 @@ This module provides hardening functionality for calibration, including:
 Moved from workflow.pipeline.hardening to proper location in core.calibration.
 """
 
-from dsa110_contimg.core.calibration.hardening.calibration import (
-    BP_VALIDITY_DAYS,
-    BP_VALIDITY_HOURS,
-    DEFAULT_CAL_VALIDITY_DAYS,
-    DEFAULT_CAL_VALIDITY_HOURS,
-    G_VALIDITY_DAYS,
-    G_VALIDITY_HOURS,
-    K_VALIDITY_DAYS,
-    K_VALIDITY_HOURS,
-    CalibrationSelection,
-    CalibratorCandidate,
-    InterpolatedCalibration,
-    TableTypeValidity,
-    check_calibration_overlap,
-    find_backup_calibrators,
-    get_active_applylist_bidirectional,
-    get_calibration_for_science,
-    get_interpolated_calibration,
-    get_min_validity_for_types,
-    get_validity_hours_for_type,
-    resolve_calibration_overlap,
-)
-from dsa110_contimg.core.calibration.hardening.rfi import (
-    RFIStats,
-    preflag_rfi,
-    preflag_rfi_adaptive,
-)
+try:
+    from dsa110_contimg.core.calibration.hardening.calibration import (
+        BP_VALIDITY_DAYS,
+        BP_VALIDITY_HOURS,
+        DEFAULT_CAL_VALIDITY_DAYS,
+        DEFAULT_CAL_VALIDITY_HOURS,
+        G_VALIDITY_DAYS,
+        G_VALIDITY_HOURS,
+        K_VALIDITY_DAYS,
+        K_VALIDITY_HOURS,
+        CalibrationSelection,
+        CalibratorCandidate,
+        InterpolatedCalibration,
+        TableTypeValidity,
+        check_calibration_overlap,
+        find_backup_calibrators,
+        get_active_applylist_bidirectional,
+        get_calibration_for_science,
+        get_interpolated_calibration,
+        get_min_validity_for_types,
+        get_validity_hours_for_type,
+        resolve_calibration_overlap,
+    )
+    from dsa110_contimg.core.calibration.hardening.rfi import (
+        RFIStats,
+        preflag_rfi,
+        preflag_rfi_adaptive,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 __all__ = [
     # Validity constants

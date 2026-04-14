@@ -20,7 +20,10 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.stats import mad_std
 
-from dsa110_contimg.common.utils.decorators import timed
+try:
+    from dsa110_contimg.common.utils.decorators import timed
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray

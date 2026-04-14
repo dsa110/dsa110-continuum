@@ -5,7 +5,10 @@ import logging
 import astropy.units as u
 
 
-import casacore.tables as casatables  # type: ignore
+try:
+    import casacore.tables as casatables  # type: ignore
+except ImportError:
+    casatables = None  # type: ignore[assignment]  # casacore not installed
 import numpy as np
 
 from dsa110_continuum.calibration import BeamConfig, primary_beam_response

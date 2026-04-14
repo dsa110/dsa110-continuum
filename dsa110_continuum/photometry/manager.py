@@ -21,22 +21,28 @@ import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
 
-from dsa110_contimg.interfaces.api.batch import create_batch_photometry_job
-from dsa110_contimg.infrastructure.database import (
-    ensure_pipeline_db,
-    photometry_insert,
-)
-from dsa110_contimg.infrastructure.database.data_registry import (
-    ensure_data_registry_db,
-    link_photometry_to_data,
-)
+try:
+    from dsa110_contimg.interfaces.api.batch import create_batch_photometry_job
+    from dsa110_contimg.infrastructure.database import (
+        ensure_pipeline_db,
+        photometry_insert,
+    )
+    from dsa110_contimg.infrastructure.database.data_registry import (
+        ensure_data_registry_db,
+        link_photometry_to_data,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 from dsa110_continuum.photometry.ese_pipeline import auto_detect_ese_for_new_measurements
 from dsa110_continuum.photometry.forced import ForcedPhotometryResult, measure_many
 from dsa110_continuum.photometry.helpers import (
     query_sources_for_fits,
     query_sources_for_mosaic,
 )
-from dsa110_contimg.common.utils.decorators import timed
+try:
+    from dsa110_contimg.common.utils.decorators import timed
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

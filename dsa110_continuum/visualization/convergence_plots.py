@@ -14,8 +14,8 @@ Essential for:
 - Comparing different calibration strategies
 
 Works with data structures from:
-- dsa110_contimg.core.calibration.selfcal.SelfCalResult
-- dsa110_contimg.core.calibration.selfcal.SelfCalIterationResult
+- dsa110_continuum.calibration.selfcal.SelfCalResult
+- dsa110_continuum.calibration.selfcal.SelfCalIterationResult
 """
 
 from __future__ import annotations

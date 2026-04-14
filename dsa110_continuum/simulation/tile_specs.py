@@ -9,7 +9,7 @@ of drift-scan observing data, which is the fundamental unit of the imaging pipel
 
 Examples
 --------
->>> from dsa110_contimg.core.simulation.tile_specs import STANDARD_TILE, TileSpecification
+>>> from dsa110_continuum.simulation.tile_specs import STANDARD_TILE, TileSpecification
 >>>
 >>> # Use standard specification
 >>> print(f"Tile duration: {STANDARD_TILE.total_duration_sec} seconds")

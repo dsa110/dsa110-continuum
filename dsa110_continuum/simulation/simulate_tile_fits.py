@@ -12,7 +12,7 @@ The direct FITS approach is ideal for:
 
 Examples
 --------
->>> from dsa110_contimg.core.simulation.simulate_tile_fits import create_synthetic_tile
+>>> from dsa110_continuum.simulation.simulate_tile_fits import create_synthetic_tile
 >>>
 >>> # Generate tile with catalog sources
 >>> from dsa110_contimg.infrastructure.database import data_config

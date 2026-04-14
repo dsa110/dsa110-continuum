@@ -187,8 +187,8 @@ def main(argv: list[str] | None = None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python -m dsa110_contimg.core.catalog.build_master_cli files --nvss NVSS.csv --vlass VLASS.csv
-  python -m dsa110_contimg.core.catalog.build_master_cli sqlite --force --match-radius 10.0
+  python -m dsa110_continuum.catalog.build_master_cli files --nvss NVSS.csv --vlass VLASS.csv
+  python -m dsa110_continuum.catalog.build_master_cli sqlite --force --match-radius 10.0
 """,
     )
     subparsers = ap.add_subparsers(dest="source", required=True)

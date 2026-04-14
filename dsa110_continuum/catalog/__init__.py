@@ -1,5 +1,7 @@
 """Catalog utilities (crossmatches, per-strip SQLite databases, cone search)."""
 
+from .unified import UnifiedCatalog
+
 from .crossmatch import (
     calc_de_ruiter,
     calc_de_ruiter_beamwidth,

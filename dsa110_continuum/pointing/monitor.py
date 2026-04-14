@@ -27,8 +27,11 @@ from astropy import units as u
 from astropy.coordinates import EarthLocation, SkyCoord
 from astropy.time import Time
 
-from dsa110_contimg.common.utils.constants import DSA110_LOCATION
-from dsa110_contimg.common.utils import get_env_path
+try:
+    from dsa110_contimg.common.utils.constants import DSA110_LOCATION
+    from dsa110_contimg.common.utils import get_env_path
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

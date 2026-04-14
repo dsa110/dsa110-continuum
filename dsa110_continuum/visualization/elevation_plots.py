@@ -44,8 +44,11 @@ if TYPE_CHECKING:
 from astropy.coordinates import SkyCoord, EarthLocation, AltAz
 from astropy.time import Time
 from astropy import units as u
-from dsa110_contimg.common.utils.constants import DSA110_LOCATION, DSA110_LATITUDE, DSA110_LONGITUDE
-from dsa110_contimg.common.utils.time_utils import detect_casa_time_format, jd_to_mjd
+try:
+    from dsa110_contimg.common.utils.constants import DSA110_LOCATION, DSA110_LATITUDE, DSA110_LONGITUDE
+    from dsa110_contimg.common.utils.time_utils import detect_casa_time_format, jd_to_mjd
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 from dsa110_continuum.visualization.config import FigureConfig, PlotStyle
 
 logger = logging.getLogger(__name__)

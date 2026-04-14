@@ -4,19 +4,19 @@ Mosaic pipeline CLI entry point.
 
 Usage:
     # Run on-demand mosaic
-    python -m dsa110_contimg.core.mosaic on-demand --name custom_mosaic \
+    python -m dsa110_continuum.mosaic on-demand --name custom_mosaic \
         --start 1700000000 --end 1700086400
 
     # With specific tier
-    python -m dsa110_contimg.core.mosaic on-demand --name my_mosaic \
+    python -m dsa110_continuum.mosaic on-demand --name my_mosaic \
         --start 1700000000 --end 1700086400 --tier science
 
     # Dry run (show what would be processed without executing)
-    python -m dsa110_contimg.core.mosaic on-demand --name test --start 1700000000 \
+    python -m dsa110_continuum.mosaic on-demand --name test --start 1700000000 \
         --end 1700086400 --dry-run
 
     # Check pipeline status
-    python -m dsa110_contimg.core.mosaic status
+    python -m dsa110_continuum.mosaic status
 """
 
 from __future__ import annotations
@@ -27,7 +27,10 @@ import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from dsa110_contimg.common.utils import get_env_path
+try:
+    from dsa110_contimg.common.utils import get_env_path
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 # Configure logging before imports
 logging.basicConfig(

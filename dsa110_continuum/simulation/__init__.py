@@ -31,76 +31,94 @@ To use pyuvsim for visibility generation:
 
 # Time-domain simulation
 # Ground truth tracking
-from dsa110_contimg.core.simulation.ground_truth import (
-    GroundTruthRegistry,
-    GroundTruthSource,
-)
+try:
+    from dsa110_contimg.core.simulation.ground_truth import (
+        GroundTruthRegistry,
+        GroundTruthSource,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 # Metrics
-from dsa110_contimg.core.simulation.metrics import (
-    astrometric_offset,
-    compute_variability_metrics,
-    detection_completeness,
-    false_positive_rate,
-    flux_recovery_error,
-    match_sources_by_position,
-    mean_absolute_percentage_error,
-    rms_flux_error,
-)
-from dsa110_contimg.core.simulation.time_domain import (
-    EpochData,
-    MultiEpochResult,
-    generate_multi_epoch_uvh5,
-)
+try:
+    from dsa110_contimg.core.simulation.metrics import (
+        astrometric_offset,
+        compute_variability_metrics,
+        detection_completeness,
+        false_positive_rate,
+        flux_recovery_error,
+        match_sources_by_position,
+        mean_absolute_percentage_error,
+        rms_flux_error,
+    )
+    from dsa110_contimg.core.simulation.time_domain import (
+        EpochData,
+        MultiEpochResult,
+        generate_multi_epoch_uvh5,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 # Validation
-from dsa110_contimg.core.simulation.validation import (
-    ValidationReport,
-    validate_all,
-    validate_ese_detection,
-    validate_lightcurve,
-    validate_photometry,
-)
+try:
+    from dsa110_contimg.core.simulation.validation import (
+        ValidationReport,
+        validate_all,
+        validate_ese_detection,
+        validate_lightcurve,
+        validate_photometry,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 # Variability models
-from dsa110_contimg.core.simulation.variability_models import (
-    ConstantFlux,
-    ESEScattering,
-    FlareModel,
-    PeriodicVariation,
-    VariabilityModel,
-    compute_flux_at_time,
-    create_variability_model,
-)
+try:
+    from dsa110_contimg.core.simulation.variability_models import (
+        ConstantFlux,
+        ESEScattering,
+        FlareModel,
+        PeriodicVariation,
+        VariabilityModel,
+        compute_flux_at_time,
+        create_variability_model,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 # pyuvsim integration for accurate visibility simulation
-from dsa110_contimg.core.simulation.pyuvsim_adapter import (
-    check_mpi_available,
-    check_pyuvsim_available,
-    create_dsa110_beam,
-    simulate_visibilities,
-    sources_to_skymodel,
-)
+try:
+    from dsa110_contimg.core.simulation.pyuvsim_adapter import (
+        check_mpi_available,
+        check_pyuvsim_available,
+        create_dsa110_beam,
+        simulate_visibilities,
+        sources_to_skymodel,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 # Configuration and constants
-from dsa110_contimg.core.simulation.simulation_config import (
-    DSA110_CHANNEL_WIDTH_HZ,
-    DSA110_CHANNELS_PER_SUBBAND,
-    DSA110_FREQ_MAX_HZ,
-    DSA110_FREQ_MIN_HZ,
-    DSA110_INTEGRATION_TIME_SEC,
-    DSA110_NUM_ANTENNAS,
-    DSA110_NUM_ANTENNAS_TEST,
-    DSA110_NUM_INTEGRATIONS,
-    DSA110_NUM_POLARIZATIONS,
-    DSA110_NUM_SUBBANDS,
-    DSA110_REFERENCE_FREQ_HZ,
-    DSA110_TOTAL_BANDWIDTH_HZ,
-    DSA110_TOTAL_CHANNELS,
-    SimulationConfig,
-    get_config,
-    get_test_config,
-)
+try:
+    from dsa110_contimg.core.simulation.simulation_config import (
+        DSA110_CHANNEL_WIDTH_HZ,
+        DSA110_CHANNELS_PER_SUBBAND,
+        DSA110_FREQ_MAX_HZ,
+        DSA110_FREQ_MIN_HZ,
+        DSA110_INTEGRATION_TIME_SEC,
+        DSA110_NUM_ANTENNAS,
+        DSA110_NUM_ANTENNAS_TEST,
+        DSA110_NUM_INTEGRATIONS,
+        DSA110_NUM_POLARIZATIONS,
+        DSA110_NUM_SUBBANDS,
+        DSA110_REFERENCE_FREQ_HZ,
+        DSA110_TOTAL_BANDWIDTH_HZ,
+        DSA110_TOTAL_CHANNELS,
+        SimulationConfig,
+        get_config,
+        get_test_config,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 __all__ = [
     # Configuration

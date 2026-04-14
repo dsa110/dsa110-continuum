@@ -17,6 +17,7 @@ website:
       - pipeline-overview.qmd
       - epoch-qa.qmd
       - outputs-and-artifacts.qmd
+      - lightcurves-and-variability.qmd
 
 format:
   html:

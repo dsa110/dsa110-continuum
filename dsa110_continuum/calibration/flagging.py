@@ -14,8 +14,11 @@ from typing import Any
 from dsa110_continuum.calibration.casa_service import CASAService
 
 from dsa110_continuum._lazy_init import require_headless
-from dsa110_contimg.common.utils.error_context import format_ms_error_with_suggestions
-from dsa110_contimg.common.utils import get_env_path
+try:
+    from dsa110_contimg.common.utils.error_context import format_ms_error_with_suggestions
+    from dsa110_contimg.common.utils import get_env_path
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 # Import CASA log environment for proper log redirection
 try:

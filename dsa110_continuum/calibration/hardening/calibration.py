@@ -10,7 +10,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from dsa110_contimg.infrastructure.database.unified import ensure_db, retire_caltable_set
+try:
+    from dsa110_contimg.infrastructure.database.unified import ensure_db, retire_caltable_set
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

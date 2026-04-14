@@ -17,10 +17,21 @@ from typing import Any
 import numpy as np
 
 
-import casacore.tables as casatables
+try:
+    import casacore.tables as casatables
+except ImportError:
+    casatables = None  # type: ignore[assignment]  # casacore not installed
 
-table = casatables.table
 
+def table(*args: Any, **kwargs: Any) -> Any:
+    """Return a casacore table, or raise a clear error if casacore is unavailable."""
+    if casatables is None:
+        raise ImportError(
+            "casacore is required for bandpass table diagnostics but is not installed. "
+            "Install `casacore` to use functions in dsa110_continuum.calibration.bandpass_diagnostics "
+            "that access CASA tables."
+        )
+    return casatables.table(*args, **kwargs)
 logger = logging.getLogger(__name__)
 
 
@@ -1153,7 +1164,7 @@ def get_recovery_recommendations(
                 "The chgcentre tool has known UVW convention issues with DSA-110."
             ),
             "command": (
-                "from dsa110_contimg.core.calibration.runner import phaseshift_ms\n"
+                "from dsa110_continuum.calibration.runner import phaseshift_ms\n"
                 "phaseshift_ms(ms_path, field='0~23', mode='calibrator', "
                 "calibrator_name='...', use_chgcentre=False)"
             ),
@@ -1164,7 +1175,7 @@ def get_recovery_recommendations(
                 "This corrects phase drifts that cause decorrelation and low SNR."
             ),
             "command": (
-                "from dsa110_contimg.core.calibration.calibration import "
+                "from dsa110_continuum.calibration.calibration import "
                 "solve_prebandpass_phase\n"
                 "tables = solve_prebandpass_phase(ms, cal_field, refant, ...)"
             ),
@@ -1189,7 +1200,7 @@ def get_recovery_recommendations(
                 "patterns suggest RFI contamination."
             ),
             "command": (
-                "from dsa110_contimg.core.calibration.flagging import flag_rfi_aoflagger\n"
+                "from dsa110_continuum.calibration.flagging import flag_rfi_aoflagger\n"
                 "flag_rfi_aoflagger(ms_path, datacolumn='data')"
             ),
         },
@@ -1199,7 +1210,7 @@ def get_recovery_recommendations(
                 "MODEL_DATA causes all solutions to be flagged."
             ),
             "command": (
-                "from dsa110_contimg.core.calibration.model import "
+                "from dsa110_continuum.calibration.model import "
                 "populate_model_from_catalog\n"
                 "populate_model_from_catalog(ms, field='0~23', "
                 "calibrator_name='...')"
@@ -1224,7 +1235,7 @@ def get_recovery_recommendations(
                 "Wrong position causes phase errors."
             ),
             "command": (
-                "from dsa110_contimg.core.calibration.catalogs import get_vla_calibrator\n"
+                "from dsa110_continuum.calibration.catalogs import get_vla_calibrator\n"
                 "cal = get_vla_calibrator('...')\n"
                 "print(cal.ra_deg, cal.dec_deg)"
             ),

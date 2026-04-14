@@ -783,7 +783,7 @@ def _ensure_writable(paths) -> None:
 #         True if successful
 #     """
 #     try:
-#         from dsa110_contimg.core.calibration.casa_service import CASAService
+#         from dsa110_continuum.calibration.casa_service import CASAService
 #
 #         service = CASAService()
 #         service.ft(

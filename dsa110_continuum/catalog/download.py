@@ -3,7 +3,6 @@
 import logging
 import os
 from pathlib import Path
-from dsa110_contimg.common.utils import get_env_path
 
 try:
     from astroquery.vizier import Vizier
@@ -13,8 +12,18 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Cache directory (respects CONTIMG_BASE_DIR)
-DEFAULT_CACHE_DIR = get_env_path("CONTIMG_BASE_DIR", default="/data/dsa110-contimg") / ".cache" / "catalogs"
+
+def _default_cache_dir() -> Path:
+    """Resolve default cache dir via PathConfig, fallback to hardcoded path."""
+    try:
+        from dsa110_continuum.config import paths
+        return paths.base_dir / ".cache" / "catalogs"
+    except Exception:
+        base = Path(os.environ.get("CONTIMG_BASE_DIR", "/data/dsa110-contimg"))
+        return base / ".cache" / "catalogs"
+
+
+DEFAULT_CACHE_DIR = _default_cache_dir()
 
 
 def download_first(cache_dir: Path | str = DEFAULT_CACHE_DIR) -> Path | None:

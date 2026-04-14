@@ -20,7 +20,10 @@ from pathlib import Path
 from typing import Any
 import statistics
 
-from dsa110_contimg.common.utils.decorators import timed
+try:
+    from dsa110_contimg.common.utils.decorators import timed
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

@@ -6,7 +6,7 @@ Provides a single, consistent interface to query any supported survey catalog
 
 Examples
 --------
->>> from dsa110_contimg.core.calibration.catalog_registry import query_catalog, CatalogName
+>>> from dsa110_continuum.calibration.catalog_registry import query_catalog, CatalogName
 >>> sources = query_catalog(
 ...     CatalogName.NVSS,
 ...     ra_deg=128.5,
@@ -30,8 +30,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from dsa110_contimg.common.utils.paths import get_repo_root
-from dsa110_contimg.common.utils import get_env_path
+try:
+    from dsa110_contimg.common.utils.paths import get_repo_root
+    from dsa110_contimg.common.utils import get_env_path
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

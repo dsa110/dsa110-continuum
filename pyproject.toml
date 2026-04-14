@@ -142,7 +142,7 @@ dsa110-health = "dsa110_contimg.validation.package_health:main"
 dsa110-validate = "dsa110_contimg.validation.package_health:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
 
 [tool.pytest.ini_options]
 # Keep pytest tmp_path output on the /data filesystem (not /tmp which is on a

@@ -5,7 +5,10 @@ Creates and manages SQLite FTS5 virtual tables for searching jobs, alerts, and s
 
 import logging
 
-from dsa110_contimg.infrastructure.database.connection import get_db_connection
+try:
+    from dsa110_contimg.infrastructure.database.connection import get_db_connection
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

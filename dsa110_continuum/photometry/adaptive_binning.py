@@ -319,7 +319,7 @@ def create_measure_fn_from_images(
 
     Examples
     --------
-        >>> from dsa110_contimg.core.photometry.forced import measure_forced_peak
+        >>> from dsa110_continuum.photometry.forced import measure_forced_peak
         >>>
         >>> def photometry_fn(image_path, ra, dec):
         ...     result = measure_forced_peak(image_path, ra, dec)

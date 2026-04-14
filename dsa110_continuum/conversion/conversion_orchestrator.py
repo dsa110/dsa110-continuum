@@ -20,31 +20,37 @@ from pathlib import Path
 import numpy as np
 import pyuvdata
 
-from dsa110_contimg.common.unified_config import settings
-from dsa110_contimg.common.utils import FastMeta, timed, timed_debug
-from dsa110_contimg.common.utils.antpos_local import get_itrf
-from dsa110_contimg.common.utils.exceptions import (
-    ConversionError,
-    IncompleteSubbandGroupError,
-    MSWriteError,
-    UVH5ReadError,
-    is_recoverable,
-    wrap_exception,
-)
-from dsa110_contimg.common.utils.logging import log_context, log_exception
+try:
+    from dsa110_contimg.common.unified_config import settings
+    from dsa110_contimg.common.utils import FastMeta, timed, timed_debug
+    from dsa110_contimg.common.utils.antpos_local import get_itrf
+    from dsa110_contimg.common.utils.exceptions import (
+        ConversionError,
+        IncompleteSubbandGroupError,
+        MSWriteError,
+        UVH5ReadError,
+        is_recoverable,
+        wrap_exception,
+    )
+    from dsa110_contimg.common.utils.logging import log_context, log_exception
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 from dsa110_continuum.conversion.file_validator import (
     MissingInputFilesError,
     RollingFileValidator,
 )
 from dsa110_continuum.conversion.writers import get_writer
-from dsa110_contimg.infrastructure.database.hdf5_index import (
-    parse_subband_filename,
-    query_subband_groups,
-)
-from dsa110_contimg.infrastructure.monitoring.pipeline_metrics import (
-    PipelineStage,
-    record_stage_timing,
-)
+try:
+    from dsa110_contimg.infrastructure.database.hdf5_index import (
+        parse_subband_filename,
+        query_subband_groups,
+    )
+    from dsa110_contimg.infrastructure.monitoring.pipeline_metrics import (
+        PipelineStage,
+        record_stage_timing,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

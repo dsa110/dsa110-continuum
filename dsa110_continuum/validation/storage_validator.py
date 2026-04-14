@@ -220,7 +220,7 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) < 3:
-        print("Usage: python -m dsa110_contimg.core.validation.storage_validator <path> <operation>")
+        print("Usage: python -m dsa110_continuum.validation.storage_validator <path> <operation>")
         print("Operations: conversion, imaging, calibration, mosaic, build")
         sys.exit(1)
 

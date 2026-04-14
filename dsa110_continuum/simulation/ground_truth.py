@@ -15,8 +15,8 @@
 
     Example
 -------
-    >>> from dsa110_contimg.core.simulation.ground_truth import GroundTruthRegistry
-    >>> from dsa110_contimg.core.simulation.variability_models import FlareModel
+    >>> from dsa110_continuum.simulation.ground_truth import GroundTruthRegistry
+    >>> from dsa110_continuum.simulation.variability_models import FlareModel
     >>>
     >>> # Create registry
     >>> registry = GroundTruthRegistry(test_run_id="test_2025-01-15")

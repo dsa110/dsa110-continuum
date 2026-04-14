@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import html
 
-from dsa110_contimg.common.utils.templates import render_template
+try:
+    from dsa110_contimg.common.utils.templates import render_template
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 from .fits_viewer_templates import get_css_styles
 

@@ -13,8 +13,8 @@
 
     Example
 -------
-    >>> from dsa110_contimg.core.simulation.validation import validate_photometry
-    >>> from dsa110_contimg.core.simulation.ground_truth import GroundTruthRegistry
+    >>> from dsa110_continuum.simulation.validation import validate_photometry
+    >>> from dsa110_continuum.simulation.ground_truth import GroundTruthRegistry
     >>>
     >>> # Load ground truth
     >>> registry = GroundTruthRegistry.from_json(Path("ground_truth.json"))
@@ -230,7 +230,7 @@ def validate_photometry(
         
         # Position Error in arcsec
         # Approximation for small offsets: sqrt((dRA*cos(Dec))^2 + dDec^2) * 3600
-        # or use astropy if available. dsa110_contimg.core.simulation.metrics.astrometric_offset uses SkyCoord usually
+        # or use astropy if available. dsa110_continuum.simulation.metrics.astrometric_offset uses SkyCoord usually
         # But we can reimplement simple approx for speed or use the function via apply?
         # The original code imported astrometric_offset.
         # Let's use simple approximation for vectorization efficiency 

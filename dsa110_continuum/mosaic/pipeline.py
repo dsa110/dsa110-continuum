@@ -16,13 +16,16 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from dsa110_contimg.workflow.pipeline import (
-    NotificationConfig,
-    Pipeline,
-    RetryBackoff,
-    RetryPolicy,
-    register_pipeline,
-)
+try:
+    from dsa110_contimg.workflow.pipeline import (
+        NotificationConfig,
+        Pipeline,
+        RetryBackoff,
+        RetryPolicy,
+        register_pipeline,
+    )
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 from .jobs import (
     MosaicBuildJob,

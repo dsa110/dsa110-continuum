@@ -8,8 +8,11 @@ from typing import Any
 
 import numpy as np
 
-from dsa110_contimg.common.unified_config import settings
-from dsa110_contimg.common.utils.gpu_utils import get_array_module
+try:
+    from dsa110_contimg.common.unified_config import settings
+    from dsa110_contimg.common.utils.gpu_utils import get_array_module
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 logger = logging.getLogger(__name__)
 

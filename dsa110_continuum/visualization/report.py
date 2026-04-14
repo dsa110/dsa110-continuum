@@ -21,7 +21,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from dsa110_contimg.common.utils.templates import render_template
+try:
+    from dsa110_contimg.common.utils.templates import render_template
+except ImportError:
+    pass  # dsa110_contimg not installed (cloud/test env)
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure

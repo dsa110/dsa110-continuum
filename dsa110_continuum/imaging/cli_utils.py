@@ -6,9 +6,12 @@ from pathlib import Path
 import numpy as np
 
 
-import casacore.tables as casatables
+try:
+    import casacore.tables as casatables
+except ImportError:
+    casatables = None  # type: ignore[assignment]  # casacore not installed
 
-table = casatables.table  # noqa: N816
+table = casatables.table if casatables is not None else None  # noqa: N816
 
 from dsa110_continuum.imaging.masks import (
     beam_shape_erode,
@@ -84,7 +87,7 @@ def detect_datacolumn(ms_path: str) -> str:
                             f"Calibration appears to have been attempted but failed (all zeros). "
                             f"Cannot proceed with imaging uncalibrated data. "
                             f"Please verify calibration was applied successfully using: "
-                            f"python -m dsa110_contimg.core.calibration.cli apply --ms {ms_path}"
+                            f"python -m dsa110_continuum.calibration.cli apply --ms {ms_path}"
                         )
                 except RuntimeError:
                     raise  # Re-raise our errors
@@ -161,7 +164,7 @@ def default_cell_arcsec(ms_path: str) -> float:
 
 
 # Masking Utilities
-# Functions imported from dsa110_contimg.core.imaging.masks to avoid duplication
+# Functions imported from dsa110_continuum.imaging.masks to avoid duplication
 
 
 def prepare_cleaning_mask(

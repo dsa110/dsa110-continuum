@@ -23,7 +23,7 @@ References
 
 Examples
 --------
->>> from dsa110_contimg.core.calibration.fluxscale import (
+>>> from dsa110_continuum.calibration.fluxscale import (
 ...     bootstrap_flux_scale,
 ...     is_primary_flux_calibrator,
 ...     set_model_primary_calibrator,

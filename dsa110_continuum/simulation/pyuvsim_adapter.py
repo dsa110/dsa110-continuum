@@ -22,8 +22,8 @@ battle-tested implementation, reducing bugs and improving maintainability.
 
 Example
 -------
->>> from dsa110_contimg.core.simulation.pyuvsim_adapter import simulate_visibilities
->>> from dsa110_contimg.core.simulation.source_selection import SyntheticSource
+>>> from dsa110_continuum.simulation.pyuvsim_adapter import simulate_visibilities
+>>> from dsa110_continuum.simulation.source_selection import SyntheticSource
 >>> 
 >>> sources = [SyntheticSource(
 ...     source_id="TEST", ra_deg=180.0, dec_deg=54.6,

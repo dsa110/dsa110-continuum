@@ -3,7 +3,10 @@ from __future__ import annotations
 
 
 import astropy.units as u
-import casacore.tables as casatables
+try:
+    import casacore.tables as casatables
+except ImportError:
+    casatables = None  # type: ignore[assignment]  # casacore not installed
 import numpy as np
 import pandas as pd
 from astropy.coordinates import Angle

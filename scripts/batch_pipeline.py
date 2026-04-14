@@ -365,6 +365,22 @@ def _run_process_ms(
     return result.to_dict()
 
 
+def _ms_is_valid(path: str) -> bool:
+    """Return True only if *path* looks like a complete CASA Measurement Set.
+
+    Mirrors mosaic_day._ms_is_valid.  A Measurement Set produced by a partial
+    or failed HDF5→MS conversion will be missing ``table.dat`` or the
+    ``table.f*`` data files — detecting this early avoids stalling an entire
+    CASA applycal/wsclean subprocess pool on a broken input.
+    """
+    import glob as _g
+    return (
+        os.path.isdir(path)
+        and os.path.exists(os.path.join(path, "table.dat"))
+        and len(_g.glob(os.path.join(path, "table.f*"))) > 0
+    )
+
+
 def process_tile_safe(
     cfg_dict: dict,
     ms_path: str,
@@ -855,6 +871,23 @@ def main() -> None:
     for i, ms_path in enumerate(ms_list, 1):
         tag = Path(ms_path).stem
         log.info("[%d/%d] %s", i, len(ms_list), tag)
+
+        # Guard: skip corrupt or incomplete Measurement Sets before spawning
+        # a subprocess.  A corrupt MS (missing MAIN table, incomplete write,
+        # truncated HDF5→MS conversion) would stall CASA silently and waste
+        # the tile_timeout budget.  Detect early and fail fast.
+        if not _ms_is_valid(ms_path):
+            log.error(
+                "  SKIPPED: %s looks corrupt or incomplete (missing required MS tables)",
+                ms_path,
+            )
+            n_failed_tiles += 1
+            manifest.record_tile(
+                ms_path, None, "failed",
+                0.0, error="corrupt_ms_skipped",
+            )
+            continue
+
         t0 = time.time()
         result = process_tile_safe(
             cfg.to_dict(), ms_path, keep, tile_timeout, retry_failed,

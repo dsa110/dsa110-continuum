@@ -539,7 +539,7 @@ def build_wsclean_mosaic(
         approach for publication-quality science products and deep integrations.
 
         For QUICKLOOK tier (fast monitoring, no MS access),
-        use :func:`~dsa110_contimg.core.mosaic.builder.build_mosaic` instead.
+        use :func:`~dsa110_continuum.mosaic.builder.build_mosaic` instead.
 
     This is the main entry point for WSClean mosaicking. It:
     1. Copies MS files to scratch (preserves originals)

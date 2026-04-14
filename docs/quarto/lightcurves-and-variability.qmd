@@ -1,0 +1,172 @@
+---
+title: "Light Curves and Variability"
+---
+
+> **Status**: Implemented 2026-04-13 — `dsa110_continuum.lightcurves` module
+> **See also**: [Epoch QA](epoch-qa.qmd) | [Outputs and Artifacts](outputs-and-artifacts.qmd)
+
+## Overview
+
+This page covers the multi-epoch light curve stacking and Mooley et al. (2016)
+variability analysis that form the final science product of the DSA-110
+continuum pipeline.
+
+---
+
+## Per-epoch orchestration (`EpochOrchestrator`)
+
+`dsa110_continuum.pipeline.epoch_orchestrator.EpochOrchestrator` is the
+reusable, importable counterpart to the monolithic `scripts/batch_pipeline.py`.
+
+```{mermaid}
+flowchart TD
+    TILES[/"Tile FITS\n(one epoch)"/]
+    MOSAIC["fast_reproject_and_coadd()"]
+    STATS["Image RMS + detected sources"]
+    QA["CompositeQA\n3-gate verdict"]
+    DECIDE{"Decision"}
+    DB[("SQLite\nepoch_runs")]
+
+    TILES --> MOSAIC --> STATS --> QA --> DECIDE
+    DECIDE -->|pass| ACCEPT["ACCEPT"]
+    DECIDE -->|warn| WARN["WARN"]
+    DECIDE -->|fail| REJECT["REJECT"]
+    ACCEPT & WARN & REJECT --> DB
+```
+
+### Usage
+
+```python
+from dsa110_continuum.pipeline import EpochOrchestrator
+
+with EpochOrchestrator(output_dir="/data/mosaics", db_path="/data/pipeline.db") as orch:
+    result = orch.run_epoch(
+        "2026-01-25T22:00:00",
+        tile_paths=[...],
+        flux_scale_correction=1.05,
+    )
+    print(result.summary())
+    # → EpochRun[accept] epoch=2026-01-25T22:00:00 tiles=11 ...
+
+    # Process a full day:
+    results = orch.run_day("2026-01-25", tile_dir="/stage/mosaics/2026-01-25")
+```
+
+### Decision mapping
+
+| CompositeQA status | EpochDecision |
+|--------------------|---------------|
+| `PASS` | `ACCEPT` |
+| `WARN` | `WARN` |
+| `FAIL` | `REJECT` |
+| `SKIP` | `WARN` (cautious accept) |
+
+### SQLite persistence
+
+Results are stored in the `epoch_runs` table of `PathConfig.pipeline_db`.
+Each epoch row records decision, tile count, mosaic path, QA status,
+RMS values, source counts, elapsed time, and notes.
+
+---
+
+## Light curve stacking
+
+`dsa110_continuum.lightcurves.stacker.stack_csvs` reads all per-epoch
+forced-photometry CSVs and returns a single stacked DataFrame.
+
+```python
+from dsa110_continuum.lightcurves import stack_csvs
+
+df = stack_csvs(sorted(Path("products/mosaics").rglob("*_forced_phot.csv")))
+# Columns: source_name, ra_deg, dec_deg, measured_flux_jy, flux_err_jy,
+#           epoch_utc, date, source_id
+df.to_parquet("products/lightcurves/lightcurves.parquet", index=False)
+```
+
+### Source ID assignment
+
+Sources are identified using `source_name` if present (O(N) using
+`pd.factorize`), otherwise by 5″ SkyCoord cross-matching (O(N²) fallback).
+Source IDs are epoch-stable within a stacked run.
+
+---
+
+## Mooley et al. (2016) variability metrics
+
+`dsa110_continuum.lightcurves.metrics.compute_metrics` computes
+three complementary metrics for each source in the stacked light curve.
+
+### Metric definitions
+
+| Metric | Formula | Meaning |
+|--------|---------|---------|
+| **m** | \( m = \sigma_S / \langle S \rangle \) | Modulation index — fractional RMS variability |
+| **Vs** | \( V_s = (S_{\max} - S_{\min}) / \sqrt{\sigma_{\max}^2 + \sigma_{\min}^2} \) | Significance of flux extremes — robust to noise |
+| **η** | \( \eta = \chi^2_r = \frac{1}{N-1} \sum_i \left(\frac{S_i - \langle S \rangle_w}{\sigma_i}\right)^2 \) | Reduced chi-squared against constant-flux null hypothesis |
+
+where \( \langle S \rangle_w \) is the inverse-variance weighted mean.
+
+### Variable candidate thresholds
+
+| Threshold | Default | Rationale |
+|-----------|---------|-----------|
+| `Vs > 4.0` | Mooley et al. 2016 | 4-sigma flux significance |
+| `η > 2.5` | Mooley et al. 2016 | >2.5× expected scatter |
+
+Sources satisfying either criterion are flagged as `is_variable_candidate = True`.
+
+### Metric properties
+
+* **NaN safety**: rows with non-finite flux or non-positive error are silently
+  dropped; sources with fewer than 2 valid epochs return NaN for all three
+  metrics.
+* **m** is sensitive to mean flux level; compare **Vs** and **η** for
+  noise-corrected variability.
+* **Vs** is most useful for identifying individual extreme epochs (flares,
+  eclipses).
+* **η** captures overall variability pattern against measurement noise.
+
+### Usage
+
+```python
+from dsa110_continuum.lightcurves import compute_metrics, flag_candidates
+import pandas as pd
+
+lc = pd.read_parquet("products/lightcurves/lightcurves.parquet")
+metrics = compute_metrics(lc)                  # one row per source
+candidates = metrics[metrics["is_variable_candidate"]]
+print(f"{len(candidates)} variable candidates from {len(metrics)} sources")
+```
+
+---
+
+## Scripts (delegation)
+
+The standalone scripts under `scripts/` now delegate to the importable modules:
+
+| Script | Delegates to |
+|--------|--------------|
+| `scripts/stack_lightcurves.py` | `dsa110_continuum.lightcurves.stacker` |
+| `scripts/variability_metrics.py` | `dsa110_continuum.lightcurves.metrics` |
+
+Both scripts remain runnable as-is.
+
+---
+
+## Implementation status
+
+| Component | Tests | Status |
+|-----------|-------|--------|
+| `pipeline/epoch_orchestrator.py` | 44 tests | Verified |
+| `lightcurves/stacker.py` | included in test_lightcurves.py | Verified |
+| `lightcurves/metrics.py` | 56 tests | Verified |
+| `scripts/stack_lightcurves.py` | (delegates) | Updated |
+| `scripts/variability_metrics.py` | (delegates) | Updated |
+| Run on real multi-epoch data on H17 | — | Pending |
+
+---
+
+## References
+
+Mooley, K. P. et al. (2016), ApJ, 818, 105.
+[DOI: 10.3847/0004-637X/818/2/105](https://doi.org/10.3847/0004-637X/818/2/105)

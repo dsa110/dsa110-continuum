@@ -13,10 +13,13 @@ import logging
 
 
 # Provide a patchable casacore table symbol for tests and submodules
-import casacore.tables as casatables  # type: ignore
+try:
+    import casacore.tables as casatables  # type: ignore
+except ImportError:
+    casatables = None  # type: ignore[assignment]  # casacore not installed
 
 # Expose as module attribute so tests can patch dsa110_contimg.conversion.helpers.table
-table = casatables.table  # noqa: N816
+table = casatables.table if casatables is not None else None  # noqa: N816
 
 logger = logging.getLogger("dsa110_contimg.conversion.helpers")
 
