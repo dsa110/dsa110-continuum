@@ -77,6 +77,7 @@ _DISH_DIAM_M      = 4.65
 # The CSV has 117 rows (all allocated station slots); 96 are active in
 # the operational array (47 E-W + 35 N-S + 14 outriggers; Connor et al. 2025).
 _DEFAULT_ANT_CSV = Path(__file__).parent / "pyuvsim" / "antennas.csv"
+_DEFAULT_GEO_CSV = Path(__file__).parent / "pyuvsim" / "DSA110_Station_Coordinates.csv"
 
 
 def _load_antenna_enu_from_csv(
@@ -134,6 +135,107 @@ def _load_antenna_enu_from_csv(
     arr -= arr[0]
 
     return arr  # columns: east_m, north_m, up_m
+
+
+def load_geodetic_enu(
+    n_antennas: int = 96,
+    geo_csv_path: Path | str | None = None,
+    ref_lat_deg: float = _OVRO_LAT_DEG,
+    ref_lon_deg: float = _OVRO_LON_DEG,
+    ref_alt_m: float = _OVRO_ALT_M,
+) -> np.ndarray:
+    """Load DSA-110 antenna positions as local ENU from geodetic coordinates.
+
+    Reads ``DSA110_Station_Coordinates.csv`` (lat/lon/elevation per antenna in
+    WGS-84), converts each antenna to ECEF via the WGS-84 ellipsoid, then
+    rotates to the local ENU frame centred on the first antenna (DSA-001).
+
+    This produces genuine local-ENU coordinates: East increases to the right,
+    North increases upward in the array plane, Up is away from Earth centre.
+    W-term values are correctly small (< 5 % of max baseline) for sources
+    near transit, enabling WSClean to form a real synthesised beam.
+
+    Parameters
+    ----------
+    n_antennas:
+        Number of antennas to return (default 96, the operational set).
+        Must be <= 117 (all allocated slots).
+    geo_csv_path:
+        Path to the geodetic CSV.  Defaults to the bundled
+        ``DSA110_Station_Coordinates.csv``.
+    ref_lat_deg, ref_lon_deg, ref_alt_m:
+        Geodetic reference point for the local ENU frame (default: OVRO).
+        The first antenna (DSA-001) is used as the origin of the ENU frame;
+        these parameters define the rotation from ECEF to ENU.
+
+    Returns
+    -------
+    np.ndarray of shape (n_antennas, 3)
+        Columns are [east_m, north_m, up_m] in the local ENU frame, with
+        DSA-001 at the origin (0, 0, 0).
+    """
+    if geo_csv_path is None:
+        geo_csv_path = _DEFAULT_GEO_CSV
+    geo_csv_path = Path(geo_csv_path)
+
+    # WGS-84 constants
+    a  = 6_378_137.0
+    f  = 1.0 / 298.257_223_563
+    e2 = 2 * f - f ** 2
+
+    def geodetic_to_ecef(lat_d: float, lon_d: float, alt_m_val: float) -> np.ndarray:
+        lat = np.radians(lat_d)
+        lon = np.radians(lon_d)
+        N = a / np.sqrt(1 - e2 * np.sin(lat) ** 2)
+        x = (N + alt_m_val) * np.cos(lat) * np.cos(lon)
+        y = (N + alt_m_val) * np.cos(lat) * np.sin(lon)
+        z = (N * (1 - e2) + alt_m_val) * np.sin(lat)
+        return np.array([x, y, z])
+
+    # Parse CSV: skip header rows until we find lines with 'DSA-'
+    stations: list[tuple[float, float, float]] = []
+    with open(geo_csv_path, newline="") as fh:
+        for line in fh:
+            parts = line.strip().split(",")
+            if len(parts) < 5:
+                continue
+            name_field = parts[1].strip()
+            if not name_field.startswith("DSA-"):
+                continue
+            try:
+                lat_v = float(parts[2])
+                lon_v = float(parts[3])
+                alt_v = float(parts[4]) if parts[4].strip() else ref_alt_m
+            except ValueError:
+                continue
+            stations.append((lat_v, lon_v, alt_v))
+
+    if n_antennas > len(stations):
+        raise ValueError(
+            f"Requested n_antennas={n_antennas} but CSV has only {len(stations)} rows."
+        )
+
+    # Convert all antennas to ECEF
+    ecef_all = np.array(
+        [geodetic_to_ecef(lat_v, lon_v, alt_v) for lat_v, lon_v, alt_v in stations[:n_antennas]],
+        dtype=float,
+    )  # shape (n_antennas, 3)
+
+    # ENU rotation matrix at DSA-001 (first antenna = local origin)
+    # Rotation R maps ECEF offset vector to local ENU: enu = R @ (ecef - ecef_ref)
+    lat0 = np.radians(stations[0][0])
+    lon0 = np.radians(stations[0][1])
+    R = np.array([
+        [-np.sin(lon0),                np.cos(lon0),              0.0          ],
+        [-np.sin(lat0) * np.cos(lon0), -np.sin(lat0) * np.sin(lon0), np.cos(lat0)],
+        [ np.cos(lat0) * np.cos(lon0),  np.cos(lat0) * np.sin(lon0), np.sin(lat0)],
+    ])  # (3, 3): rows = [East, North, Up]
+
+    ecef_ref = ecef_all[0]  # DSA-001 as ENU origin
+    offsets  = ecef_all - ecef_ref  # shape (n_antennas, 3)
+    enu      = offsets @ R.T  # shape (n_antennas, 3); columns = [E, N, U]
+
+    return enu
 
 
 def _enu_to_ecef(enu: np.ndarray, lat_deg: float, lon_deg: float, alt_m: float) -> np.ndarray:
@@ -282,17 +384,20 @@ class SimulationHarness:
         if self._ant_enu is None:
             if self.use_real_positions:
                 try:
-                    self._ant_enu = _load_antenna_enu_from_csv(
-                        self.n_antennas,
-                        csv_path=self.ant_csv_path,
+                    # Use geodetic CSV (lat/lon/el) for correct local-ENU
+                    # conversion.  This avoids the large W-term problem that
+                    # arose when using the projected-ECEF antennas.csv with a
+                    # simple row subtraction.
+                    self._ant_enu = load_geodetic_enu(
+                        n_antennas=self.n_antennas,
                     )
                     logger.debug(
-                        "Loaded %d real DSA-110 antenna positions from CSV",
+                        "Loaded %d real DSA-110 antenna positions from geodetic CSV",
                         self.n_antennas,
                     )
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(
-                        "Could not load real antenna positions (%s); "
+                        "Could not load geodetic antenna positions (%s); "
                         "falling back to synthetic 1-D east-west layout.",
                         exc,
                     )
