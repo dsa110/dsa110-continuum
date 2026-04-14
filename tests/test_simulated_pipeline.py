@@ -166,3 +166,47 @@ class TestSimulatedCalibration:
         phase_corr = np.angle(corr).std()
         assert phase_corr < phase_raw, \
             f"Calibration should reduce phase scatter: raw={phase_raw:.3f}, corr={phase_corr:.3f}"
+
+
+class TestSimulatedImaging:
+    @pytest.fixture
+    def calibrated_ms(self, tmp_path):
+        """4-antenna MS with CORRECTED_DATA column, ready for WSClean."""
+        import pyuvdata
+        from dsa110_continuum.simulation.harness import SimulationHarness
+        from dsa110_continuum.simulation.gain_corruption import corrupt_uvh5
+        from dsa110_continuum.simulation.pipeline import SimulatedPipeline
+        h = SimulationHarness(n_antennas=4, n_sky_sources=1, seed=3,
+                              use_real_positions=False)
+        paths = h.generate_subbands(output_dir=tmp_path, n_subbands=1)
+        corrupted = corrupt_uvh5(paths[0], amp_scatter=0.05,
+                                  phase_scatter_deg=3.0, seed=3)
+        cal_path = h.generate_calibrator_subband(tmp_path, flux_jy=10.0)
+        uv = pyuvdata.UVData()
+        uv.read(str(corrupted))
+        ms_path = tmp_path / "cal_target.ms"
+        uv.write_ms(str(ms_path))
+        p = SimulatedPipeline(work_dir=tmp_path, niter=100,
+                              cell_arcsec=30.0, image_size=256)
+        p._calibrate(target_ms=ms_path, cal_uvh5=cal_path,
+                     cal_flux_jy=10.0, work_dir=tmp_path)
+        return ms_path, p, tmp_path
+
+    def test_image_creates_restored_fits(self, calibrated_ms):
+        ms_path, p, work_dir = calibrated_ms
+        result = p._image(ms_path=ms_path, work_dir=work_dir)
+        assert result["restored"].exists(), "Restored FITS must exist"
+
+    def test_image_creates_psf(self, calibrated_ms):
+        ms_path, p, work_dir = calibrated_ms
+        result = p._image(ms_path=ms_path, work_dir=work_dir)
+        assert result["psf"].exists(), "PSF FITS must exist"
+
+    def test_image_restored_has_valid_wcs(self, calibrated_ms):
+        from astropy.io import fits
+        from astropy.wcs import WCS
+        ms_path, p, work_dir = calibrated_ms
+        result = p._image(ms_path=ms_path, work_dir=work_dir)
+        with fits.open(str(result["restored"])) as hdul:
+            wcs = WCS(hdul[0].header)
+        assert wcs.naxis >= 2

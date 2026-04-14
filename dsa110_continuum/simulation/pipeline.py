@@ -250,3 +250,82 @@ class SimulatedPipeline:
 
         logger.info("Wrote CORRECTED_DATA to %s", target_ms)
         return target_ms
+
+    # ------------------------------------------------------------------ #
+    # Stage 3 — WSClean imaging with CLEAN deconvolution                  #
+    # ------------------------------------------------------------------ #
+
+    def _image(
+        self,
+        *,
+        ms_path: Path | str,
+        work_dir: Path | str,
+        data_column: str = "CORRECTED_DATA",
+    ) -> dict[str, Path]:
+        """Run WSClean with CLEAN iterations on a calibrated MS.
+
+        Reads ``data_column`` (default ``CORRECTED_DATA``) and produces
+        restored, dirty, residual, and PSF FITS images.
+
+        Parameters
+        ----------
+        ms_path:
+            Calibrated Measurement Set.  Must contain a ``CORRECTED_DATA``
+            column (or whichever column is specified in ``data_column``).
+        work_dir:
+            Directory for WSClean output files.  A ``wsclean_out/`` sub-
+            directory is created inside it.
+        data_column:
+            MS column to image (default ``CORRECTED_DATA``).
+
+        Returns
+        -------
+        dict[str, Path]
+            Keys: ``'restored'``, ``'dirty'``, ``'residual'``, ``'psf'``.
+            Values are Paths to the respective FITS files; each is checked
+            for existence and a warning is logged if missing.
+
+        Raises
+        ------
+        RuntimeError
+            If WSClean exits with a non-zero return code.
+        """
+        work_dir = Path(work_dir)
+        img_dir  = work_dir / "wsclean_out"
+        img_dir.mkdir(parents=True, exist_ok=True)
+        prefix   = str(img_dir / "wsclean")
+
+        cmd = [
+            self.wsclean_bin,
+            "-name", prefix,
+            "-size", str(self.image_size), str(self.image_size),
+            "-scale", f"{self.cell_arcsec}asec",
+            "-weight", "briggs", "0.0",
+            "-niter", str(self.niter),
+            "-mgain", "0.8",
+            "-auto-threshold", "1.0",
+            "-pol", "I",
+            "-data-column", data_column,
+            "-make-psf",
+            "-no-update-model-required",
+            str(ms_path),
+        ]
+        logger.info("Running WSClean: %s", " ".join(cmd))
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.error("WSClean stderr (last 3000 chars):\n%s",
+                         result.stderr[-3000:])
+            raise RuntimeError(
+                f"WSClean failed with return code {result.returncode}"
+            )
+
+        outputs = {
+            "restored":  Path(f"{prefix}-image.fits"),
+            "dirty":     Path(f"{prefix}-dirty.fits"),
+            "residual":  Path(f"{prefix}-residual.fits"),
+            "psf":       Path(f"{prefix}-psf.fits"),
+        }
+        for key, path in outputs.items():
+            if not path.exists():
+                logger.warning("Expected WSClean output missing: %s (%s)", key, path)
+        return outputs
