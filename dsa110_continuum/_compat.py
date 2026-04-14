@@ -204,9 +204,9 @@ class ValidationError(Exception):
 def validate_ms(ms_path: str, **kwargs: Any) -> bool:
     """Stub that raises if casacore is unavailable."""
     try:
-        import casacore.tables  # noqa: F401
+        from dsa110_continuum.adapters import casa_tables  # noqa: F401
     except ImportError:
-        raise RuntimeError("casacore not installed — cannot validate MS")
+        raise RuntimeError("casatools not installed — cannot validate MS")
     return True
 
 

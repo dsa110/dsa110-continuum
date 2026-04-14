@@ -474,7 +474,7 @@ def load_real_calibration_solutions(
     ... )
     """
     try:
-        from casacore.tables import table
+        from dsa110_continuum.adapters.casa_tables import table
     except ImportError:
         raise ImportError(
             "casacore is required to read caltables. Install with: pip install python-casacore"

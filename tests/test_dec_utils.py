@@ -13,7 +13,7 @@ def test_read_ms_dec_from_ms(tmp_path):
     # PHASE_DIR shape: (n_fields, 1, 2) in radians — RA=0.5 rad, Dec=0.28 rad ≈ 16.04°
     mock_table.getcol.return_value = np.array([[[0.5, 0.28]]])
 
-    with patch("casacore.tables.table", return_value=mock_table):
+    with patch("dsa110_continuum.adapters.casa_tables.table", return_value=mock_table):
         dec = read_ms_dec(str(tmp_path / "test.ms"))
 
     assert abs(dec - np.degrees(0.28)) < 0.01

@@ -368,7 +368,7 @@ class CalibrationStabilityTracker:
             Observation MJD override (default is None)
         """
         try:
-            import casacore.tables as casatables
+            from dsa110_continuum.adapters import casa_tables as casatables
         except ImportError:
             logger.warning("casacore not available, cannot extract gains")
             return []

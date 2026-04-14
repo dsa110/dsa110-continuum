@@ -356,9 +356,9 @@ def preflight_check_casa() -> dict[str, str]:
 
     # Check casacore
     try:
-        import casacore.tables
+        from dsa110_continuum.adapters import casa_tables as casacore_tables
 
-        result["casacore_version"] = getattr(casacore, "__version__", "unknown")
+        result["casacore_version"] = getattr(casacore_tables, "__version__", "unknown")
         logger.debug(f"casacore OK: {result['casacore_version']}")
     except ImportError as e:
         errors.append(f"casacore: {e}")
@@ -1098,7 +1098,7 @@ def _detect_bad_pols_from_ms_coherence(
     """
     import logging
 
-    import casacore.tables as casatables
+    from dsa110_continuum.adapters import casa_tables as casatables
     import numpy as np
 
     logger = logging.getLogger(__name__)
@@ -1263,10 +1263,10 @@ def flag_residual_rfi_clip(
         raise FileNotFoundError(f"Measurement Set not found: {ms}")
 
     try:
-        import casacore.tables as ct
+        from dsa110_continuum.adapters import casa_tables as ct
     except ImportError as exc:
         raise ImportError(
-            "casacore.tables is required for flag_residual_rfi_clip"
+            "dsa110_continuum.adapters.casa_tables is required for flag_residual_rfi_clip"
         ) from exc
 
     MAD_TO_SIGMA = 1.4826  # MAD → Gaussian-σ conversion factor
@@ -2057,7 +2057,7 @@ def _extend_flags_direct(
     ----------
     """
     try:
-        import casacore.tables as casatables
+        from dsa110_continuum.adapters import casa_tables as casatables
         import numpy as np
 
         table = casatables.table
@@ -2139,7 +2139,7 @@ def analyze_channel_flagging_stats(ms_path: str, threshold: float = 0.5) -> dict
     >>> problematic = analyze_channel_flagging_stats('data.ms', threshold=0.5)
     >>> # Returns: {1: [5, 10, 15, 20], 12: [3, 7, 11]}
     """
-    import casacore.tables as casatables
+    from dsa110_continuum.adapters import casa_tables as casatables
     import numpy as np
 
     table = casatables.table
@@ -2322,7 +2322,7 @@ def flag_summary(
 
     # Parse summary statistics directly from MS (faster and avoids casaplotserver)
     try:
-        import casacore.tables as casatables
+        from dsa110_continuum.adapters import casa_tables as casatables
         import numpy as np
 
         table = casatables.table
@@ -2384,7 +2384,7 @@ def detect_and_flag_dead_antennas(
     """
     import logging
 
-    import casacore.tables as casatables
+    from dsa110_continuum.adapters import casa_tables as casatables
     import numpy as np
 
     logger = logging.getLogger(__name__)

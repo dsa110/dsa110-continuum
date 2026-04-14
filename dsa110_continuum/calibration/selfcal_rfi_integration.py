@@ -221,7 +221,7 @@ def check_rfi_during_selfcal(
 
     # Get current flagged fraction
     try:
-        import casacore.tables as tb
+        from dsa110_continuum.adapters import casa_tables as tb
 
         with tb.table(ms, readonly=True, ack=False) as t:
             flags = t.getcol("FLAG")
@@ -300,7 +300,7 @@ def should_skip_selfcal_due_to_rfi(
         config = SelfCalRFIConfig()
 
     try:
-        import casacore.tables as tb
+        from dsa110_continuum.adapters import casa_tables as tb
 
         with tb.table(ms, readonly=True, ack=False) as t:
             flags = t.getcol("FLAG")

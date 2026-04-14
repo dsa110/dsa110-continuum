@@ -19,20 +19,14 @@ except ImportError:
 
 from .cli_imaging import image_ms
 
-try:
-    import casacore.tables as casatables  # type: ignore[import]
-except ImportError:
-    casatables = None  # type: ignore[assignment]  # casacore not installed
+from dsa110_continuum.adapters import casa_tables as casatables  # type: ignore[import]
 
 table = casatables.table  # noqa: N816
 import argparse
 import logging
 import os
 
-try:
-    import casacore.tables as casatables  # type: ignore[import]
-except ImportError:
-    casatables = None  # type: ignore[assignment]  # casacore not installed
+from dsa110_continuum.adapters import casa_tables as casatables  # type: ignore[import]
 
 table = casatables.table  # noqa: N816
 

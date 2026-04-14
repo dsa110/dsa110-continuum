@@ -635,7 +635,7 @@ def predict_model_for_ms(
         return PredictResult(error="No sources provided for prediction")
 
     try:
-        from casacore.tables import table
+        from dsa110_continuum.adapters.casa_tables import table
     except ImportError:
         return PredictResult(error="casacore not available for MS access")
 
@@ -693,7 +693,7 @@ def predict_model_for_ms(
                 if "MODEL_DATA" not in tb.colnames():
                     # Add MODEL_DATA column if missing
                     logger.info("Adding MODEL_DATA column to %s", ms_path.name)
-                    from casacore.tables import makecoldesc, maketabdesc
+                    from dsa110_continuum.adapters.casa_tables import makecoldesc, maketabdesc
 
                     desc = makecoldesc(
                         "MODEL_DATA",

@@ -47,7 +47,7 @@ def preflag_rfi(
     aoflagger_strategy : Optional[str], optional
         Path to AOFlagger Lua strategy file, by default None
     """
-    import casacore.tables as casatables
+    from dsa110_continuum.adapters import casa_tables as casatables
     import numpy as np
 
     start_time = time.time()
@@ -197,7 +197,7 @@ def preflag_rfi_adaptive(
     try:
         # Import adaptive RFI modules
         # Get initial flag state
-        import casacore.tables as casatables
+        from dsa110_continuum.adapters import casa_tables as casatables
         import numpy as np
 
         from dsa110_continuum.calibration.rfi_adaptive_enhanced import (

@@ -192,7 +192,7 @@ def _open_caltable(caltable_path: str):
 
     ensure_casa_path()
 
-    import casacore.tables as casatables
+    from dsa110_continuum.adapters import casa_tables as casatables
 
     return casatables.table(caltable_path, readonly=True)
 

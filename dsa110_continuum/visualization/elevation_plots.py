@@ -840,7 +840,7 @@ def extract_geometry_from_ms(
     if lat_deg is None:
         lat_deg = _DSA110_LAT_DEG
     try:
-        from casacore.tables import table
+        from dsa110_continuum.adapters.casa_tables import table
     except ImportError:
         raise ImportError("casacore required. Install with: pip install python-casacore")
 

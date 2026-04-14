@@ -768,7 +768,7 @@ def compute_time_freq_convergence(
     TimeFreqConvergenceData
         TimeFreqConvergenceData container.
     """
-    from casacore.tables import table
+    from dsa110_continuum.adapters.casa_tables import table
 
     iterations = list(range(len(ms_paths)))
     metric_grids = []

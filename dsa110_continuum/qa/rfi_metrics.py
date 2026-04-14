@@ -11,7 +11,7 @@ import numpy as np
 
 
 try:
-    import casacore.tables as casatables
+    from dsa110_continuum.adapters import casa_tables as casatables
 
     HAVE_CASACORE = True
 except ImportError:

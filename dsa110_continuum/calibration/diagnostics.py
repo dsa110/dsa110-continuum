@@ -7,10 +7,7 @@ import os
 from dataclasses import dataclass
 
 
-try:
-    import casacore.tables as casatables
-except ImportError:
-    casatables = None  # type: ignore[assignment]  # casacore not installed
+from dsa110_continuum.adapters import casa_tables as casatables
 import numpy as np
 
 table = casatables.table if casatables is not None else None  # noqa: N816

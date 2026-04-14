@@ -148,7 +148,7 @@ def validate_uvw_geometry(
 
     ensure_casa_path()
 
-    import casacore.tables as ct
+    from dsa110_continuum.adapters import casa_tables as ct
 
     violations = []
     warnings = []
@@ -392,7 +392,7 @@ def compare_uvw_before_after(
 
     ensure_casa_path()
 
-    import casacore.tables as ct
+    from dsa110_continuum.adapters import casa_tables as ct
 
     with ct.table(ms_before, readonly=True, ack=False) as tb:
         uvw_before = tb.getcol("UVW")

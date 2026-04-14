@@ -9,11 +9,8 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-# Prefer module import so mocks on casacore.tables.table are respected at call time
-try:
-    import casacore.tables as casatables  # noqa: E402
-except ImportError:
-    casatables = None  # type: ignore[assignment]
+# Prefer module import so mocks on dsa110_continuum.adapters.casa_tables.table are respected at call time
+from dsa110_continuum.adapters import casa_tables as casatables  # noqa: E402
 import numpy as np  # noqa: E402
 
 # Back-compat symbol for tests that patch dsa110_continuum.imaging.cli_imaging.table
@@ -502,7 +499,8 @@ def run_wsclean(
 
     # Get MS info for progress estimation
     try:
-        import casacore.tables as ct
+        from dsa110_continuum.adapters import casa_tables as ct
+
         with ct.table(ms_path, ack=False) as t:
             n_rows = t.nrows()
     except Exception:

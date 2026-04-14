@@ -20,10 +20,7 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
-try:
-    from casacore.tables import table
-except ImportError:
-    table = None  # type: ignore[assignment]  # casacore not installed
+from dsa110_continuum.adapters.casa_tables import table
 from scipy import stats
 
 try:

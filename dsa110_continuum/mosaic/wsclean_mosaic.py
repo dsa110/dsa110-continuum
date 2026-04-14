@@ -302,7 +302,7 @@ def get_phase_center_from_ms(ms_path: Path) -> tuple[float, float]:
         (ra_deg, dec_deg) of phase center.
     """
     try:
-        from casacore.tables import table
+        from dsa110_continuum.adapters.casa_tables import table
     except ImportError:
         logger.warning("casacore not available, using fallback phase center extraction")
         # Fallback: try to read from MS FIELD table using casatools

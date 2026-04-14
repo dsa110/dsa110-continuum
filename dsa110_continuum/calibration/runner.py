@@ -66,7 +66,7 @@ def _compute_median_meridian_position(ms_path: str, field: str = "") -> tuple:
         Tuple of (median_ra_deg, median_dec_deg).
 
     """
-    import casacore.tables as ct
+    from dsa110_continuum.adapters import casa_tables as ct
 
     with ct.table(ms_path + "::FIELD", readonly=True) as field_table:
         # Get phase centers for all fields
@@ -116,7 +116,7 @@ def _clear_time_based_subtables(ms_path: str) -> None:
     ms_path :
         Path to Measurement Set to modify
     """
-    import casacore.tables as ct
+    from dsa110_continuum.adapters import casa_tables as ct
 
     # Subtables with TIME columns that we don't need
     # POINTING: antenna pointing data (not used by DSA-110)
@@ -156,7 +156,7 @@ def update_phase_dir_to_target(ms_path: str, ra_deg: float, dec_deg: float) -> N
     dec_deg : float
         Target Dec in degrees
     """
-    import casacore.tables as ct
+    from dsa110_continuum.adapters import casa_tables as ct
     import numpy as np
 
     field_table_path = f"{ms_path}::FIELD"
@@ -218,7 +218,7 @@ def sync_reference_dir_with_phase_dir(ms_path: str) -> None:
     >>> # Now ft() will use the correct phase center
     >>> ft(vis="rephased.ms", complist="sources.cl")
     """
-    import casacore.tables as ct
+    from dsa110_continuum.adapters import casa_tables as ct
 
     field_table_path = f"{ms_path}::FIELD"
 
@@ -332,7 +332,7 @@ def _validate_calibrator_transit(
     from dsa110_contimg.common.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
-    import casacore.tables as ct
+    from dsa110_continuum.adapters import casa_tables as ct
 
     # DSA-110 location (OVRO)
     dsa110_loc = EarthLocation(lat=37.2339 * u.deg, lon=-118.2825 * u.deg, height=1222 * u.m)
@@ -908,7 +908,7 @@ def _parse_field_selection(field: str, ms_path: str) -> list:
         List of integer field indices
 
     """
-    import casacore.tables as ct
+    from dsa110_continuum.adapters import casa_tables as ct
 
     # Get total number of fields in MS
     with ct.table(ms_path + "::FIELD", readonly=True) as t:
@@ -951,7 +951,7 @@ def _validate_model_data_populated(ms_path: str, field: str) -> None:
         If MODEL_DATA is all zeros or doesn't exist
 
     """
-    import casacore.tables as ct
+    from dsa110_continuum.adapters import casa_tables as ct
 
     with ct.table(ms_path, readonly=True) as t:
         if "MODEL_DATA" not in t.colnames():
@@ -1317,7 +1317,7 @@ def run_calibrator(
         # create dummy identity tables to ensure the pipeline produces *something*.
         logger.warning("Attempting to create dummy tables to force pipeline continuation...")
         try:
-            import casacore.tables as ct
+            from dsa110_continuum.adapters import casa_tables as ct
 
             # We need a base table structure to copy.
             # Ideally we have prebandpass_phase_table, but if even that failed...

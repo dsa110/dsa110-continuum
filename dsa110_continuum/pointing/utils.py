@@ -13,10 +13,7 @@ import numpy as np
 from astropy.time import Time
 
 
-try:
-    import casacore.tables as casatables  # noqa: E402
-except ImportError:
-    casatables = None  # type: ignore[assignment]  # casacore not installed
+from dsa110_continuum.adapters import casa_tables as casatables  # noqa: E402
 
 table = casatables.table if casatables is not None else None  # noqa: N816
 

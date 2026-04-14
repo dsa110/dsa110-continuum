@@ -17,7 +17,7 @@ import numpy as np
 
 
 try:
-    import casacore.tables as casatables
+    from dsa110_continuum.adapters import casa_tables as casatables
 
     table = casatables.table  # noqa: N816
 except ImportError:

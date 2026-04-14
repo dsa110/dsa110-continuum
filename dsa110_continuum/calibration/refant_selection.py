@@ -127,11 +127,11 @@ def analyze_antenna_health_from_ms(ms_path: str) -> list[dict[str, Any]]:
     >>> print(f"Best antenna: {best['antenna_id']} ({best['flagged_fraction']:.1%} flagged)")
     """
     try:
-        import casacore.tables as casatables
+        from dsa110_continuum.adapters import casa_tables as casatables
 
         table = casatables.table
     except ImportError as e:
-        raise ImportError("casacore.tables not available - cannot analyze antenna health") from e
+        raise ImportError("dsa110_continuum.adapters.casa_tables not available - cannot analyze antenna health") from e
 
     ms = Path(ms_path)
     if not ms.exists():
@@ -311,11 +311,11 @@ def analyze_antenna_health_from_caltable(caltable_path: str) -> list[dict[str, A
 
     """
     try:
-        import casacore.tables as casatables
+        from dsa110_continuum.adapters import casa_tables as casatables
 
         table = casatables.table
     except ImportError as e:
-        raise ImportError("casacore.tables not available - cannot analyze antenna health") from e
+        raise ImportError("dsa110_continuum.adapters.casa_tables not available - cannot analyze antenna health") from e
 
     caltable = Path(caltable_path)
     if not caltable.exists():

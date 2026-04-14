@@ -123,7 +123,7 @@ def validate_ms_integrity(ms_path: str, check_writable: bool = False) -> None:
 
     # Check 4: Main table is readable and has required columns
     try:
-        import casacore.tables as casatables
+        from dsa110_continuum.adapters import casa_tables as casatables
 
         with casatables.table(ms_path, readonly=True) as tb:
             nrows = tb.nrows()

@@ -11,10 +11,7 @@ import logging
 import os
 
 
-try:
-    import casacore.tables as casatables  # type: ignore[import]
-except ImportError:
-    casatables = None  # type: ignore[assignment]  # casacore not installed
+from dsa110_continuum.adapters import casa_tables as casatables  # type: ignore[import]
 import numpy as np  # type: ignore[import]
 
 try:

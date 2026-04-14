@@ -139,7 +139,7 @@ class SimulatedPipeline:
         Path
             Path to the modified target MS.
         """
-        import casacore.tables as ct
+        from dsa110_continuum.adapters import casa_tables as ct
 
         target_ms = Path(target_ms)
         cal_uvh5  = Path(cal_uvh5)
@@ -237,7 +237,7 @@ class SimulatedPipeline:
 
             # Add CORRECTED_DATA column if it doesn't exist
             if "CORRECTED_DATA" not in t.colnames():
-                from casacore.tables import makearrcoldesc, maketabdesc
+                from dsa110_continuum.adapters.casa_tables import makearrcoldesc, maketabdesc
                 cd = makearrcoldesc(
                     "CORRECTED_DATA",
                     data[0],

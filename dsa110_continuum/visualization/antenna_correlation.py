@@ -138,7 +138,7 @@ def extract_gains_from_caltable(
         AntennaGainData container
 
     """
-    from casacore.tables import table
+    from dsa110_continuum.adapters.casa_tables import table
 
     caltable_path = str(caltable_path)
 

@@ -249,7 +249,7 @@ def set_ms_telescope_name(ms_path: str, name: str = "DSA_110") -> None:
     import os
 
     try:
-        import casacore.tables as ct
+        from dsa110_continuum.adapters import casa_tables as ct
     except ImportError:
         logger.warning("casacore.tables not available, cannot set telescope name")
         return

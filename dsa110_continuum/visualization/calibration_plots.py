@@ -192,7 +192,7 @@ def _plot_bandpass_fallback(
     generated = []
 
     try:
-        from casacore.tables import table
+        from dsa110_continuum.adapters.casa_tables import table
 
         with table(str(caltable), readonly=True) as tb:
             cparam = tb.getcol("CPARAM")  # Complex gains
@@ -333,7 +333,7 @@ def plot_gains(
     generated = []
 
     try:
-        from casacore.tables import table
+        from dsa110_continuum.adapters.casa_tables import table
 
         with table(str(caltable), readonly=True) as tb:
             cparam = tb.getcol("CPARAM")
@@ -1104,7 +1104,7 @@ def plot_gain_comparison(
     import matplotlib.pyplot as plt
 
     try:
-        from casacore.tables import table
+        from dsa110_continuum.adapters.casa_tables import table
     except ImportError as exc:
         raise RuntimeError("casacore.tables is required for gain comparison plots") from exc
 

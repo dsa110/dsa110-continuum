@@ -599,7 +599,7 @@ def extract_closure_phases_from_ms(
         Dictionary with visibility, antenna1, antenna2, time arrays.
     """
     try:
-        from casacore.tables import table
+        from dsa110_continuum.adapters.casa_tables import table
     except ImportError as exc:
         raise ImportError("casacore required. Install with: pip install python-casacore") from exc
 

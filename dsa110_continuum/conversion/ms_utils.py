@@ -49,7 +49,7 @@ def _ensure_imaging_columns_exist(ms_path: str) -> None:
 
     # Check if columns already exist using casacore (fast readonly check)
     try:
-        import casacore.tables as _casatables
+        from dsa110_continuum.adapters import casa_tables as _casatables
 
         _tb = _casatables.table
 
@@ -83,7 +83,7 @@ def _ensure_imaging_columns_exist(ms_path: str) -> None:
 
     # Verify columns were created
     try:
-        import casacore.tables as _casatables
+        from dsa110_continuum.adapters import casa_tables as _casatables
 
         _tb = _casatables.table
 
@@ -124,7 +124,7 @@ def _ensure_imaging_columns_populated(ms_path: str) -> None:
     logger = logging.getLogger(__name__)
 
     try:
-        import casacore.tables as _casatables  # type: ignore
+        from dsa110_continuum.adapters import casa_tables as _casatables  # type: ignore
         import numpy as _np
 
         _tb = _casatables.table
@@ -298,7 +298,7 @@ def _ensure_flag_and_weight_spectrum(ms_path: str) -> None:
     ----------
     """
     try:
-        import casacore.tables as _casatables  # type: ignore
+        from dsa110_continuum.adapters import casa_tables as _casatables  # type: ignore
         import numpy as _np
 
         _tb = _casatables.table
@@ -390,7 +390,7 @@ def _fix_mount_type_in_ms(ms_path: str) -> None:
     ----------
     """
     try:
-        import casacore.tables as _casatables  # type: ignore
+        from dsa110_continuum.adapters import casa_tables as _casatables  # type: ignore
 
         _tb = _casatables.table
 
@@ -586,7 +586,7 @@ def _ensure_observation_table_valid(ms_path: str) -> None:
     ----------
     """
     try:
-        import casacore.tables as _casatables
+        from dsa110_continuum.adapters import casa_tables as _casatables
         import numpy as _np
 
         _tb = _casatables.table
@@ -650,7 +650,7 @@ def _ensure_state_table_valid(ms_path: str) -> None:
     ----------
     """
     try:
-        import casacore.tables as _casatables
+        from dsa110_continuum.adapters import casa_tables as _casatables
 
         _tb = _casatables.table
     except ImportError:
@@ -725,7 +725,7 @@ def normalize_phaseshifted_ms_to_single_field(ms_path: str, ra_deg: float, dec_d
     _tb = None
     _use_casatools = False
     try:
-        import casacore.tables as _casatables
+        from dsa110_continuum.adapters import casa_tables as _casatables
 
         _tb = _casatables.table
     except ImportError:
@@ -811,7 +811,7 @@ def normalize_scan_numbers_to_zero(ms_path: str) -> None:
     _tb = None
     _use_casatools = False
     try:
-        import casacore.tables as _casatables
+        from dsa110_continuum.adapters import casa_tables as _casatables
 
         _tb = _casatables.table
     except ImportError:
@@ -871,7 +871,7 @@ def _fix_observation_id_column(ms_path: str) -> None:
     ----------
     """
     try:
-        import casacore.tables as _casatables
+        from dsa110_continuum.adapters import casa_tables as _casatables
         import numpy as _np
 
         _tb = _casatables.table
@@ -927,7 +927,7 @@ def _fix_observation_time_range(ms_path: str) -> None:
     ----------
     """
     try:
-        import casacore.tables as _casatables
+        from dsa110_continuum.adapters import casa_tables as _casatables
         import numpy as _np
 
         _tb = _casatables.table
@@ -1178,7 +1178,7 @@ def configure_ms_for_imaging(
 
             # CRITICAL: Validate columns actually exist and are populated (if enabled)
             if validate_columns:
-                import casacore.tables as _casatables
+                from dsa110_continuum.adapters import casa_tables as _casatables
 
                 _tb = _casatables.table
 
@@ -1262,7 +1262,7 @@ def configure_ms_for_imaging(
 
     if stamp_observation_telescope:
         try:
-            import casacore.tables as _casatables  # type: ignore
+            from dsa110_continuum.adapters import casa_tables as _casatables  # type: ignore
 
             _tb = _casatables.table
 
@@ -1349,7 +1349,7 @@ def configure_ms_for_imaging(
 
     # Final validation: verify MS is still readable after all operations
     try:
-        import casacore.tables as _casatables
+        from dsa110_continuum.adapters import casa_tables as _casatables
 
         _tb = _casatables.table
 

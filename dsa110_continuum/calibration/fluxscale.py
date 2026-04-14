@@ -1279,7 +1279,7 @@ def _detect_primary_calibrator_in_ms(ms_path: str) -> str | None:
         Canonical name of primary calibrator if found, else None
 
     """
-    import casacore.tables as ct
+    from dsa110_continuum.adapters import casa_tables as ct
 
     try:
         with ct.table(f"{ms_path}::FIELD", readonly=True) as field_tb:
@@ -1313,7 +1313,7 @@ def _get_field_name_from_caltable(caltable_path: str) -> str | None:
         Field name, or None if not found
 
     """
-    import casacore.tables as ct
+    from dsa110_continuum.adapters import casa_tables as ct
 
     try:
         with ct.table(f"{caltable_path}::FIELD", readonly=True) as field_tb:
@@ -1350,7 +1350,7 @@ def _merge_caltables(
     """
     import shutil
 
-    import casacore.tables as ct
+    from dsa110_continuum.adapters import casa_tables as ct
 
     if not caltables:
         raise ValueError("No calibration tables provided")

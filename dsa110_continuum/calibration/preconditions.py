@@ -152,7 +152,7 @@ def _check_calibrator_transit(
     ensure_casa_path()
 
     try:
-        import casacore.tables as ct
+        from dsa110_continuum.adapters import casa_tables as ct
 
         # DSA-110 location (OVRO)
         dsa110_loc = EarthLocation(lat=37.2339 * u.deg, lon=-118.2825 * u.deg, height=1222 * u.m)
@@ -258,7 +258,7 @@ def _check_coherent_phasing(
 
     ensure_casa_path()
 
-    import casacore.tables as ct
+    from dsa110_continuum.adapters import casa_tables as ct
 
     try:
         # Parse field selection
@@ -360,7 +360,7 @@ def _check_model_data(
 
     ensure_casa_path()
 
-    import casacore.tables as ct
+    from dsa110_continuum.adapters import casa_tables as ct
 
     try:
         with ct.table(ms_path, readonly=True, ack=False) as tb:
@@ -482,7 +482,7 @@ def _check_prebandpass_phase(
 
     ensure_casa_path()
 
-    import casacore.tables as ct
+    from dsa110_continuum.adapters import casa_tables as ct
 
     try:
         with ct.table(prebandpass_phase_table, readonly=True, ack=False) as tb:
@@ -570,7 +570,7 @@ def _check_antenna_data(
 
     ensure_casa_path()
 
-    import casacore.tables as ct
+    from dsa110_continuum.adapters import casa_tables as ct
 
     try:
         with ct.table(ms_path, readonly=True, ack=False) as tb:
@@ -670,7 +670,7 @@ def _check_initial_flagging(
 
     ensure_casa_path()
 
-    import casacore.tables as ct
+    from dsa110_continuum.adapters import casa_tables as ct
 
     try:
         with ct.table(ms_path, readonly=True, ack=False) as tb:

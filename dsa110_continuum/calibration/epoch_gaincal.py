@@ -40,7 +40,7 @@ GAINCAL_FLAG_FRACTION_LIMIT  = 0.30  # abort epoch gaincal if p.G table is more 
 
 def _ms_flag_fraction(ms_path: str) -> float:
     """Return the fraction of FLAG=True elements in the MS DATA column."""
-    import casacore.tables as ct
+    from dsa110_continuum.adapters import casa_tables as ct
 
     with ct.table(ms_path, readonly=True, ack=False) as t:
         flags = t.getcol("FLAG")
@@ -49,7 +49,7 @@ def _ms_flag_fraction(ms_path: str) -> float:
 
 def _read_ms_phase_center(ms_path: str) -> tuple[float, float]:
     """Return (ra_deg, dec_deg) of the median field phase center in an MS."""
-    import casacore.tables as ct
+    from dsa110_continuum.adapters import casa_tables as ct
 
     with ct.table(f"{ms_path}::FIELD", readonly=True, ack=False) as t:
         phase_dir = t.getcol("PHASE_DIR")  # shape (nfields, 1, 2) radians
@@ -277,7 +277,7 @@ def calibrate_epoch(
         # while the MS is still "uncalibrated" so the protection guard never fires.
         log.info("Epoch gaincal [%s]: initialising MODEL_DATA column", stem)
         try:
-            import casacore.tables as _ct
+            from dsa110_continuum.adapters import casa_tables as _ct
             with _ct.table(meridian_ms, readonly=True, ack=False) as _t:
                 _has_model = "MODEL_DATA" in _t.colnames()
             if not _has_model:
@@ -370,7 +370,7 @@ def calibrate_epoch(
         _precond_interp = ["linear"] * len(_precond)
         if _precond:
             try:
-                import casacore.tables as _ct2
+                from dsa110_continuum.adapters import casa_tables as _ct2
                 with _ct2.table(f"{meridian_ms}::SPECTRAL_WINDOW",
                                 readonly=True, ack=False) as _tspw:
                     _n_spw = _tspw.nrows()

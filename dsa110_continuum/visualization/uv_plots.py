@@ -710,7 +710,7 @@ def extract_uv_from_ms(ms_path: str | Path) -> dict:
 
     """
     try:
-        from casacore.tables import table
+        from dsa110_continuum.adapters.casa_tables import table
     except ImportError:
         raise ImportError("casacore required. Install with: pip install python-casacore")
 

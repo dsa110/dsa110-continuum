@@ -17,10 +17,7 @@ from typing import Any
 import numpy as np
 
 
-try:
-    import casacore.tables as casatables
-except ImportError:
-    casatables = None  # type: ignore[assignment]  # casacore not installed
+from dsa110_continuum.adapters import casa_tables as casatables
 
 
 def table(*args: Any, **kwargs: Any) -> Any:

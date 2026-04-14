@@ -98,7 +98,7 @@ def compute_ms_metrics(ms_path: Path) -> dict[str, Any]:
         dict
         Dict of metrics
     """
-    from casacore.tables import table
+    from dsa110_continuum.adapters.casa_tables import table
 
     metrics = {}
 

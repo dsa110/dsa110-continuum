@@ -15,7 +15,7 @@ from unittest.mock import patch, MagicMock
 # ---------------------------------------------------------------------------
 # Skip entire module if casacore is not installed (e.g., CI without CASA env)
 # ---------------------------------------------------------------------------
-ct = pytest.importorskip("casacore.tables", reason="casacore required for MS table tests")
+ct = pytest.importorskip("dsa110_continuum.adapters.casa_tables", reason="casacore required for MS table tests")
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
