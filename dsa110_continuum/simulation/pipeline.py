@@ -180,7 +180,7 @@ class SimulatedPipeline:
                 vis = uv_cal.data_array[row, :, 0].conj()  # shape (n_freq,)
 
                 # Update antenna i using antenna j's current gain
-                numerator[i]   += vis * np.conj(gains[j]) / model_amp
+                numerator[i]   += vis * gains[j] / model_amp
                 denominator[i] += np.abs(gains[j]) ** 2
 
                 # Update antenna j using antenna i's current gain (conjugate relation)
@@ -214,6 +214,14 @@ class SimulatedPipeline:
             ant2_col = t.getcol("ANTENNA2")   # 0-based
             n_rows, n_chan, n_pol = data.shape
 
+            # Guard: calibrator and target must have the same channel count
+            if n_chan != n_freq:
+                raise ValueError(
+                    f"Channel count mismatch: target MS has {n_chan} channels "
+                    f"but calibrator UVH5 has {n_freq}. "
+                    "Ensure calibrator and target use the same subband."
+                )
+
             # Vectorised application: CORRECTED = DATA / (G_i * conj(G_j))
             # Clamp antenna indices to valid range (safety guard)
             idx1 = np.clip(ant1_col, 0, n_ms_ant - 1)
@@ -225,8 +233,7 @@ class SimulatedPipeline:
             safe_denom = np.where(np.abs(denom) > 1e-12, denom, 1.0)
 
             corrected = data.copy()
-            for p in range(n_pol):
-                corrected[:, :, p] /= safe_denom
+            corrected /= safe_denom[:, :, np.newaxis]
 
             # Add CORRECTED_DATA column if it doesn't exist
             if "CORRECTED_DATA" not in t.colnames():
