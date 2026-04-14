@@ -267,3 +267,81 @@ class TestSimulatedMosaic:
         p = SimulatedPipeline(work_dir=work_dir)
         result = p._mosaic(image_paths=tiles, work_dir=work_dir)
         assert isinstance(result, Path)
+
+
+class TestSimulatedPhotometry:
+    @pytest.fixture
+    def mock_image_with_source(self, tmp_path):
+        """FITS image with one injected point source at known RA/Dec."""
+        import numpy as np
+        from astropy.io import fits
+        from astropy.wcs import WCS
+        ra, dec = 343.5, 16.15
+        data = np.random.default_rng(0).normal(0, 0.001, (128, 128)).astype(np.float32)
+        w = WCS(naxis=2)
+        w.wcs.crpix = [64, 64]
+        w.wcs.cdelt = [-20.0 / 3600, 20.0 / 3600]
+        w.wcs.crval = [ra, dec]
+        w.wcs.ctype = ["RA---SIN", "DEC--SIN"]
+        # Inject source: 0.5 Jy/beam at pixel centre (64, 64)
+        data[64, 64] = 0.5
+        hdr = w.to_header()
+        hdr["BUNIT"] = "JY/BEAM"
+        path = tmp_path / "test_image.fits"
+        fits.writeto(str(path), data, hdr, overwrite=True)
+        return path, ra, dec, 0.5
+
+    def test_photometry_finds_injected_source(self, mock_image_with_source):
+        from dsa110_continuum.simulation.pipeline import SimulatedPipeline, SourceFluxResult
+        from dsa110_continuum.simulation.ground_truth import GroundTruthRegistry
+        path, ra, dec, flux = mock_image_with_source
+        reg = GroundTruthRegistry(test_run_id="test")
+        reg.register_source("S0", ra, dec, baseline_flux_jy=flux)
+
+        p = SimulatedPipeline(work_dir=path.parent)
+        results = p._photometry(
+            image_path=path,
+            ground_truth=reg,
+            mjd=60000.0,
+            noise_jy_beam=0.001,
+        )
+        assert len(results) == 1
+        assert isinstance(results[0], SourceFluxResult)
+
+    def test_photometry_recovers_flux_within_tolerance(self, mock_image_with_source):
+        from dsa110_continuum.simulation.pipeline import SimulatedPipeline
+        from dsa110_continuum.simulation.ground_truth import GroundTruthRegistry
+        path, ra, dec, flux = mock_image_with_source
+        reg = GroundTruthRegistry(test_run_id="test")
+        reg.register_source("S0", ra, dec, baseline_flux_jy=flux)
+
+        p = SimulatedPipeline(work_dir=path.parent)
+        results = p._photometry(image_path=path, ground_truth=reg,
+                                mjd=60000.0, noise_jy_beam=0.001)
+        r = results[0]
+        assert r.passed, \
+            f"Recovered {r.recovered_flux_jy:.3f} Jy vs injected {r.injected_flux_jy:.3f} Jy"
+
+    def test_photometry_flags_out_of_image_source(self, tmp_path):
+        """Source far outside image returns NaN flux and passed=False."""
+        import numpy as np
+        from astropy.io import fits
+        from astropy.wcs import WCS
+        from dsa110_continuum.simulation.pipeline import SimulatedPipeline
+        from dsa110_continuum.simulation.ground_truth import GroundTruthRegistry
+        data = np.zeros((32, 32), dtype=np.float32)
+        w = WCS(naxis=2)
+        w.wcs.crpix = [16, 16]
+        w.wcs.cdelt = [-1.0 / 60, 1.0 / 60]
+        w.wcs.crval = [0.0, 0.0]
+        w.wcs.ctype = ["RA---SIN", "DEC--SIN"]
+        path = tmp_path / "blank.fits"
+        fits.writeto(str(path), data, w.to_header(), overwrite=True)
+
+        reg = GroundTruthRegistry(test_run_id="test")
+        reg.register_source("S_far", 180.0, 45.0, baseline_flux_jy=1.0)  # outside image
+        p = SimulatedPipeline(work_dir=tmp_path)
+        results = p._photometry(image_path=path, ground_truth=reg,
+                                mjd=60000.0, noise_jy_beam=0.001)
+        assert not results[0].passed
+        assert np.isnan(results[0].recovered_flux_jy)

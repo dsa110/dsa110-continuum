@@ -381,3 +381,94 @@ class SimulatedPipeline:
             if not path.exists():
                 logger.warning("Expected WSClean output missing: %s (%s)", key, path)
         return outputs
+
+    # ------------------------------------------------------------------ #
+    # Stage 5 — Forced photometry vs. ground truth                        #
+    # ------------------------------------------------------------------ #
+
+    def _photometry(
+        self,
+        *,
+        image_path: "Path | str",
+        ground_truth: "GroundTruthRegistry",
+        mjd: float,
+        noise_jy_beam: float,
+        box_pix: int = 5,
+        flux_tolerance: float = 0.20,
+    ) -> "list[SourceFluxResult]":
+        """Forced photometry at injected source positions vs. ground truth.
+
+        Uses the production ``measure_peak_box()`` from
+        ``dsa110_continuum.photometry.simple_peak``.  For each source in
+        the ground-truth registry, measures peak flux in a pixel box centred
+        on the known position and compares to the expected flux at ``mjd``.
+
+        Parameters
+        ----------
+        image_path:
+            FITS image (Jy/beam) to measure.
+        ground_truth:
+            Registry of injected sources (positions + fluxes).
+        mjd:
+            Observation MJD for flux prediction via variability model.
+        noise_jy_beam:
+            Global noise estimate (Jy/beam) for SNR computation and the
+            ``passed`` threshold.
+        box_pix:
+            Half-width of the pixel search box (default 5 → 11×11 box).
+        flux_tolerance:
+            Fractional tolerance for ``passed`` flag:
+            ``|recovered - expected| / expected < flux_tolerance``.
+            Default 0.20 (20 %).
+
+        Returns
+        -------
+        list[SourceFluxResult]
+            One entry per source in the ground-truth registry.
+        """
+        from astropy.io import fits as astrofits
+        from astropy.wcs import WCS
+        from dsa110_continuum.photometry.simple_peak import measure_peak_box
+
+        image_path = Path(image_path)
+        with astrofits.open(str(image_path)) as hdul:
+            data = np.squeeze(hdul[0].data).astype(float)
+            wcs  = WCS(hdul[0].header).celestial
+
+        results: list[SourceFluxResult] = []
+        for src in ground_truth.sources.values():
+            expected = ground_truth.get_expected_flux(src.source_id, mjd)
+            if expected is None:
+                expected = src.baseline_flux_jy
+
+            try:
+                peak, snr, _xp, _yp = measure_peak_box(
+                    data, wcs, src.ra_deg, src.dec_deg,
+                    box_pix=box_pix, rms=noise_jy_beam,
+                )
+            except (ValueError, OverflowError):
+                # Position projects to NaN pixels (outside WCS domain)
+                peak = snr = float("nan")
+
+            if np.isnan(peak):
+                passed = False
+            else:
+                frac_err = abs(peak - expected) / max(abs(expected), 1e-12)
+                passed   = frac_err < flux_tolerance
+
+            results.append(SourceFluxResult(
+                source_id=src.source_id,
+                ra_deg=src.ra_deg,
+                dec_deg=src.dec_deg,
+                injected_flux_jy=expected,
+                recovered_flux_jy=peak,
+                snr=snr,
+                passed=passed,
+            ))
+            logger.info(
+                "  Phot %s: injected=%.3f Jy, recovered=%.3f Jy, SNR=%.1f  [%s]",
+                src.source_id, expected, peak, snr,
+                "PASS" if passed else "FAIL",
+            )
+
+        return results
