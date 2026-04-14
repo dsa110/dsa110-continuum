@@ -23,7 +23,7 @@ import numpy as np
 
 # Import casacore for reading calibration tables
 try:
-    import casacore.tables as casatables
+    from dsa110_continuum.adapters import casa_tables as casatables
 
     table = casatables.table
     HAVE_CASACORE = True

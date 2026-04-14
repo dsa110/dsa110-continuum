@@ -182,7 +182,7 @@ def extract_residuals_from_ms(
 
     """
     try:
-        from casacore.tables import table
+        from dsa110_continuum.adapters.casa_tables import table
     except ImportError as e:
         raise RuntimeError(
             "casacore.tables is required for residual extraction. "

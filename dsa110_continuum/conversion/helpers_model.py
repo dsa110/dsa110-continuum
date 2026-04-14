@@ -5,7 +5,7 @@ import logging
 import astropy.units as u
 
 
-import casacore.tables as casatables  # type: ignore
+from dsa110_continuum.adapters import casa_tables as casatables  # type: ignore
 import numpy as np
 
 from dsa110_continuum.calibration import BeamConfig, primary_beam_response

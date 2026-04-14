@@ -508,7 +508,7 @@ def compute_antenna_statistics_from_ms(
 
     """
     try:
-        from casacore.tables import table
+        from dsa110_continuum.adapters.casa_tables import table
     except ImportError:
         raise ImportError("casacore required. Install with: pip install python-casacore")
 

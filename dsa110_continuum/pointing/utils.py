@@ -13,7 +13,7 @@ import numpy as np
 from astropy.time import Time
 
 
-import casacore.tables as casatables  # noqa: E402
+from dsa110_continuum.adapters import casa_tables as casatables  # noqa: E402
 
 table = casatables.table  # noqa: N816
 

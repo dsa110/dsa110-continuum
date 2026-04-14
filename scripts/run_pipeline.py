@@ -30,7 +30,7 @@ else:
 
 # Step 2: Apply calibration to meridian MS
 print("\n=== Step 2: Apply calibration ===")
-from casacore.tables import table
+from dsa110_continuum.adapters.casa_tables import table
 import numpy as np
 
 with table(MERIDIAN_MS, readonly=True, ack=False) as t:

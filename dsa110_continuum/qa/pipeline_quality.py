@@ -49,7 +49,7 @@ def check_ms_after_conversion(
 
     if not quick_check_only:
         try:
-            import casacore.tables as tb  # type: ignore
+            from dsa110_continuum.adapters import casa_tables as tb  # type: ignore
 
             with tb.table(str(ms_path), readonly=True) as t:
                 result["nrows"] = int(t.nrows())

@@ -20,7 +20,7 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
-from casacore.tables import table
+from dsa110_continuum.adapters.casa_tables import table
 from scipy import stats
 
 from dsa110_contimg.common.utils.antenna_classification import OUTRIGGER_ANTENNAS

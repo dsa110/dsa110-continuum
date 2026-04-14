@@ -13,7 +13,7 @@ import logging
 
 
 # Provide a patchable casacore table symbol for tests and submodules
-import casacore.tables as casatables  # type: ignore
+from dsa110_continuum.adapters import casa_tables as casatables  # type: ignore
 
 # Expose as module attribute so tests can patch dsa110_contimg.conversion.helpers.table
 table = casatables.table  # noqa: N816

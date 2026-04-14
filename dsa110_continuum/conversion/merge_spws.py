@@ -12,7 +12,7 @@ import shutil
 import numpy as np
 
 
-import casacore.tables as casatables  # type: ignore[import]
+from dsa110_continuum.adapters import casa_tables as casatables  # type: ignore[import]
 
 table = casatables.table  # noqa: N816
 

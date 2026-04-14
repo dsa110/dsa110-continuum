@@ -325,7 +325,7 @@ def _extract_residual_metrics(ms_path: str) -> dict[str, float] | None:
     Computes RMS and phase scatter of CORRECTED_DATA - MODEL_DATA.
     """
     try:
-        from casacore.tables import table
+        from dsa110_continuum.adapters.casa_tables import table
     except ImportError:
         return None
 

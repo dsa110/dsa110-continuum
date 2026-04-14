@@ -40,7 +40,7 @@ def _get_ref_frequency_hz(
         return ref_frequency_hz
 
     try:
-        from casacore.tables import table
+        from dsa110_continuum.adapters.casa_tables import table
 
         with table(f"{ms_candidate}::SPECTRAL_WINDOW", readonly=True) as spw_tb:
             ref_freqs = spw_tb.getcol("REF_FREQUENCY")
@@ -55,7 +55,7 @@ def _get_ref_frequency_hz(
 def _read_kcal_table_columns(
     caltable: Path,
 ) -> tuple[np.ndarray | None, np.ndarray | None, np.ndarray | None]:
-    from casacore.tables import table
+    from dsa110_continuum.adapters.casa_tables import table
 
     with table(str(caltable), readonly=True) as tb:
         colnames = set(tb.colnames())

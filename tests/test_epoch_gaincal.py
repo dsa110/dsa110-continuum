@@ -199,7 +199,7 @@ from pathlib import Path  # noqa: E402
 def test_ms_flag_fraction_computes_correctly():
     """`_ms_flag_fraction` returns correct value from a mocked casacore table."""
     import numpy as np
-    import casacore.tables as ct
+    from dsa110_continuum.adapters import casa_tables as ct
     from dsa110_continuum.calibration.epoch_gaincal import _ms_flag_fraction
 
     flags = np.zeros((100, 16, 2), dtype=bool)

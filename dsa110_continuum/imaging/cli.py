@@ -16,14 +16,14 @@ from dsa110_contimg.common.utils.cli_helpers import (
 
 from .cli_imaging import image_ms
 
-import casacore.tables as casatables  # type: ignore[import]
+from dsa110_continuum.adapters import casa_tables as casatables  # type: ignore[import]
 
 table = casatables.table  # noqa: N816
 import argparse
 import logging
 import os
 
-import casacore.tables as casatables  # type: ignore[import]
+from dsa110_continuum.adapters import casa_tables as casatables  # type: ignore[import]
 
 table = casatables.table  # noqa: N816
 

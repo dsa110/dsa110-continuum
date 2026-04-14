@@ -23,7 +23,7 @@ from dsa110_continuum.calibration.caltables import discover_caltables
 # `table` as None so runtime callers can raise an informative error if they
 # attempt to use it.
 try:
-    import casacore.tables as casatables  # type: ignore
+    from dsa110_continuum.adapters import casa_tables as casatables  # type: ignore
 
     table = casatables.table  # noqa: N816
     HAVE_CASACORE = True
@@ -754,7 +754,7 @@ def analyze_per_spw_flagging(
         - NRAO VLA/VLBA calibration guides recommend per-SPW evaluation for diagnostics
         - Best practice: Use per-channel flagging first, SPW-level flagging as last resort
     """
-    import casacore.tables as casatables
+    from dsa110_continuum.adapters import casa_tables as casatables
     import numpy as np
 
     table = casatables.table  # noqa: N816

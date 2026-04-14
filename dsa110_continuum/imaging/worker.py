@@ -84,7 +84,7 @@ def _get_wavelength_from_ms(ms_path: str) -> float:
     from dsa110_contimg.common.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
-    import casacore.tables as casatables
+    from dsa110_continuum.adapters import casa_tables as casatables
 
     try:
         with casatables.table(f"{ms_path}/SPECTRAL_WINDOW", readonly=True) as spw:
@@ -134,7 +134,7 @@ def _read_ms_visibilities(
     from dsa110_contimg.common.utils.casa_init import ensure_casa_path
 
     ensure_casa_path()
-    import casacore.tables as casatables
+    from dsa110_continuum.adapters import casa_tables as casatables
 
     wavelength = _get_wavelength_from_ms(ms_path)
 

@@ -305,7 +305,7 @@ class MSValidator:
     def _check_properties(self):
         """Extract and validate basic MS properties."""
         try:
-            from casacore.tables import table
+            from dsa110_continuum.adapters.casa_tables import table
         except ImportError:
             self._add_result(
                 "casacore_available",
@@ -371,7 +371,7 @@ class MSValidator:
     def _check_phase_centers(self):
         """Check phase centers for all fields."""
         try:
-            from casacore.tables import table
+            from dsa110_continuum.adapters.casa_tables import table
         except ImportError:
             return
 
@@ -423,7 +423,7 @@ class MSValidator:
     def _check_rephase_status(self):
         """Check if REFERENCE_DIR matches PHASE_DIR (rephase indicator)."""
         try:
-            from casacore.tables import table
+            from dsa110_continuum.adapters.casa_tables import table
         except ImportError:
             return
 
@@ -537,7 +537,7 @@ class MSValidator:
     def _check_data_integrity(self):
         """Check DATA column for non-zero values and flagging."""
         try:
-            from casacore.tables import table
+            from dsa110_continuum.adapters.casa_tables import table
         except ImportError:
             return
 
@@ -613,7 +613,7 @@ class MSValidator:
     def _check_timing(self):
         """Check TIME column for validity."""
         try:
-            from casacore.tables import table
+            from dsa110_continuum.adapters.casa_tables import table
         except ImportError:
             return
 
