@@ -39,3 +39,6 @@ docs/quarto/.quarto/
 .vscode/
 .windsurf/
 .windsurfrules
+
+# Python packaging artifacts
+*.egg-info/
