@@ -238,7 +238,7 @@ def _get_flag_fraction(ms: str) -> float:
     ----------
     """
     try:
-        import casacore.tables as tb
+        from dsa110_continuum.adapters import casa_tables as tb
 
         with tb.table(ms, readonly=True) as t:
             flags = t.getcol("FLAG")
@@ -257,7 +257,7 @@ def _compute_rfi_metrics_per_spw(ms: str, spw: int) -> RFIMetrics:
     metrics = RFIMetrics(spw=spw)
 
     try:
-        import casacore.tables as tb
+        from dsa110_continuum.adapters import casa_tables as tb
 
         with tb.table(ms, readonly=True) as t:
             # Get flags and data for this SPW

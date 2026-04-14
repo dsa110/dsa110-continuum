@@ -70,7 +70,7 @@ from pathlib import Path
 
 
 import astropy.units as u  # noqa: E402
-import casacore.tables as tb  # noqa: E402
+from dsa110_continuum.adapters import casa_tables as tb  # noqa: E402
 import numpy as np  # noqa: E402
 from astropy.coordinates import SkyCoord  # noqa: E402
 
@@ -112,7 +112,7 @@ def _ensure_imaging_columns(ms_path: str) -> None:
     # Check if columns already exist using casacore (faster check, same result for column names)
     # We use readonly mode to avoid any locks
     try:
-        import casacore.tables as ct
+        from dsa110_continuum.adapters import casa_tables as ct
 
         with ct.table(ms_path, readonly=True) as t:
             cols = set(t.colnames())
@@ -307,7 +307,7 @@ def _calculate_manual_model_data(
     """
     import sys
 
-    import casacore.tables as casatables
+    from dsa110_continuum.adapters import casa_tables as casatables
 
     print("  Starting _calculate_manual_model_data...")
     sys.stdout.flush()

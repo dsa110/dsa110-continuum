@@ -456,7 +456,7 @@ def extract_quality_metrics(
 
     ensure_casa_path()
 
-    import casacore.tables as ct
+    from dsa110_continuum.adapters import casa_tables as ct
     import numpy as np
 
     with ct.table(caltable_path, readonly=True, ack=False) as tb:

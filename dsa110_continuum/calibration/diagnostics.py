@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 
 
-import casacore.tables as casatables
+from dsa110_continuum.adapters import casa_tables as casatables
 import numpy as np
 
 table = casatables.table  # noqa: N816

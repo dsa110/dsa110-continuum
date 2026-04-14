@@ -54,9 +54,9 @@ def rename_calibrator_field(
         - Uses casacore.tables for direct FIELD table access (no CASA tasks required)
     """
     try:
-        import casacore.tables as casatables
+        from dsa110_continuum.adapters import casa_tables as casatables
     except ImportError:
-        logger.error("casacore.tables not available - cannot rename field")
+        logger.error("dsa110_continuum.adapters.casa_tables not available - cannot rename field")
         return
 
     ms_path = str(Path(ms_path).resolve())

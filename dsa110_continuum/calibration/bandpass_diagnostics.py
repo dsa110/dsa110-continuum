@@ -17,7 +17,7 @@ from typing import Any
 import numpy as np
 
 
-import casacore.tables as casatables
+from dsa110_continuum.adapters import casa_tables as casatables
 
 table = casatables.table
 

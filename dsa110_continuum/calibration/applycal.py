@@ -241,7 +241,7 @@ def _merge_caltables_weighted(
     """
     import shutil
 
-    import casacore.tables as casatables
+    from dsa110_continuum.adapters import casa_tables as casatables
 
     # Copy the before table as base
     shutil.copytree(path_before, output_path)
@@ -320,7 +320,7 @@ def _verify_corrected_data_populated(ms_path: str, min_fraction: float = 0.01) -
         If CORRECTED_DATA is not populated
 
     """
-    import casacore.tables as casatables  # type: ignore[import]
+    from dsa110_continuum.adapters import casa_tables as casatables  # type: ignore[import]
 
     table = casatables.table  # noqa: N816
 
@@ -405,7 +405,7 @@ def _read_gains_from_caltable(caltable_path: str) -> tuple[np.ndarray, np.ndarra
         Tuple of (gains, antenna_ids) where gains shape is (n_ant, n_pol)
 
     """
-    import casacore.tables as casatables
+    from dsa110_continuum.adapters import casa_tables as casatables
 
     with casatables.table(caltable_path, readonly=True) as tb:
         gains = tb.getcol("CPARAM")  # Complex gains
@@ -447,7 +447,7 @@ def _read_ms_for_gpu_cal(
         Tuple of (vis, ant1, ant2) arrays
 
     """
-    import casacore.tables as casatables
+    from dsa110_continuum.adapters import casa_tables as casatables
 
     with casatables.table(ms_path, readonly=True) as tb:
         vis = tb.getcol(datacolumn)
@@ -463,7 +463,7 @@ def _write_corrected_data(ms_path: str, corrected: np.ndarray) -> None:
     Parameters
     ----------
     """
-    import casacore.tables as casatables
+    from dsa110_continuum.adapters import casa_tables as casatables
 
     with casatables.table(ms_path, readonly=False) as tb:
         tb.putcol("CORRECTED_DATA", corrected)

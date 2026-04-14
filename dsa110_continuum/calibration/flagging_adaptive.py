@@ -109,7 +109,7 @@ def _get_flag_fraction(ms_path: str) -> float:
     ----------
     """
     try:
-        import casacore.tables as casatables
+        from dsa110_continuum.adapters import casa_tables as casatables
         import numpy as np
 
         with casatables.table(ms_path, readonly=True) as tb:

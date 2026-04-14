@@ -34,7 +34,7 @@ def check_model_corrected_ratio(
     large flux scale gaps early. It samples a subset of rows and central channels
     to avoid heavy I/O.
     """
-    import casacore.tables as tb
+    from dsa110_continuum.adapters import casa_tables as tb
     import numpy as np
 
     ms_path = str(ms_path)

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 
 import astropy.units as u
-import casacore.tables as casatables
+from dsa110_continuum.adapters import casa_tables as casatables
 import numpy as np
 import pandas as pd
 from astropy.coordinates import Angle

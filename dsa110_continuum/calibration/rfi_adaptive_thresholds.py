@@ -670,7 +670,7 @@ def compute_rfi_stats_from_ms(
     results = {}
 
     try:
-        import casacore.tables as casatables
+        from dsa110_continuum.adapters import casa_tables as casatables
 
         with casatables.table(ms_path, readonly=True, ack=False) as tb:
             flags = tb.getcol("FLAG")

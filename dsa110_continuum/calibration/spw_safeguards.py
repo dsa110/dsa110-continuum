@@ -148,7 +148,7 @@ def _extract_spw_data(ms: str, spw_id: int) -> tuple[np.ndarray, np.ndarray]:
 
     """
     try:
-        import casacore.tables as tb
+        from dsa110_continuum.adapters import casa_tables as tb
 
         with tb.table(ms, readonly=True, ack=False) as t:
             # This is a simplified approach; in production might need to
@@ -187,7 +187,7 @@ def compute_spw_qa_metrics(ms: str, spw_id: int) -> SPWQAMetrics:
     metrics = SPWQAMetrics(spw_id=spw_id, n_channels=0, n_antennas=0)
 
     try:
-        import casacore.tables as tb
+        from dsa110_continuum.adapters import casa_tables as tb
 
         # Get SPW metadata
         with tb.table(f"{ms}/SPECTRAL_WINDOW", readonly=True, ack=False) as sw:
@@ -258,7 +258,7 @@ def compute_all_spws_qa(ms: str) -> dict[int, SPWQAMetrics]:
     metrics = {}
 
     try:
-        import casacore.tables as tb
+        from dsa110_continuum.adapters import casa_tables as tb
 
         with tb.table(f"{ms}/SPECTRAL_WINDOW", readonly=True, ack=False) as sw:
             n_spws = sw.nrows()
@@ -410,7 +410,7 @@ def reflag_bad_channels(
     }
 
     try:
-        import casacore.tables as tb  # noqa: F401 - used in _flag_channels_in_spw
+        from dsa110_continuum.adapters import casa_tables as tb  # noqa: F401 - used in _flag_channels_in_spw
     except ImportError:
         logger.warning("casacore not available - skipping per-channel re-flagging")
         results["errors"].append("casacore not available")
@@ -544,7 +544,7 @@ def _flag_channels_in_spw(
         Number of visibilities newly flagged
 
     """
-    import casacore.tables as tb
+    from dsa110_continuum.adapters import casa_tables as tb
 
     n_flagged = 0
 

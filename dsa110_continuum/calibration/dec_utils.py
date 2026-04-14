@@ -32,7 +32,7 @@ def read_ms_dec(ms_path: str | Path, fits_fallback: str | Path | None = None) ->
     _last_exc: Exception | None = None
 
     try:
-        import casacore.tables as ct
+        from dsa110_continuum.adapters import casa_tables as ct
     except ImportError:
         log.debug("read_ms_dec: casacore not available, trying FITS fallback")
     else:

@@ -659,14 +659,14 @@ def predict_from_skymodel_wsclean(
     >>> sky = make_unified_skymodel(ra_deg, dec_deg, radius_deg=1.0)
     >>> predict_from_skymodel_wsclean("obs.ms", sky, field="0~23")
     """
-    import casacore.tables as casatables
+    from dsa110_continuum.adapters import casa_tables as casatables
 
     if sky_model.Ncomponents == 0:
         raise ValueError("SkyModel is empty - cannot predict visibilities")
 
     # Ensure MODEL_DATA column exists
     try:
-        import casacore.tables as ct
+        from dsa110_continuum.adapters import casa_tables as ct
 
         with ct.table(ms_path, readonly=True) as t:
             cols = set(t.colnames())

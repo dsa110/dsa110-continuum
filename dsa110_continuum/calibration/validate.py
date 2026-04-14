@@ -11,7 +11,7 @@ import logging
 import os
 
 
-import casacore.tables as casatables  # type: ignore[import]
+from dsa110_continuum.adapters import casa_tables as casatables  # type: ignore[import]
 import numpy as np  # type: ignore[import]
 
 from dsa110_contimg.common.utils.antenna_classification import (

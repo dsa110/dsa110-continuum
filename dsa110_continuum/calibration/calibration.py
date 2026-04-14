@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Provide a single casacore tables symbol for the module
 try:
-    import casacore.tables as _casatables  # type: ignore
+    from dsa110_continuum.adapters import casa_tables as _casatables  # type: ignore
 
     table = _casatables.table  # noqa: N816
 except ImportError:
@@ -2591,7 +2591,7 @@ def solve_gains(
     _table = sys.modules[__name__].table
     if _table is None:
         raise ImportError(
-            "casacore.tables module is not available. "
+            "dsa110_continuum.adapters.casa_tables module is not available. "
             "This function requires CASA environment to be properly configured. "
             "Please ensure you are running in the casa6 conda environment."
         )

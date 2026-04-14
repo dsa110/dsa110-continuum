@@ -319,7 +319,7 @@ def _get_flagged_fraction(ms_path: str) -> float:
 
     """
     try:
-        import casacore.tables as tb
+        from dsa110_continuum.adapters import casa_tables as tb
 
         with tb.table(ms_path, readonly=True) as t:
             flags = t.getcol("FLAG")
@@ -350,7 +350,7 @@ def _compute_visibility_chi_squared(ms_path: str, field: str = "") -> float:
 
     """
     try:
-        import casacore.tables as tb
+        from dsa110_continuum.adapters import casa_tables as tb
 
         query = f"FIELD_ID=={field}" if field and field.isdigit() else ""
 
@@ -425,7 +425,7 @@ def _compute_per_antenna_snr(
 
     """
     try:
-        import casacore.tables as tb
+        from dsa110_continuum.adapters import casa_tables as tb
 
         with tb.table(ms_path, readonly=True) as t:
             # Get antenna columns
@@ -548,7 +548,7 @@ def _measure_gain_smoothness(caltable_path: str) -> tuple[float, float]:
 
     """
     try:
-        import casacore.tables as tb
+        from dsa110_continuum.adapters import casa_tables as tb
 
         with tb.table(caltable_path, readonly=True) as t:
             # CPARAM contains complex gains
@@ -607,7 +607,7 @@ def _check_beam_response(
 
     """
     try:
-        import casacore.tables as tb
+        from dsa110_continuum.adapters import casa_tables as tb
 
         # Get field pointing direction
         field_id = int(field) if field.isdigit() else 0
@@ -1015,7 +1015,7 @@ def _run_imaging(
             # Determine which data column to image
             datacolumn = "corrected"
             try:
-                import casacore.tables as tb
+                from dsa110_continuum.adapters import casa_tables as tb
 
                 with tb.table(ms_path, readonly=True, ack=False) as t:
                     if "CORRECTED_DATA" not in t.colnames():

@@ -63,7 +63,7 @@ def _detect_applied_calibration(ms_path: str, threshold: float = 0.01) -> bool:
         True if CORRECTED_DATA appears to contain applied calibration
     """
     try:
-        import casacore.tables as ct
+        from dsa110_continuum.adapters import casa_tables as ct
 
         with ct.table(ms_path, readonly=True) as t:
             colnames = set(t.colnames())
