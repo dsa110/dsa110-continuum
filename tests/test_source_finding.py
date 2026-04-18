@@ -77,3 +77,59 @@ def test_write_empty_catalog_schema():
             assert col in t.colnames, f"Missing column: {col}"
     finally:
         os.unlink(path)
+
+
+import sys
+import importlib
+from unittest.mock import MagicMock
+
+
+def test_run_bane_skip_existing():
+    """If both bkg and rms files already exist, run_bane returns immediately without calling BANE."""
+    import os
+    # Create a fake mosaic + pre-existing bkg/rms files
+    with tempfile.NamedTemporaryFile(suffix=".fits", delete=False) as f:
+        mosaic_path = f.name
+    stem = mosaic_path.replace(".fits", "")
+    bkg_path = stem + "_bkg.fits"
+    rms_path = stem + "_rms.fits"
+    open(bkg_path, "w").close()
+    open(rms_path, "w").close()
+    try:
+        from dsa110_continuum.source_finding.core import run_bane
+        result_bkg, result_rms = run_bane(mosaic_path, skip_existing=True)
+        assert result_bkg == bkg_path
+        assert result_rms == rms_path
+    finally:
+        for p in [mosaic_path, bkg_path, rms_path]:
+            if os.path.exists(p):
+                os.unlink(p)
+
+
+def test_run_bane_missing_output():
+    """RuntimeError raised when BANE mock runs but produces no output files."""
+    import os
+    with tempfile.NamedTemporaryFile(suffix=".fits", delete=False) as f:
+        mosaic_path = f.name
+    try:
+        # Inject a mock AegeanTools.BANE whose filter_image is a no-op
+        mock_bane_mod = MagicMock()
+        mock_bane_mod.filter_image = MagicMock()  # does NOT create output files
+        mock_at = MagicMock()
+        mock_at.BANE = mock_bane_mod
+        sys.modules["AegeanTools"] = mock_at
+        sys.modules["AegeanTools.BANE"] = mock_bane_mod
+
+        # Reload core so run_bane picks up the injected mock on the next import
+        from dsa110_continuum.source_finding import core as sf_core
+        importlib.reload(sf_core)
+
+        with pytest.raises(RuntimeError, match="BANE did not produce"):
+            sf_core.run_bane(mosaic_path, skip_existing=False)
+    finally:
+        os.unlink(mosaic_path)
+        # Clean up injected mocks
+        for k in ["AegeanTools", "AegeanTools.BANE", "AegeanTools.source_finder"]:
+            sys.modules.pop(k, None)
+        # Reload core back to a clean state
+        importlib.reload(sf_core)

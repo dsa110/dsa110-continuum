@@ -81,7 +81,7 @@ def write_empty_catalog(out_path: str | Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Stubs — implemented in later tasks
+# BANE background estimator
 # ---------------------------------------------------------------------------
 
 def run_bane(
@@ -92,12 +92,77 @@ def run_bane(
     cores: int = 1,
     skip_existing: bool = True,
 ) -> tuple[str, str]:
-    """Run BANE background/RMS estimation on *mosaic_path*.
+    """Run BANE background/RMS estimator. Returns (bkg_path, rms_path).
 
-    Returns (bkg_path, rms_path). Implemented in Task 2.
+    Parameters
+    ----------
+    mosaic_path : str | Path
+        Input mosaic FITS file.
+    box_size : int
+        BANE box size in pixels (default 600 ≈ 50 beams at 20"/pix).
+    step_size : int
+        BANE step size in pixels (default 300).
+    cores : int
+        Worker cores (default 1 to avoid shared-memory deadlock on
+        NaN-heavy mosaics).
+    skip_existing : bool
+        If True and both output files exist, return immediately without
+        calling BANE.
+
+    Returns
+    -------
+    tuple[str, str]
+        Paths to (background_map.fits, rms_map.fits).
+
+    Raises
+    ------
+    RuntimeError
+        If BANE runs but does not produce the expected output files.
+    ImportError
+        If AegeanTools is not installed.
     """
-    raise NotImplementedError("run_bane not yet implemented")
+    mosaic_path = str(mosaic_path)
+    stem = mosaic_path.replace(".fits", "")
+    bkg_path = stem + "_bkg.fits"
+    rms_path = stem + "_rms.fits"
 
+    if skip_existing and Path(bkg_path).exists() and Path(rms_path).exists():
+        log.info("BANE outputs already exist — skipping: %s, %s", bkg_path, rms_path)
+        return bkg_path, rms_path
+
+    log.info(
+        "Running BANE on %s (box=%d, step=%d, cores=%d) ...",
+        mosaic_path, box_size, step_size, cores,
+    )
+    try:
+        from AegeanTools import BANE as _bane
+    except ImportError as exc:
+        raise ImportError(
+            "AegeanTools not installed. "
+            "Install with: pip install git+https://github.com/PaulHancock/Aegean.git"
+        ) from exc
+
+    _bane.filter_image(
+        im_name=mosaic_path,
+        out_base=stem,
+        step_size=[step_size, step_size],
+        box_size=[box_size, box_size],
+        cores=cores,
+        mask=True,
+    )
+
+    if not Path(bkg_path).exists() or not Path(rms_path).exists():
+        raise RuntimeError(
+            f"BANE did not produce expected outputs: {bkg_path}, {rms_path}"
+        )
+
+    log.info("BANE done: bkg=%s, rms=%s", bkg_path, rms_path)
+    return bkg_path, rms_path
+
+
+# ---------------------------------------------------------------------------
+# Stubs — implemented in Task 3
+# ---------------------------------------------------------------------------
 
 def run_aegean(
     mosaic_path: str | Path,
