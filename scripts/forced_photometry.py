@@ -417,6 +417,14 @@ def main():
         "--snr-coarse", type=float, default=3.0, dest="snr_coarse",
         help="Coarse SNR gate for two_stage method (default: 3.0)",
     )
+    parser.add_argument(
+        "--plots", action="store_true", default=True,
+        help="Generate flux scale and field source diagnostic plots (default: on).",
+    )
+    parser.add_argument(
+        "--no-plots", action="store_false", dest="plots",
+        help="Skip diagnostic plot generation.",
+    )
     args = parser.parse_args()
 
     mosaic_path = args.mosaic or DEFAULT_MOSAIC
@@ -436,6 +444,20 @@ def main():
     except (FileNotFoundError, RuntimeError) as e:
         log.error("%s", e)
         sys.exit(1)
+
+    # ── Diagnostic plots ──────────────────────────────────────────────────────
+    if args.plots and result.get("n_sources", 0) > 0:
+        try:
+            from dsa110_continuum.visualization.stage_a_diagnostics import (
+                plot_flux_scale,
+                plot_source_field,
+            )
+            out_dir = Path(result["csv_path"]).parent
+            flux_plot = plot_flux_scale(result["csv_path"], mosaic_path, out_dir)
+            field_plot = plot_source_field(result["csv_path"], mosaic_path, out_dir)
+            log.info("Diagnostic plots written: %s, %s", flux_plot, field_plot)
+        except Exception as exc:
+            log.warning("Diagnostic plot generation failed (non-fatal): %s", exc)
 
     med = result["median_ratio"]
     n = result["n_sources"]
