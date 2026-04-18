@@ -80,11 +80,20 @@ def run_coarse_pass(
         finite = data[np.isfinite(data)]
         rms = float(mad_std(finite)) if finite.size > 0 else float("nan")
 
+    if not (np.isfinite(rms) and rms > 0):
+        return [
+            CoarseAugment(
+                ra_deg=ra, dec_deg=dec,
+                coarse_peak_jyb=float("nan"),
+                coarse_snr=float("nan"),
+                passed_coarse=False,
+            )
+            for ra, dec in coords
+        ]
+
     results = []
     for ra, dec in coords:
         peak, snr, _, _ = measure_peak_box(data, wcs, ra, dec, box_pix=box_pix, rms=rms)
-        if not np.isfinite(snr):
-            snr = (peak / rms) if (np.isfinite(peak) and np.isfinite(rms) and rms > 0) else float("nan")
         results.append(CoarseAugment(
             ra_deg=ra,
             dec_deg=dec,
