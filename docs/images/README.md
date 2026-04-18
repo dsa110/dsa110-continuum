@@ -27,6 +27,10 @@ simulation audit. All figures use the SciencePlots `science + notebook` style.
 |---|---|---|
 | `step2_calibrator_visibility.png` | Calibrator visibility amplitude vs baseline length (all subbands). Confirms correct UV-distance scaling. | Step 2 |
 | `step3_gain_solutions.png` | Per-antenna gain solutions (amplitude + phase) across all 117 antennas and 16 subbands. Confirms convergence of the calibration step. | Step 3 |
+| `step4_tile0_clean.png` | CLEAN restored image of a single calibrated drift-scan tile (Tile 0). 117 antennas, 8-subband MFS, SNR=167. | Step 4 |
+| `step6_mosaic.png` | Inverse-variance mosaic of 4 consecutive drift-scan tiles. 517×1188 px at 20"/pix. Includes tile coverage map. | Step 6 |
+| `step6_mosaic_validation.png` | 4-panel mosaic validation figure: source centroid offsets, flux recovery, rms vs. coverage depth, tile difference maps. | Step 6 |
+| `step6_check3_noise_decomposition.png` | rms vs. coverage depth — noise decomposition into thermal and incoherent sidelobe components, with shared-sky analytical prediction. | Step 6 |
 
 ## Simulation Diagnostics
 
