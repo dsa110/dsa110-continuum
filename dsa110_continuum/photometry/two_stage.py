@@ -10,6 +10,7 @@ from astropy.stats import mad_std
 from astropy.wcs import WCS
 
 from dsa110_continuum.photometry.simple_peak import measure_peak_box
+from dsa110_continuum.photometry.forced import ForcedPhotometryResult, measure_many
 
 
 @dataclass
@@ -102,3 +103,82 @@ def run_coarse_pass(
             passed_coarse=bool(np.isfinite(snr) and snr >= snr_coarse_min),
         ))
     return results
+
+
+def run_two_stage(
+    fits_path: str,
+    coords: list[tuple[float, float]],
+    *,
+    snr_coarse_min: float = 3.0,
+    box_pix: int = 5,
+    global_rms: float | None = None,
+    use_cluster_fitting: bool = False,
+    noise_map_path: str | None = None,
+) -> tuple[list[ForcedPhotometryResult], list[CoarseAugment]]:
+    """Coarse peak-in-box pass, then Condon fine pass on survivors.
+
+    Parameters
+    ----------
+    fits_path : str
+        Path to mosaic FITS file.
+    coords : list of (ra_deg, dec_deg)
+        Source positions to measure.
+    snr_coarse_min : float
+        Coarse SNR gate threshold (default 3.0).
+    box_pix : int
+        Half-width of coarse measurement box in pixels (default 5).
+    global_rms : float or None
+        Noise estimate in Jy/beam.  If None, estimated from image MAD.
+    use_cluster_fitting : bool
+        Passed through to measure_many (default False).
+    noise_map_path : str or None
+        Optional noise map FITS path for fine pass.
+
+    Returns
+    -------
+    results : list[ForcedPhotometryResult]
+        One result per input coord, in order. NaN placeholder for coarse failures.
+    augments : list[CoarseAugment]
+        Coarse-pass metadata for each coord, in order.
+    """
+    if not coords:
+        return [], []
+
+    augments = run_coarse_pass(
+        fits_path, coords,
+        box_pix=box_pix,
+        global_rms=global_rms,
+        snr_coarse_min=snr_coarse_min,
+    )
+
+    # Collect survivors preserving their original indices
+    survivor_indices = [i for i, aug in enumerate(augments) if aug.passed_coarse]
+    survivor_coords = [(augments[i].ra_deg, augments[i].dec_deg) for i in survivor_indices]
+
+    if survivor_coords:
+        fine_results = measure_many(
+            fits_path,
+            survivor_coords,
+            use_cluster_fitting=use_cluster_fitting,
+            noise_map_path=noise_map_path,
+        )
+    else:
+        fine_results = []
+
+    # Map fine results back by original index
+    fine_map = {survivor_indices[j]: fine_results[j] for j in range(len(fine_results))}
+
+    def _nan_result(ra: float, dec: float) -> ForcedPhotometryResult:
+        return ForcedPhotometryResult(
+            ra_deg=ra, dec_deg=dec,
+            peak_jyb=float("nan"), peak_err_jyb=float("nan"),
+            pix_x=float("nan"), pix_y=float("nan"),
+            box_size_pix=box_pix,
+        )
+
+    ordered_results = [
+        fine_map.get(i, _nan_result(aug.ra_deg, aug.dec_deg))
+        for i, aug in enumerate(augments)
+    ]
+
+    return ordered_results, augments

@@ -63,6 +63,7 @@ from dsa110_continuum.photometry.two_stage import (
     CoarseAugment,
     beam_correction_factor,
     run_coarse_pass,
+    run_two_stage,
 )
 
 __all__: list[str] = [
@@ -70,6 +71,7 @@ __all__: list[str] = [
     "CoarseAugment",
     "beam_correction_factor",
     "run_coarse_pass",
+    "run_two_stage",
     # Forced photometry
     "ForcedPhotometryResult",
     "measure_forced_peak",

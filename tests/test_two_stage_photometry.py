@@ -6,7 +6,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch
 
-from dsa110_continuum.photometry.two_stage import CoarseAugment, beam_correction_factor, run_coarse_pass
+from dsa110_continuum.photometry.two_stage import CoarseAugment, beam_correction_factor, run_coarse_pass, run_two_stage
 
 MOSAIC = Path("pipeline_outputs/step6/step6_mosaic.fits")
 
@@ -122,3 +122,61 @@ def test_snr_gate_all_fail_with_high_rms():
     coords = [(344.124, 16.15)]
     results = run_coarse_pass(str(MOSAIC), coords, global_rms=1e6, snr_coarse_min=3.0)
     assert results[0].passed_coarse is False
+
+
+@pytest.mark.skipif(not MOSAIC.exists(), reason="Step 6 mosaic not on disk")
+def test_two_stage_returns_paired_lists():
+    coords = [(344.124, 16.15), (346.71, 16.15)]
+    results, augments = run_two_stage(str(MOSAIC), coords, snr_coarse_min=0.0)
+    assert len(results) == len(augments) == 2
+
+
+@pytest.mark.skipif(not MOSAIC.exists(), reason="Step 6 mosaic not on disk")
+def test_fine_pass_skips_failing_coarse():
+    coords = [(344.124, 16.15)]
+    results, augments = run_two_stage(str(MOSAIC), coords, global_rms=1e6, snr_coarse_min=3.0)
+    assert augments[0].passed_coarse is False
+    assert not np.isfinite(results[0].peak_jyb)
+
+
+def test_two_stage_synthetic_fits():
+    """run_two_stage: one coord passes coarse, one fails (off-image)."""
+    import tempfile
+    from astropy.io import fits as afits
+    from astropy.wcs import WCS as AWCS
+
+    # Use a large enough image so the annulus (r=30..50) has pixels with noise.
+    # Omit BPA so measure_many uses the simple-peak fallback (avoids the
+    # weighted-convolution path that requires the optional dsa110_contimg package).
+    np.random.seed(0)
+    ny, nx = 120, 120
+    data = np.random.normal(0, 0.001, (ny, nx)).astype(np.float32)
+    data[60, 60] = 0.5  # strong source at centre
+
+    w = AWCS(naxis=2)
+    w.wcs.ctype = ["RA---SIN", "DEC--SIN"]
+    w.wcs.crval = [180.0, 30.0]
+    w.wcs.crpix = [60.0, 60.0]
+    w.wcs.cdelt = [-20.0 / 3600, 20.0 / 3600]
+    hdr = w.to_header()
+    hdr["BMAJ"] = 36.9 / 3600
+    hdr["BMIN"] = 25.5 / 3600
+    # Intentionally omit BPA so measure_many uses the simple-peak fallback
+
+    with tempfile.NamedTemporaryFile(suffix=".fits", delete=False) as f:
+        fpath = f.name
+    afits.PrimaryHDU(data=data, header=hdr).writeto(fpath, overwrite=True)
+
+    coords = [
+        (180.0, 30.0),    # on-image: should pass coarse
+        (180.0, 35.0),    # off-image: should fail coarse (NaN peak)
+    ]
+    results, augments = run_two_stage(fpath, coords, global_rms=0.001, snr_coarse_min=3.0)
+
+    assert len(results) == len(augments) == 2
+    assert augments[0].passed_coarse is True
+    assert augments[1].passed_coarse is False
+    # Fine-pass result for survivor should have a finite peak
+    assert np.isfinite(results[0].peak_jyb)
+    # Fine-pass result for coarse failure should be NaN placeholder
+    assert not np.isfinite(results[1].peak_jyb)
