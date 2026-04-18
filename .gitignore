@@ -43,3 +43,7 @@ docs/quarto/.quarto/
 
 # Python packaging artifacts
 *.egg-info/
+
+# Pipeline outputs — all working outputs are regenerable; canonical figures live in docs/images/
+pipeline_outputs/
+pipeline_diagnostic.png
