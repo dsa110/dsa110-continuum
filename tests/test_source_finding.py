@@ -138,3 +138,140 @@ def test_run_bane_missing_output():
                 sf_core.run_bane(mosaic_path, skip_existing=False)
     finally:
         os.unlink(mosaic_path)
+
+
+# ── check_catalog tests ─────────────────────────────────────────────────────
+
+def test_check_catalog_empty():
+    """check_catalog returns False for a zero-row catalog."""
+    import os
+    with tempfile.NamedTemporaryFile(suffix=".fits", delete=False) as f:
+        path = f.name
+    try:
+        write_empty_catalog(path)
+        from dsa110_continuum.source_finding.core import check_catalog
+        assert check_catalog(path) is False
+    finally:
+        os.unlink(path)
+
+
+def test_check_catalog_non_empty_no_bright():
+    """Non-empty catalog with no bright (>1 Jy) sources returns True (warning only)."""
+    import os
+    entry = _make_entry(0)  # peak_flux_jy = 0.05 Jy — well below 1 Jy
+    with tempfile.NamedTemporaryFile(suffix=".fits", delete=False) as f:
+        path = f.name
+    try:
+        write_catalog([entry], path)
+        from dsa110_continuum.source_finding.core import check_catalog
+        assert check_catalog(path) is True
+    finally:
+        os.unlink(path)
+
+
+def test_check_catalog_with_bright_source():
+    """Catalog with a >1 Jy source returns True."""
+    import os
+    bright = SourceCatalogEntry(
+        source_name="AEG_J344.0000+16.0000",
+        ra_deg=344.0,
+        dec_deg=16.0,
+        peak_flux_jy=2.5,
+        peak_flux_err_jy=0.05,
+        int_flux_jy=3.0,
+        a_arcsec=36.9,
+        b_arcsec=25.5,
+        pa_deg=130.0,
+        local_rms_jy=0.003,
+    )
+    with tempfile.NamedTemporaryFile(suffix=".fits", delete=False) as f:
+        path = f.name
+    try:
+        write_catalog([bright], path)
+        from dsa110_continuum.source_finding.core import check_catalog
+        assert check_catalog(path) is True
+    finally:
+        os.unlink(path)
+
+
+# ── run_aegean tests ────────────────────────────────────────────────────────
+
+def _make_aegean_source(ra=344.0, dec=16.0, peak=0.05, rms=0.003):
+    src = MagicMock()
+    src.ra = ra
+    src.dec = dec
+    src.peak_flux = peak
+    src.err_peak_flux = 0.002
+    src.int_flux = peak * 1.1
+    src.a = 36.9
+    src.b = 25.5
+    src.pa = 130.75
+    src.local_rms = rms
+    return src
+
+
+def test_run_aegean_import_error():
+    """ImportError with install hint when AegeanTools is absent."""
+    # Ensure AegeanTools is not available
+    for k in list(sys.modules.keys()):
+        if "AegeanTools" in k:
+            del sys.modules[k]
+    import importlib
+    from dsa110_continuum.source_finding import core as sf_core
+    importlib.reload(sf_core)
+    with pytest.raises(ImportError, match="AegeanTools not installed"):
+        sf_core.run_aegean("fake.fits", "fake_bkg.fits", "fake_rms.fits")
+    # Restore module state
+    importlib.reload(sf_core)
+
+
+def test_run_aegean_returns_empty_list():
+    """Aegean finds nothing → returns empty list."""
+    import importlib
+    mock_sf_instance = MagicMock()
+    mock_sf_instance.find_sources_in_image.return_value = []
+    mock_sf_cls = MagicMock(return_value=mock_sf_instance)
+    mock_sf_mod = MagicMock()
+    mock_sf_mod.SourceFinder = mock_sf_cls
+    mock_at = MagicMock()
+    mock_at.source_finder = mock_sf_mod
+
+    with patch.dict(sys.modules, {
+        "AegeanTools": mock_at,
+        "AegeanTools.source_finder": mock_sf_mod,
+    }):
+        from dsa110_continuum.source_finding import core as sf_core
+        importlib.reload(sf_core)
+        result = sf_core.run_aegean("fake.fits", "fake_bkg.fits", "fake_rms.fits")
+        assert result == []
+
+
+def test_run_aegean_returns_entries():
+    """Mock SourceFinder returns 2 sources → list of SourceCatalogEntry with correct values."""
+    import importlib
+    sources = [
+        _make_aegean_source(ra=344.0, dec=16.0, peak=0.05),
+        _make_aegean_source(ra=345.0, dec=16.5, peak=2.5),
+    ]
+    mock_sf_instance = MagicMock()
+    mock_sf_instance.find_sources_in_image.return_value = sources
+    mock_sf_cls = MagicMock(return_value=mock_sf_instance)
+    mock_sf_mod = MagicMock()
+    mock_sf_mod.SourceFinder = mock_sf_cls
+    mock_at = MagicMock()
+    mock_at.source_finder = mock_sf_mod
+
+    with patch.dict(sys.modules, {
+        "AegeanTools": mock_at,
+        "AegeanTools.source_finder": mock_sf_mod,
+    }):
+        from dsa110_continuum.source_finding import core as sf_core
+        importlib.reload(sf_core)
+        result = sf_core.run_aegean("fake.fits", "fake_bkg.fits", "fake_rms.fits")
+
+    assert len(result) == 2
+    assert all(isinstance(e, sf_core.SourceCatalogEntry) for e in result)
+    assert abs(result[0].ra_deg - 344.0) < 1e-6
+    assert abs(result[1].peak_flux_jy - 2.5) < 1e-6
+    assert result[0].source_name.startswith("AEG_J")
+    assert result[0].int_flux_jy == pytest.approx(0.05 * 1.1, rel=1e-5)

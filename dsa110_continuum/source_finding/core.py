@@ -165,7 +165,7 @@ def run_bane(
 
 
 # ---------------------------------------------------------------------------
-# Stubs — implemented in Task 3
+# Aegean blind source detection
 # ---------------------------------------------------------------------------
 
 def run_aegean(
@@ -175,9 +175,79 @@ def run_aegean(
     *,
     sigma: float = 7.0,
 ) -> list[SourceCatalogEntry]:
-    """Run Aegean blind source detection on *mosaic_path*. Implemented in Task 3."""
-    raise NotImplementedError("run_aegean not yet implemented")
+    """Run Aegean blind source detection.
 
+    Parameters
+    ----------
+    mosaic_path : str | Path
+        Input mosaic FITS file.
+    bkg_path : str | Path
+        BANE background map (from run_bane).
+    rms_path : str | Path
+        BANE RMS map (from run_bane).
+    sigma : float
+        Detection threshold in local RMS units (default 7.0sigma, raised from
+        the standard 5sigma to suppress spurious edge detections from pbcor
+        noise amplification at tile boundaries).
+
+    Returns
+    -------
+    list[SourceCatalogEntry]
+        Detected source components (may be empty).
+
+    Raises
+    ------
+    ImportError
+        If AegeanTools is not installed.
+    """
+    try:
+        from AegeanTools.source_finder import SourceFinder as _SourceFinder
+    except ImportError as exc:
+        raise ImportError(
+            "AegeanTools not installed. "
+            "Install with: pip install git+https://github.com/PaulHancock/Aegean.git"
+        ) from exc
+
+    log.info("Running Aegean (%.1fsigma threshold) on %s ...", sigma, mosaic_path)
+    sf = _SourceFinder(log=logging.getLogger("AegeanTools"))
+    found = sf.find_sources_in_image(
+        filename=str(mosaic_path),
+        hdu_index=0,
+        outfile=None,
+        innerclip=sigma,
+        outerclip=sigma - 1.0,
+        rmsin=str(rms_path),
+        bkgin=str(bkg_path),
+        cores=1,
+    )
+
+    if not found:
+        log.warning("Aegean found no sources at %.1fsigma", sigma)
+        return []
+
+    log.info("Aegean found %d source components", len(found))
+    entries: list[SourceCatalogEntry] = []
+    for s in found:
+        ra = float(s.ra)
+        dec = float(s.dec)
+        entries.append(SourceCatalogEntry(
+            source_name=f"AEG_J{ra:.4f}{dec:+.4f}",
+            ra_deg=ra,
+            dec_deg=dec,
+            peak_flux_jy=float(s.peak_flux),
+            peak_flux_err_jy=float(getattr(s, "err_peak_flux", 0.0)),
+            int_flux_jy=float(getattr(s, "int_flux", s.peak_flux)),
+            a_arcsec=float(getattr(s, "a", 0.0)),
+            b_arcsec=float(getattr(s, "b", 0.0)),
+            pa_deg=float(getattr(s, "pa", 0.0)),
+            local_rms_jy=float(getattr(s, "local_rms", 0.0)),
+        ))
+    return entries
+
+
+# ---------------------------------------------------------------------------
+# Catalog QA
+# ---------------------------------------------------------------------------
 
 def check_catalog(
     catalog_path: str | Path,
@@ -185,9 +255,67 @@ def check_catalog(
     sky_ra_range: tuple[float, float] = (300.0, 360.0),
     sky_dec_range: tuple[float, float] = (0.0, 40.0),
 ) -> bool:
-    """QA check on catalog at *catalog_path*. Implemented in Task 3."""
-    raise NotImplementedError("check_catalog not yet implemented")
+    """Check catalog quality. Returns True if catalog is non-empty.
 
+    Logs source count, bright-source (>1 Jy) count, and sources in the
+    expected sky window. The bright-source criterion is a warning only --
+    not a hard failure -- since simulated dirty-image fluxes are suppressed
+    and production calibration may not yet be complete.
+
+    Parameters
+    ----------
+    catalog_path : str | Path
+        Path to catalog FITS table.
+    sky_ra_range : tuple[float, float]
+        Expected RA window (deg) for positional sanity check.
+        Default (300, 360) covers the DSA-110 nominal pointing for
+        the 2026-01-25 observation.
+    sky_dec_range : tuple[float, float]
+        Expected Dec window (deg). Default (0, 40).
+
+    Returns
+    -------
+    bool
+        True if catalog has at least one source, False if empty.
+    """
+    import numpy as np
+    t = Table.read(str(catalog_path))
+    log.info("Catalog: %d source(s)", len(t))
+
+    if len(t) == 0:
+        log.error("QA FAIL: empty catalog")
+        return False
+
+    if "peak_flux_jy" in t.colnames:
+        bright = t[t["peak_flux_jy"] > 1.0]
+        log.info("Sources > 1 Jy: %d", len(bright))
+        if len(bright) == 0:
+            log.warning("QA WARNING: no bright sources (>1 Jy) -- expected for dirty-image mosaics")
+        else:
+            for row in bright:
+                log.info("  %s  RA=%.3f  Dec=%.3f  peak=%.2f Jy",
+                         row["source_name"], row["ra_deg"], row["dec_deg"],
+                         row["peak_flux_jy"])
+
+    if "ra_deg" in t.colnames and "dec_deg" in t.colnames:
+        ra_lo, ra_hi = sky_ra_range
+        dec_lo, dec_hi = sky_dec_range
+        in_range = int(np.sum(
+            (t["ra_deg"] > ra_lo) & (t["ra_deg"] < ra_hi) &
+            (t["dec_deg"] > dec_lo) & (t["dec_deg"] < dec_hi)
+        ))
+        log.info(
+            "Sources in sky window (RA %.0f-%.0f, Dec %.0f-%.0f): %d/%d",
+            ra_lo, ra_hi, dec_lo, dec_hi, in_range, len(t),
+        )
+
+    log.info("QA PASSED: catalog has %d source(s)", len(t))
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Orchestrator
+# ---------------------------------------------------------------------------
 
 def run_source_finding(
     mosaic_path: str | Path,
@@ -197,5 +325,36 @@ def run_source_finding(
     bane_step: int = 300,
     aegean_sigma: float = 7.0,
 ) -> str:
-    """Orchestrator: BANE → Aegean → write catalog → QA. Implemented in Task 3."""
-    raise NotImplementedError("run_source_finding not yet implemented")
+    """Run the full source-finding pipeline: BANE -> Aegean -> catalog -> QA.
+
+    Parameters
+    ----------
+    mosaic_path : str | Path
+        Input mosaic FITS file.
+    out_path : str | Path
+        Output catalog FITS path.
+    bane_box : int
+        BANE box size in pixels (default 600).
+    bane_step : int
+        BANE step size in pixels (default 300).
+    aegean_sigma : float
+        Aegean detection threshold in sigma (default 7.0).
+
+    Returns
+    -------
+    str
+        Path to the written catalog file.
+    """
+    mosaic_path = Path(mosaic_path)
+    out_path = Path(out_path)
+
+    bkg_path, rms_path = run_bane(mosaic_path, box_size=bane_box, step_size=bane_step)
+    entries = run_aegean(mosaic_path, bkg_path, rms_path, sigma=aegean_sigma)
+
+    if entries:
+        write_catalog(entries, out_path)
+    else:
+        write_empty_catalog(out_path)
+
+    check_catalog(out_path)
+    return str(out_path)
