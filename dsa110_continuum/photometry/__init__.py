@@ -58,7 +58,16 @@ try:
 except ImportError:
     pass  # dsa110_contimg not installed (cloud/test env)
 
+# two_stage module (no heavy optional dependencies)
+from dsa110_continuum.photometry.two_stage import (
+    CoarseAugment,
+    beam_correction_factor,
+)
+
 __all__: list[str] = [
+    # two_stage
+    "CoarseAugment",
+    "beam_correction_factor",
     # Forced photometry
     "ForcedPhotometryResult",
     "measure_forced_peak",
