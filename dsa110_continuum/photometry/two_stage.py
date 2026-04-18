@@ -105,6 +105,16 @@ def run_coarse_pass(
     return results
 
 
+def _nan_result(ra: float, dec: float, box_pix: int) -> "ForcedPhotometryResult":
+    """Return a NaN-filled ForcedPhotometryResult placeholder."""
+    return ForcedPhotometryResult(
+        ra_deg=ra, dec_deg=dec,
+        peak_jyb=float("nan"), peak_err_jyb=float("nan"),
+        pix_x=float("nan"), pix_y=float("nan"),
+        box_size_pix=box_pix,
+    )
+
+
 def run_two_stage(
     fits_path: str,
     coords: list[tuple[float, float]],
@@ -153,7 +163,7 @@ def run_two_stage(
 
     # Collect survivors preserving their original indices
     survivor_indices = [i for i, aug in enumerate(augments) if aug.passed_coarse]
-    survivor_coords = [(augments[i].ra_deg, augments[i].dec_deg) for i in survivor_indices]
+    survivor_coords = [coords[i] for i in survivor_indices]
 
     if survivor_coords:
         fine_results = measure_many(
@@ -167,17 +177,12 @@ def run_two_stage(
 
     # Map fine results back by original index
     fine_map = {survivor_indices[j]: fine_results[j] for j in range(len(fine_results))}
-
-    def _nan_result(ra: float, dec: float) -> ForcedPhotometryResult:
-        return ForcedPhotometryResult(
-            ra_deg=ra, dec_deg=dec,
-            peak_jyb=float("nan"), peak_err_jyb=float("nan"),
-            pix_x=float("nan"), pix_y=float("nan"),
-            box_size_pix=box_pix,
-        )
+    assert len(fine_results) == len(survivor_coords), (
+        f"measure_many returned {len(fine_results)} results for {len(survivor_coords)} survivors"
+    )
 
     ordered_results = [
-        fine_map.get(i, _nan_result(aug.ra_deg, aug.dec_deg))
+        fine_map.get(i, _nan_result(aug.ra_deg, aug.dec_deg, box_pix))
         for i, aug in enumerate(augments)
     ]
 

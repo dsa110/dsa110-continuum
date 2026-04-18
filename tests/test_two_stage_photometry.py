@@ -124,17 +124,62 @@ def test_snr_gate_all_fail_with_high_rms():
     assert results[0].passed_coarse is False
 
 
-@pytest.mark.skipif(not MOSAIC.exists(), reason="Step 6 mosaic not on disk")
 def test_two_stage_returns_paired_lists():
-    coords = [(344.124, 16.15), (346.71, 16.15)]
-    results, augments = run_two_stage(str(MOSAIC), coords, snr_coarse_min=0.0)
+    """run_two_stage returns one result and one augment per input coord."""
+    import tempfile
+    from astropy.io import fits as afits
+    from astropy.wcs import WCS as AWCS
+
+    ny, nx = 120, 120
+    rng = np.random.default_rng(0)
+    data = rng.normal(0, 0.001, (ny, nx)).astype(np.float32)
+    data[60, 60] = 0.5
+
+    w = AWCS(naxis=2)
+    w.wcs.ctype = ["RA---SIN", "DEC--SIN"]
+    w.wcs.crval = [180.0, 30.0]
+    w.wcs.crpix = [60.0, 60.0]
+    w.wcs.cdelt = [-20.0 / 3600, 20.0 / 3600]
+    hdr = w.to_header()
+    hdr["BMAJ"] = 36.9 / 3600
+    hdr["BMIN"] = 25.5 / 3600
+
+    with tempfile.NamedTemporaryFile(suffix=".fits", delete=False) as f:
+        fpath = f.name
+    afits.PrimaryHDU(data=data, header=hdr).writeto(fpath, overwrite=True)
+
+    coords = [(180.0, 30.0), (180.0, 30.1)]
+    results, augments = run_two_stage(fpath, coords, snr_coarse_min=0.0)
     assert len(results) == len(augments) == 2
 
 
-@pytest.mark.skipif(not MOSAIC.exists(), reason="Step 6 mosaic not on disk")
 def test_fine_pass_skips_failing_coarse():
-    coords = [(344.124, 16.15)]
-    results, augments = run_two_stage(str(MOSAIC), coords, global_rms=1e6, snr_coarse_min=3.0)
+    """Coord that fails the coarse SNR gate gets a NaN fine result."""
+    import tempfile
+    from astropy.io import fits as afits
+    from astropy.wcs import WCS as AWCS
+
+    ny, nx = 120, 120
+    rng = np.random.default_rng(1)
+    data = rng.normal(0, 0.001, (ny, nx)).astype(np.float32)
+    data[60, 60] = 0.5
+
+    w = AWCS(naxis=2)
+    w.wcs.ctype = ["RA---SIN", "DEC--SIN"]
+    w.wcs.crval = [180.0, 30.0]
+    w.wcs.crpix = [60.0, 60.0]
+    w.wcs.cdelt = [-20.0 / 3600, 20.0 / 3600]
+    hdr = w.to_header()
+    hdr["BMAJ"] = 36.9 / 3600
+    hdr["BMIN"] = 25.5 / 3600
+
+    with tempfile.NamedTemporaryFile(suffix=".fits", delete=False) as f:
+        fpath = f.name
+    afits.PrimaryHDU(data=data, header=hdr).writeto(fpath, overwrite=True)
+
+    # Use enormous rms so the coord at image centre fails the coarse gate
+    coords = [(180.0, 30.0)]
+    results, augments = run_two_stage(fpath, coords, global_rms=1e6, snr_coarse_min=3.0)
     assert augments[0].passed_coarse is False
     assert not np.isfinite(results[0].peak_jyb)
 
