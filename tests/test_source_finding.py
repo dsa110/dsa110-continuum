@@ -275,3 +275,38 @@ def test_run_aegean_returns_entries():
     assert abs(result[1].peak_flux_jy - 2.5) < 1e-6
     assert result[0].source_name.startswith("AEG_J")
     assert result[0].int_flux_jy == pytest.approx(0.05 * 1.1, rel=1e-5)
+
+
+def test_run_aegean_source_missing_local_rms():
+    """Sources missing local_rms attribute use 0.0 fallback without crashing."""
+    import importlib
+    # Build a mock source without a local_rms attribute
+    src = MagicMock(spec=[])  # spec=[] means NO attributes are auto-created
+    src.ra = 344.0
+    src.dec = 16.0
+    src.peak_flux = 0.1
+    # Intentionally omit: err_peak_flux, int_flux, a, b, pa, local_rms
+    # MagicMock with spec=[] will raise AttributeError for any getattr not in spec
+
+    mock_sf_instance = MagicMock()
+    mock_sf_instance.find_sources_in_image.return_value = [src]
+    mock_sf_cls = MagicMock(return_value=mock_sf_instance)
+    mock_sf_mod = MagicMock()
+    mock_sf_mod.SourceFinder = mock_sf_cls
+    mock_at = MagicMock()
+    mock_at.source_finder = mock_sf_mod
+
+    with patch.dict(sys.modules, {
+        "AegeanTools": mock_at,
+        "AegeanTools.source_finder": mock_sf_mod,
+    }):
+        from dsa110_continuum.source_finding import core as sf_core
+        importlib.reload(sf_core)
+        result = sf_core.run_aegean("fake.fits", "fake_bkg.fits", "fake_rms.fits")
+
+    assert len(result) == 1
+    entry = result[0]
+    assert entry.local_rms_jy == 0.0  # fallback, not a crash
+    assert entry.peak_flux_jy == pytest.approx(0.1)
+    assert entry.a_arcsec == 0.0      # fallback
+    assert entry.b_arcsec == 0.0      # fallback

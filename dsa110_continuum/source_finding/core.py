@@ -37,8 +37,8 @@ class SourceCatalogEntry:
     local_rms_jy:     float
 
     def __post_init__(self) -> None:
-        if self.local_rms_jy <= 0:
-            raise ValueError(f"local_rms_jy must be positive, got {self.local_rms_jy}")
+        if self.local_rms_jy < 0:
+            raise ValueError(f"local_rms_jy must be non-negative, got {self.local_rms_jy}")
         if not (0.0 <= self.ra_deg < 360.0):
             raise ValueError(f"ra_deg out of range [0, 360): {self.ra_deg}")
 
@@ -356,5 +356,11 @@ def run_source_finding(
     else:
         write_empty_catalog(out_path)
 
-    check_catalog(out_path)
+    qa_passed = check_catalog(out_path)
+    if not qa_passed:
+        log.warning(
+            "run_source_finding: check_catalog returned False for %s "
+            "(empty catalog — QA non-fatal, inspect output)",
+            out_path,
+        )
     return str(out_path)
