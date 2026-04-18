@@ -70,7 +70,8 @@ def test_write_empty_catalog_schema():
         assert len(t) == 0
         expected_cols = [
             "source_name", "ra_deg", "dec_deg", "peak_flux_jy",
-            "peak_flux_err_jy", "int_flux_jy",
+            "peak_flux_err_jy", "int_flux_jy", "a_arcsec", "b_arcsec",
+            "pa_deg", "local_rms_jy",
         ]
         for col in expected_cols:
             assert col in t.colnames, f"Missing column: {col}"

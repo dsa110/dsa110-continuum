@@ -14,9 +14,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-import numpy as np
 from astropy.table import Table
 
 log = logging.getLogger(__name__)
@@ -39,6 +36,12 @@ class SourceCatalogEntry:
     pa_deg:           float
     local_rms_jy:     float
 
+    def __post_init__(self) -> None:
+        if self.local_rms_jy <= 0:
+            raise ValueError(f"local_rms_jy must be positive, got {self.local_rms_jy}")
+        if not (0.0 <= self.ra_deg < 360.0):
+            raise ValueError(f"ra_deg out of range [0, 360): {self.ra_deg}")
+
 
 # ---------------------------------------------------------------------------
 # Catalog I/O
@@ -53,31 +56,27 @@ _CATALOG_DTYPES = ["U64", float, float, float, float, float, float, float, float
 
 
 def write_catalog(entries: list[SourceCatalogEntry], out_path: str | Path) -> None:
-    """Write source entries to a FITS binary table."""
-    rows = [
-        {
-            "source_name": e.source_name,
-            "ra_deg": e.ra_deg,
-            "dec_deg": e.dec_deg,
-            "peak_flux_jy": e.peak_flux_jy,
-            "peak_flux_err_jy": e.peak_flux_err_jy,
-            "int_flux_jy": e.int_flux_jy,
-            "a_arcsec": e.a_arcsec,
-            "b_arcsec": e.b_arcsec,
-            "pa_deg": e.pa_deg,
-            "local_rms_jy": e.local_rms_jy,
-        }
-        for e in entries
-    ]
-    t = Table(rows)
-    t.write(str(out_path), overwrite=True)
+    """Write source entries to a FITS binary table.
+
+    If *entries* is empty, writes a zero-row table with the correct schema
+    (delegates to write_empty_catalog).
+    """
+    if not entries:
+        write_empty_catalog(out_path)
+        return
+    t = Table(
+        names=_CATALOG_COLS,
+        dtype=_CATALOG_DTYPES,
+        rows=[[getattr(e, col) for col in _CATALOG_COLS] for e in entries],
+    )
+    t.write(str(out_path), format="fits", overwrite=True)
     log.info("Catalog written: %s  (%d sources)", out_path, len(entries))
 
 
 def write_empty_catalog(out_path: str | Path) -> None:
     """Write a zero-row FITS table with the correct column schema."""
     t = Table(names=_CATALOG_COLS, dtype=_CATALOG_DTYPES)
-    t.write(str(out_path), overwrite=True)
+    t.write(str(out_path), format="fits", overwrite=True)
     log.info("Empty catalog written: %s", out_path)
 
 
@@ -85,14 +84,49 @@ def write_empty_catalog(out_path: str | Path) -> None:
 # Stubs — implemented in later tasks
 # ---------------------------------------------------------------------------
 
-def run_bane(mosaic_path, *, box_size=600, step_size=300, cores=1, skip_existing=True):
+def run_bane(
+    mosaic_path: str | Path,
+    *,
+    box_size: int = 600,
+    step_size: int = 300,
+    cores: int = 1,
+    skip_existing: bool = True,
+) -> tuple[str, str]:
+    """Run BANE background/RMS estimation on *mosaic_path*.
+
+    Returns (bkg_path, rms_path). Implemented in Task 2.
+    """
     raise NotImplementedError("run_bane not yet implemented")
 
-def run_aegean(mosaic_path, bkg_path, rms_path, *, sigma=7.0):
+
+def run_aegean(
+    mosaic_path: str | Path,
+    bkg_path: str | Path,
+    rms_path: str | Path,
+    *,
+    sigma: float = 7.0,
+) -> list[SourceCatalogEntry]:
+    """Run Aegean blind source detection on *mosaic_path*. Implemented in Task 3."""
     raise NotImplementedError("run_aegean not yet implemented")
 
-def check_catalog(catalog_path, *, sky_ra_range=(300.0, 360.0), sky_dec_range=(0.0, 40.0)):
+
+def check_catalog(
+    catalog_path: str | Path,
+    *,
+    sky_ra_range: tuple[float, float] = (300.0, 360.0),
+    sky_dec_range: tuple[float, float] = (0.0, 40.0),
+) -> bool:
+    """QA check on catalog at *catalog_path*. Implemented in Task 3."""
     raise NotImplementedError("check_catalog not yet implemented")
 
-def run_source_finding(mosaic_path, out_path, *, bane_box=600, bane_step=300, aegean_sigma=7.0):
+
+def run_source_finding(
+    mosaic_path: str | Path,
+    out_path: str | Path,
+    *,
+    bane_box: int = 600,
+    bane_step: int = 300,
+    aegean_sigma: float = 7.0,
+) -> str:
+    """Orchestrator: BANE → Aegean → write catalog → QA. Implemented in Task 3."""
     raise NotImplementedError("run_source_finding not yet implemented")
