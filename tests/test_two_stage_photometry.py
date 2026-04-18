@@ -280,3 +280,57 @@ def test_beam_correction_ratio_bright_sources():
         f"Median beam-corrected ratio = {median_ratio:.4f} — expected in [0.001, 0.5] "
         "for a dirty-image mosaic with beam_correction_factor=1.0"
     )
+
+
+# ── Task 5: CLI integration tests ──────────────────────────────────────────
+
+@pytest.mark.skipif(
+    not Path("pipeline_outputs/step6/step6_mosaic.fits").exists(),
+    reason="Step 6 mosaic not on disk",
+)
+def test_cli_simple_peak_sim_produces_csv():
+    import csv as _csv, tempfile, subprocess, sys
+    with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
+        out_csv = f.name
+    result = subprocess.run(
+        [sys.executable, "scripts/forced_photometry.py",
+         "--mosaic", "pipeline_outputs/step6/step6_mosaic.fits",
+         "--method", "simple_peak",
+         "--sim",
+         "--output", out_csv],
+        capture_output=True, text=True,
+        cwd="/home/user/workspace/dsa110-continuum",
+    )
+    assert result.returncode == 0, result.stderr
+    with open(out_csv) as f:
+        rows = list(_csv.DictReader(f))
+    assert len(rows) > 0
+    assert "measured_flux_jy" in rows[0]
+    assert "snr" in rows[0]
+    assert "injected_flux_jy" in rows[0]
+
+
+@pytest.mark.skipif(
+    not Path("pipeline_outputs/step6/step6_mosaic.fits").exists(),
+    reason="Step 6 mosaic not on disk",
+)
+def test_cli_two_stage_sim_produces_coarse_snr_column():
+    import csv as _csv, tempfile, subprocess, sys
+    with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
+        out_csv = f.name
+    result = subprocess.run(
+        [sys.executable, "scripts/forced_photometry.py",
+         "--mosaic", "pipeline_outputs/step6/step6_mosaic.fits",
+         "--method", "two_stage",
+         "--sim",
+         "--snr-coarse", "0.0",
+         "--output", out_csv],
+        capture_output=True, text=True,
+        cwd="/home/user/workspace/dsa110-continuum",
+    )
+    assert result.returncode == 0, result.stderr
+    with open(out_csv) as f:
+        rows = list(_csv.DictReader(f))
+    assert len(rows) > 0
+    assert "coarse_snr" in rows[0]
+    assert "passed_coarse" in rows[0]
