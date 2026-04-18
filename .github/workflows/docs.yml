@@ -1,0 +1,65 @@
+name: Render and deploy Quarto docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/quarto/**"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "docs/quarto/**"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch: # allow manual trigger from the Actions tab
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one deployment at a time; don't cancel in-progress so a partial
+# deploy isn't left dangling.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Render Quarto site
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: "1.6.39" # pin to the version that authored the existing _site
+
+      # Quarto uses Mermaid (bundled) and no Python/R execution in this site,
+      # so no additional language runtimes are needed.
+
+      - name: Render site
+        working-directory: docs/quarto
+        run: quarto render
+
+      - name: Upload Pages artifact
+        # Only upload on pushes to main (not on PRs)
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/quarto/_site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
