@@ -62,12 +62,14 @@ except ImportError:
 from dsa110_continuum.photometry.two_stage import (
     CoarseAugment,
     beam_correction_factor,
+    run_coarse_pass,
 )
 
 __all__: list[str] = [
     # two_stage
     "CoarseAugment",
     "beam_correction_factor",
+    "run_coarse_pass",
     # Forced photometry
     "ForcedPhotometryResult",
     "measure_forced_peak",
