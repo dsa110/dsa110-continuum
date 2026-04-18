@@ -26,25 +26,27 @@ def plot_source_lightcurve(group: pd.DataFrame, nvss_flux: float, out_path: str)
     fluxes = group["measured_flux_jy"].values
     errors = group["flux_err_jy"].values
 
-    fig, ax = plt.subplots(figsize=(7, 3.5))
-    ax.errorbar(times, fluxes, yerr=errors, fmt="o", color="#1f77b4",
-                capsize=3, elinewidth=1, markersize=5, label="DSA-110")
-    ax.axhline(nvss_flux, color="gray", linestyle="--", linewidth=1,
-               label=f"Catalog ref. {nvss_flux:.3f} Jy")
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
-    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
-    fig.autofmt_xdate(rotation=30)
-    ax.set_xlabel("Epoch (UTC)")
-    ax.set_ylabel("Peak flux density (Jy/beam)")
-    sid = group["source_id"].iloc[0]
-    ra = group["ra_deg"].iloc[0]
-    dec = group["dec_deg"].iloc[0]
-    ax.set_title(f"Source {int(sid):06d}  RA={ra:.3f}\u00b0  Dec={dec:.3f}\u00b0")
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=100)
-    plt.close(fig)
+    import scienceplots  # noqa
+    with plt.style.context(["science", "notebook"]):
+        fig, ax = plt.subplots(figsize=(7, 3.5))
+        ax.errorbar(times, fluxes, yerr=errors, fmt="o", color="#1f77b4",
+                    capsize=3, elinewidth=1, markersize=5, label="DSA-110")
+        ax.axhline(nvss_flux, color="gray", linestyle="--", linewidth=1,
+                   label=f"Catalog ref. {nvss_flux:.3f} Jy")
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+        ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+        fig.autofmt_xdate(rotation=30)
+        ax.set_xlabel("Epoch (UTC)")
+        ax.set_ylabel("Peak flux density (Jy/beam)")
+        sid = group["source_id"].iloc[0]
+        ra = group["ra_deg"].iloc[0]
+        dec = group["dec_deg"].iloc[0]
+        ax.set_title(f"Source {int(sid):06d}  RA={ra:.3f}\u00b0  Dec={dec:.3f}\u00b0")
+        ax.legend(fontsize=8)
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+        fig.savefig(out_path, dpi=100)
+        plt.close(fig)
 
 
 def build_summary_html(
