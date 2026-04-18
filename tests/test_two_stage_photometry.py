@@ -225,3 +225,58 @@ def test_two_stage_synthetic_fits():
     assert np.isfinite(results[0].peak_jyb)
     # Fine-pass result for coarse failure should be NaN placeholder
     assert not np.isfinite(results[1].peak_jyb)
+
+
+@pytest.mark.skipif(
+    not Path("pipeline_outputs/step6/step6_mosaic.fits").exists(),
+    reason="Step 6 mosaic not on disk"
+)
+def test_beam_correction_ratio_bright_sources():
+    """Beam-corrected peak / injected_flux is in physically reasonable range.
+
+    NOTE: The task spec referenced `SkyModel(seed=42)` from
+    `dsa110_continuum.simulation.ground_truth`, but that class does not exist.
+    The actual API uses `SimulationHarness.make_sky_model()` from
+    `dsa110_continuum.simulation.harness` (as used in validate_step6_mosaic.py).
+    The attribute access pattern `sky.ra[k].deg`, `sky.stokes[0, 0, k].value`,
+    and `sky.Ncomponents` matches the spec and works correctly.
+    """
+    from dsa110_continuum.simulation.harness import SimulationHarness
+
+    # Mirror the setup from validate_step6_mosaic.py (tile 0, seed=42)
+    harness = SimulationHarness(
+        n_antennas=117, n_integrations=24, n_sky_sources=5,
+        noise_jy=1.0, seed=42, use_real_positions=True,
+    )
+    harness.pointing_ra_deg = 344.124
+    harness.pointing_dec_deg = 16.15
+    sky = harness.make_sky_model(fov_deg=3.0)
+
+    # --- Attribute access matches validate_step6_mosaic.py exactly ---
+    coords = [(float(sky.ra[k].deg), float(sky.dec[k].deg)) for k in range(sky.Ncomponents)]
+    injected_flux = [float(sky.stokes[0, 0, k].value) for k in range(sky.Ncomponents)]
+    # -----------------------------------------------------------------
+
+    mosaic_path = "pipeline_outputs/step6/step6_mosaic.fits"
+    correction = beam_correction_factor(mosaic_path)
+    coarse = run_coarse_pass(mosaic_path, coords, global_rms=None, snr_coarse_min=0.0)
+
+    ratios = []
+    for aug, s_inj in zip(coarse, injected_flux):
+        if np.isfinite(aug.coarse_peak_jyb) and s_inj > 0:
+            ratio = (aug.coarse_peak_jyb * correction) / s_inj
+            ratios.append(ratio)
+
+    assert len(ratios) >= 2, f"Need at least 2 finite measurements, got {len(ratios)}"
+    median_ratio = float(np.median(ratios))
+    # The Step 6 mosaic is a noise-weighted dirty-image mosaic (no CLEAN), so the
+    # peak Jy/beam is well below the injected flux.  validate_step6_mosaic.py
+    # documents the expected mean ratio as ~0.05 (range 0.00–0.10) for this
+    # simulation setup.  The beam_correction_factor falls back to 1.0 because the
+    # mosaic header carries no BMAJ/BMIN keywords.
+    # We use a generous range of 1e-3 to 0.5 to confirm the coarse pass is
+    # returning sensible (non-zero, not astronomically large) flux values.
+    assert 1e-3 <= median_ratio <= 0.5, (
+        f"Median beam-corrected ratio = {median_ratio:.4f} — expected in [0.001, 0.5] "
+        "for a dirty-image mosaic with beam_correction_factor=1.0"
+    )
