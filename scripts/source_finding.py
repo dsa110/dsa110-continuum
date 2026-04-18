@@ -45,7 +45,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--mosaic", default=None, metavar="PATH",
-        help="Path to mosaic FITS file.",
+        help=f"Path to mosaic FITS file. Default (production): {_DEFAULT_MOSAIC}",
     )
     parser.add_argument(
         "--out", default=None, metavar="PATH",
@@ -67,13 +67,26 @@ def main() -> None:
 
     # Resolve mosaic path
     if args.sim:
+        if args.mosaic:
+            log.warning(
+                "--mosaic %s ignored because --sim takes precedence; "
+                "using sim mosaic: %s",
+                args.mosaic, _SIM_MOSAIC,
+            )
         mosaic_path = _SIM_MOSAIC
         log.info("[SIM MODE] Using simulated mosaic: %s", mosaic_path)
     else:
         mosaic_path = args.mosaic or _DEFAULT_MOSAIC
 
     if not Path(mosaic_path).exists():
-        log.error("Mosaic not found: %s", mosaic_path)
+        if args.sim:
+            log.error(
+                "[SIM MODE] Sim mosaic not found: %s — run the pipeline steps "
+                "up to step6 first (e.g., python scripts/mosaic_day.py --sim)",
+                mosaic_path,
+            )
+        else:
+            log.error("Mosaic not found: %s", mosaic_path)
         sys.exit(1)
 
     # Derive catalog output path from mosaic stem if not provided
@@ -81,16 +94,19 @@ def main() -> None:
     out_path = args.out or str(mosaic_p.parent / (mosaic_p.stem + "_sources.fits"))
 
     # Quick-look: log mosaic peak and MAD-RMS before running BANE/Aegean
-    with fits.open(mosaic_path) as hdul:
-        data = hdul[0].data.squeeze()
-        finite = data[np.isfinite(data)]
-        peak = float(np.nanmax(data))
-        med = float(np.median(finite))
-        rms = float(1.4826 * np.median(np.abs(finite - med)))
-        log.info(
-            "Mosaic: peak=%.4f Jy/beam  MAD-RMS=%.4f Jy/beam  shape=%s",
-            peak, rms, data.shape,
-        )
+    try:
+        with fits.open(mosaic_path) as hdul:
+            data = hdul[0].data.squeeze()
+            finite = data[np.isfinite(data)]
+            peak = float(np.nanmax(data))
+            med = float(np.median(finite))
+            rms = float(1.4826 * np.median(np.abs(finite - med)))
+            log.info(
+                "Mosaic: peak=%.4f Jy/beam  MAD-RMS=%.4f Jy/beam  shape=%s",
+                peak, rms, data.shape,
+            )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Could not read mosaic quick-look stats: %s", exc)
 
     # Run full pipeline
     catalog_path = run_source_finding(
