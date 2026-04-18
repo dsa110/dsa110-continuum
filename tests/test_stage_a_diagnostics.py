@@ -2,8 +2,14 @@
 import matplotlib
 matplotlib.use("Agg")
 
+import csv
+import os
+import tempfile
+
+import numpy as np
 import pytest
 import matplotlib.pyplot as plt
+from astropy.io import fits
 
 from dsa110_continuum.visualization.config import FigureConfig, PlotStyle
 
@@ -17,12 +23,6 @@ def test_style_context_publication():
     assert inside is not None
     after = plt.rcParams.get("font.size", None)
     assert after == before
-
-import csv
-import os
-import tempfile
-import numpy as np
-from astropy.io import fits
 
 
 def _make_minimal_fits(path: str, nx: int = 20, ny: int = 20) -> None:

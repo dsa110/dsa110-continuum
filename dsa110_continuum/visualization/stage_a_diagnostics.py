@@ -18,12 +18,16 @@ import csv
 import logging
 from pathlib import Path
 
-import matplotlib
-matplotlib.use("Agg")
-
 import numpy as np
 
 from dsa110_continuum.visualization.config import FigureConfig, PlotStyle
+
+
+def _setup_matplotlib() -> None:
+    """Configure matplotlib for headless rendering (idempotent)."""
+    import matplotlib
+    matplotlib.use("Agg")
+
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +49,12 @@ def _get_ref_col(rows: list[dict]) -> str:
     for col in _REF_FLUX_COLS:
         if col in rows[0]:
             return col
+    # warn when falling back — neither expected column is present
+    log.warning(
+        "Neither %s found in CSV; defaulting to 'catalog_flux_jy'. "
+        "All source fluxes will be zero.",
+        " nor ".join(_REF_FLUX_COLS),
+    )
     return "catalog_flux_jy"
 
 
@@ -73,6 +83,7 @@ def plot_flux_scale(
     config: FigureConfig | None = None,
 ) -> Path | None:
     """Generate flux-scale diagnostic: log-log scatter of measured vs reference flux."""
+    _setup_matplotlib()
     if config is None:
         config = FigureConfig(style=PlotStyle.PUBLICATION)
 
@@ -163,9 +174,22 @@ def _plot_flux_scatter_only(
 
     cat_flux = [s["catalog_flux"] for s in catalog_sources]
     meas_flux = [s["measured_flux"] for s in catalog_sources]
+
+    # guard against empty list
+    if not cat_flux:
+        log.warning("No parseable sources for flux scatter plot; skipping.")
+        return
+
+    # filter out zeros for log scale
+    safe = [(c, m) for c, m in zip(cat_flux, meas_flux) if c > 0 and m > 0]
+    if not safe:
+        log.warning("All sources have zero flux; skipping log-scale scatter plot.")
+        return
+    cat_flux = [c for c, _ in safe]
+    meas_flux = [m for _, m in safe]
     colors = [
         "green" if "✓" in s["status"] else ("red" if s["status"] == "Non-det" else "orange")
-        for s in catalog_sources
+        for s in catalog_sources if s["catalog_flux"] > 0 and s["measured_flux"] > 0
     ]
 
     with config.style_context():
@@ -193,16 +217,18 @@ def _plot_field_scatter_only(
     """Fallback: simple scatter plot of source positions without image overlay."""
     import matplotlib.pyplot as plt
 
-    ras = [s["ra"] for s in sources]
-    decs = [s["dec"] for s in sources]
-    colors = ["green" if "✓" in s["status"] else "orange" for s in sources]
-
     with config.style_context():
         fig, ax = plt.subplots(figsize=(6, 5), dpi=config.dpi)
-        ax.scatter(ras, decs, c=colors, s=60, edgecolors="black", alpha=0.7)
+        detected = [(s["ra"], s["dec"]) for s in sources if s.get("status") == "✓"]
+        low_snr  = [(s["ra"], s["dec"]) for s in sources if s.get("status") != "✓"]
+        if detected:
+            ax.scatter(*zip(*detected), c="green", s=40, label="SNR ≥ 3", zorder=3)
+        if low_snr:
+            ax.scatter(*zip(*low_snr),  c="orange", s=40, label="Low SNR", zorder=2)
+        ax.legend()
         ax.set_xlabel("RA (deg)")
         ax.set_ylabel("Dec (deg)")
-        ax.set_title(f"Field Sources ({len(sources)} total)")
+        ax.set_title("Field Sources (no mosaic — RA/Dec scatter)")
         fig.tight_layout()
         fig.savefig(out_path, dpi=config.dpi, bbox_inches="tight")
         plt.close(fig)
@@ -216,6 +242,7 @@ def plot_source_field(
     config: FigureConfig | None = None,
 ) -> Path | None:
     """Generate field source overlay: mosaic image with detection markers."""
+    _setup_matplotlib()
     if config is None:
         config = FigureConfig(style=PlotStyle.PUBLICATION)
 
@@ -246,7 +273,7 @@ def plot_source_field(
                 except Exception:
                     px, py = 0.0, 0.0
             else:
-                px, py = ra, dec  # fallback: treat as pixel coords
+                px, py = 0.0, 0.0
 
             sources.append({
                 "ra": ra,
