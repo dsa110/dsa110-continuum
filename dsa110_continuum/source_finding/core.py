@@ -121,10 +121,14 @@ def run_bane(
     ImportError
         If AegeanTools is not installed.
     """
-    mosaic_path = str(mosaic_path)
-    stem = mosaic_path.replace(".fits", "")
+    mosaic_path = Path(mosaic_path)
+    stem = str(mosaic_path.parent / mosaic_path.stem)
     bkg_path = stem + "_bkg.fits"
     rms_path = stem + "_rms.fits"
+    mosaic_path = str(mosaic_path)  # keep as str for BANE API
+
+    if not Path(mosaic_path).exists():
+        raise FileNotFoundError(f"Mosaic not found: {mosaic_path}")
 
     if skip_existing and Path(bkg_path).exists() and Path(rms_path).exists():
         log.info("BANE outputs already exist — skipping: %s, %s", bkg_path, rms_path)
