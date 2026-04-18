@@ -1,0 +1,161 @@
+---
+title: "Array Reference"
+---
+
+> **Status**: Verified against repo commit `6ad8a00` (2026-04-17)  
+> **Ground truth file**: [`docs/GROUND_TRUTH.md`](https://github.com/dsa110/dsa110-continuum/blob/main/docs/GROUND_TRUTH.md) — read this before writing simulation or pipeline code  
+> **See also**: [Pipeline Overview](pipeline-overview.qmd)
+
+This page documents the DSA-110 array geometry and synthesized beam properties as
+they are actually encoded in the simulation pipeline. All parameters are sourced
+directly from the codebase — not from memory or published instrument descriptions.
+
+---
+
+## Array geometry
+
+DSA-110 is a **T-shaped transit array** at OVRO (37.2339° N, −118.2825° E, 1222 m).
+It consists of a dense E-W core arm, a N-S arm forming the T-junction, and a set
+of more sparsely distributed outrigger antennas at larger baselines.
+
+::: {.callout-important}
+**Simulation harness configuration**  
+Always use `n_antennas=117` when constructing a `SimulationHarness`. The default
+of `n_antennas=8` is for unit tests only. Using `n_antennas=96` takes the first
+96 rows of `antennas.csv` (51 EW + 45 NS + **0 outriggers**) — geometrically
+incorrect and the cause of image artifacts in earlier pipeline runs.
+
+```python
+harness = SimulationHarness(n_antennas=117, n_integrations=24)
+```
+:::
+
+### Station layout
+
+The position file used by the simulation is
+`dsa110_continuum/simulation/pyuvsim/antennas.csv` (117 rows, projected ECEF
+columns `east_m`, `north_m`, `up_m`). The figure below shows the resulting
+local-ENU positions after the geodetic → ECEF → local-ENU transform applied by
+`load_geodetic_enu()`.
+
+![DSA-110 ENU layout — 117 stations. T-core (EW + NS arms) shown in blue;
+outriggers (DSA103–117) shown in orange. Baselines from the T-junction extend to
+≈1.8 km E-W and ≈2.2 km N-S with the outriggers included.](images/dsa110_antenna_layout.png){width=90%}
+
+### Active antenna count
+
+**96 of the 117 allocated station slots are active** (Connor et al. 2025,
+arXiv:2510.18136):
+
+| Arm | Active | Slot pool | Notes |
+|---|---|---|---|
+| E-W core | 51 | DSA001–DSA051 | All 51 slots built and active |
+| N-S arm | 35 | DSA052–DSA102 | 51 slots allocated; 35 active |
+| Outriggers | 14 | DSA103–DSA117 | 15 slots; DSA-117 likely inactive (no elevation in CSV) |
+| **Total** | **96** | — | — |
+
+::: {.callout-note}
+The exact list of which 96 station numbers are active is **not machine-readable
+in this repository**. The authoritative source is the HDF5/MS antenna metadata
+from real data on `h17`, accessed via `pyuvdata`'s `telescope.antenna_numbers`
+field. For simulation purposes, using all 117 positions is correct — the 21
+inactive slots produce zero-weighted baselines that do not degrade image quality.
+:::
+
+### Key baseline lengths
+
+| Dimension | Extent |
+|---|---|
+| E-W arm span (core) | ~397 m (DSA-001 to DSA-051) |
+| N-S arm span (core) | ~432 m (DSA-052 to DSA-102) |
+| Max E-W baseline (with outriggers) | ~1769 m |
+| Max N-S baseline (with outriggers) | ~2220 m |
+
+---
+
+## Synthesized beam
+
+The figure below shows the full synthesized beam analysis computed for the
+117-antenna array observing at Dec +16.15° (OVRO transit strip) at 1405 MHz
+(band centre). All 117 station positions from `antennas.csv` are used.
+
+![DSA-110 PSF analysis — 117 antennas, 1405 MHz, Dec +16.15°. Top row: UV
+coverage (fill 0.90%), PSF wide view with HPBW ellipse, and main-beam zoom.
+Bottom row: E-W and N-S slices through the beam centre, and parameter
+summary.](images/dsa110_psf_analysis.png){width=100%}
+
+### Beam parameters
+
+| Parameter | Value | Notes |
+|---|---|---|
+| HPBW E-W | **75"** | Set by ~1769 m outrigger baselines |
+| HPBW N-S | **332"** | Set by ~2220 m outrigger baselines; 4.4× elongated |
+| Beam axis ratio (N-S / E-W) | 4.4 | Reflects asymmetric UV coverage |
+| Peak sidelobe level | **0.415** | High — consequence of 0.90% UV fill |
+| UV fill fraction | **0.90%** | Sparse array; high sidelobes are real, not a bug |
+| u range | ±48.9 kλ | EW outrigger baselines |
+| v range | ±10.9 kλ | NS arm + outrigger baselines |
+
+::: {.callout-note}
+**Why the beam is elongated N-S**: the EW arm is longer than the NS arm and
+the outriggers extend further EW than NS. Longer baselines → finer resolution
+→ narrower beam in that direction. The T-core alone (without outriggers) would
+give a beam of roughly ~86"×343" — the outriggers tighten both axes but
+preserve the asymmetry.
+:::
+
+### Implications for imaging
+
+The high peak sidelobe (0.415) is a direct consequence of the sparse UV fill.
+CLEAN must run enough major cycles to drive sidelobes below the noise — WSClean
+`-niter 50000` with an appropriate `-mgain` (0.7–0.8) is the validated setting
+(see `docs/reference/imaging.md`). The NS-elongated beam means sources near the
+phase centre will show NS PSF tails in the dirty image; this is expected and not
+a calibration artifact.
+
+---
+
+## Simulation parameters
+
+### Timing
+
+| Parameter | Value | Source |
+|---|---|---|
+| Integration time | 12.884902 s | `dsa110_measured_parameters.yaml` → `temporal.integration_time_sec` |
+| Fields per tile | 24 | One drift-scan tile = 24 integrations |
+| Tile duration | ~309.2 s | 24 × 12.885 s |
+| Declination (fixed) | +16.15° | OVRO transit strip |
+
+### Spectral setup
+
+| Parameter | Value | Source |
+|---|---|---|
+| Subbands | 16 | `harness.py` |
+| Channels per subband | 48 | `harness.py` |
+| Total channels | 768 | 16 × 48 |
+| Channel width | **244.140625 kHz** | 250 MHz / 1024 correlator channels |
+| Frequency range | 1311–1499 MHz | `harness.subband_freqs()` |
+| Bandwidth | ~187.3 MHz | 768 × 244.14 kHz |
+
+::: {.callout-warning}
+`dsa110_measured_parameters.yaml` contains a stale entry
+`frequency_setup.channel_width.value: 325.520833 kHz`. This is wrong — it
+reflects a different correlator mode. The correct value is in
+`spectral.channel_width_hz: 244140.625`. The stale entry has been fixed in the
+YAML as of commit `6ad8a00` but is noted here for historical awareness.
+:::
+
+---
+
+## Regenerating figures
+
+```bash
+# Antenna layout (requires antennas.csv via harness)
+python scripts/plot_tile_image.py --layout-only
+
+# PSF analysis (saves numpy arrays to /tmp/, then renders 6-panel figure)
+python scripts/make_psf_analysis.py
+```
+
+Rendered figures are stored at `docs/images/` and will be updated whenever the
+antenna list or simulation frequency changes.

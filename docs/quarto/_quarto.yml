@@ -15,6 +15,7 @@ website:
       - index.qmd
       - agent-onboarding.qmd
       - pipeline-overview.qmd
+      - array-reference.qmd
       - epoch-qa.qmd
       - outputs-and-artifacts.qmd
       - lightcurves-and-variability.qmd

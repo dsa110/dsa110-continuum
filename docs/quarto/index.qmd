@@ -25,6 +25,7 @@ extending or debugging it.
 |------|---------------|
 | [Agent Onboarding](agent-onboarding.qmd) | How a new AI tool or collaborator should acquire trustworthy pipeline context |
 | [Pipeline Overview](pipeline-overview.qmd) | Stages, entry points, calibration, imaging, mosaicking, known silent-failure risks |
+| [Array Reference](array-reference.qmd) | 117-station ENU layout, synthesized beam at Dec +16°, simulation parameters, harness configuration |
 | [Epoch QA](epoch-qa.qmd) | Three-gate QA system, thresholds, canary tile, diagnostic PNG |
 | [Outputs and Artifacts](outputs-and-artifacts.qmd) | Directory layout, file schemas, debugging guide |
 | [Light Curves and Variability](lightcurves-and-variability.qmd) | Multi-epoch stacking, Mooley η/Vs/m metrics, EpochOrchestrator |
