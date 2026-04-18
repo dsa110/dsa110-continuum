@@ -168,6 +168,44 @@ class FigureConfig:
 
         plt.rcParams.update(self.to_mpl_params())
 
+    def _get_mpl_styles(self) -> list[str]:
+        """Return matplotlib style names for this config's PlotStyle."""
+        if self.style == PlotStyle.PUBLICATION:
+            try:
+                import scienceplots  # noqa: F401 — registers styles with matplotlib
+            except ImportError:
+                logger.warning("scienceplots not installed; PUBLICATION styles unavailable")
+                return []
+            return ["science", "notebook"]
+        return []
+
+    def style_context(self):
+        """Context manager that applies this config's matplotlib style.
+
+        When PlotStyle.PUBLICATION is selected, applies SciencePlots
+        ``["science", "notebook"]`` styles.
+
+        Usage::
+
+            config = FigureConfig(style=PlotStyle.PUBLICATION)
+            with config.style_context():
+                fig, ax = plt.subplots()
+                ...
+        """
+        import matplotlib.pyplot as plt
+        from contextlib import contextmanager
+
+        @contextmanager
+        def _ctx():
+            styles = self._get_mpl_styles()
+            if styles:
+                with plt.style.context(styles):
+                    yield
+            else:
+                yield
+
+        return _ctx()
+
 
 # Default configurations for common use cases
 QUICKLOOK_CONFIG = FigureConfig(style=PlotStyle.QUICKLOOK)
