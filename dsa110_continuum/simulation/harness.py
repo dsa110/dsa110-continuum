@@ -14,7 +14,7 @@ The harness produces all 16 subbands of a single ~5-minute drift-scan tile:
 Typical usage
 -------------
 >>> from dsa110_continuum.simulation.harness import SimulationHarness
->>> h = SimulationHarness(n_antennas=8, n_integrations=4)
+>>> h = SimulationHarness(n_antennas=8, n_integrations=4, use_real_positions=False)  # fast unit-test mode
 >>> paths = h.generate_subbands(output_dir="/tmp/sim_tile", n_subbands=2)
 >>> assert len(paths) == 2
 
@@ -327,10 +327,13 @@ class SimulationHarness:
     Parameters
     ----------
     n_antennas:
-        Number of antennas to simulate.  For fast unit tests use 8 or 16;
-        for realistic DSA-110 UV coverage use 96 (operational array) or
-        117 (all allocated slots).  Must be ≤ 117 when
-        ``use_real_positions=True``.
+        Number of antennas to simulate.  Default is **117** (all allocated
+        station slots in ``antennas.csv``), which gives the correct DSA-110
+        T-array geometry including all outriggers.  For fast unit tests use 8
+        or 16 (with ``use_real_positions=False``).  Do **not** use 96 — the
+        first 96 CSV rows cover only the E-W and N-S core and exclude all
+        outriggers, which is geometrically incorrect.  Must be ≤ 117 when
+        ``use_real_positions=True``.  See ``docs/GROUND_TRUTH.md`` §1.4.
     n_integrations:
         Number of time integrations per tile.  Default 24 ≈ 5-minute tile.
     pointing_ra_deg:
@@ -353,7 +356,7 @@ class SimulationHarness:
         Override path to the antenna position CSV.  Only used when
         ``use_real_positions=True``.  Defaults to the bundled CSV.
     """
-    n_antennas:         int   = 8
+    n_antennas:         int   = 117
     n_integrations:     int   = 24
     pointing_ra_deg:    float = 343.5
     pointing_dec_deg:   float = 16.15
@@ -447,31 +450,51 @@ class SimulationHarness:
     # ── UVW calculation ──────────────────────────────────────────────────────
 
     def _compute_uvw(
-        self, ant1: np.ndarray, ant2: np.ndarray, times_jd: np.ndarray
+        self,
+        ant1: np.ndarray,
+        ant2: np.ndarray,
+        times_jd: np.ndarray,
+        phase_ra_deg: np.ndarray | None = None,
     ) -> np.ndarray:
         """Compute geometric UVW coordinates for all baselines and times.
 
         Uses the standard Earth rotation synthesis formula.  The phase
-        centre is self.pointing_ra_deg / self.pointing_dec_deg.
+        centre per integration is given by *phase_ra_deg* (one value per
+        integration).  For a drift-scan tile this is the LST at each
+        timestamp; for a single fixed pointing it is a constant array.
+
+        Parameters
+        ----------
+        ant1, ant2:
+            Antenna index arrays for each baseline-time row.
+        times_jd:
+            Julian date for each baseline-time row.
+        phase_ra_deg:
+            Right ascension of the phase centre for each integration
+            (shape: n_integrations).  If None, ``self.pointing_ra_deg``
+            is broadcast to all integrations (legacy single-field mode).
         """
         n_blts = len(times_jd)
         uvw = np.zeros((n_blts, 3), dtype=float)
 
-        ha_deg = self._hour_angle_deg(times_jd)
-        dec_r  = np.radians(self.pointing_dec_deg)
-        ha_r   = np.radians(ha_deg)
-
-        # Rotation matrix H = XYZ → UVW for each integration
-        # UVW convention: u=east, v=north, w=toward source
-        cos_ha = np.cos(ha_r)
-        sin_ha = np.sin(ha_r)
-        cos_d  = np.cos(dec_r)
-        sin_d  = np.sin(dec_r)
-
         n_baselines = self.n_antennas * (self.n_antennas - 1) // 2
         n_ints = self.n_integrations
 
+        lsts_deg, _ = self._lst_and_ha(times_jd)
+        if phase_ra_deg is None:
+            phase_ra_deg = np.full(n_ints, self.pointing_ra_deg)
+
+        dec_r  = np.radians(self.pointing_dec_deg)
+        cos_d  = np.cos(dec_r)
+        sin_d  = np.sin(dec_r)
+
         for t_idx in range(n_ints):
+            # Hour angle = LST - phase_RA for this integration
+            ha_deg = lsts_deg[t_idx] - phase_ra_deg[t_idx]
+            ha_r   = np.radians(ha_deg)
+            ch = np.cos(ha_r)
+            sh = np.sin(ha_r)
+
             sl = slice(t_idx * n_baselines, (t_idx + 1) * n_baselines)
             a1 = ant1[sl]
             a2 = ant2[sl]
@@ -480,8 +503,6 @@ class SimulationHarness:
             dy = self.antenna_ecef[a2, 1] - self.antenna_ecef[a1, 1]
             dz = self.antenna_ecef[a2, 2] - self.antenna_ecef[a1, 2]
 
-            ch = cos_ha[t_idx]
-            sh = sin_ha[t_idx]
             u_bl =  sh * dx + ch * dy
             v_bl = -sin_d * ch * dx + sin_d * sh * dy + cos_d * dz
             w_bl =  cos_d * ch * dx - cos_d * sh * dy + sin_d * dz
@@ -490,14 +511,25 @@ class SimulationHarness:
             uvw[sl, 2] = w_bl
         return uvw
 
-    def _hour_angle_deg(self, times_jd: np.ndarray) -> np.ndarray:
-        """Compute hour angle (degrees) of the field centre for each unique time."""
+    def _lst_and_ha(
+        self, times_jd: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Return (LST_deg, HA_deg) arrays, one entry per integration.
+
+        HA is referenced to ``self.pointing_ra_deg`` for backward compatibility
+        with code that still calls _hour_angle_deg indirectly.
+        """
         n_baselines = self.n_antennas * (self.n_antennas - 1) // 2
         unique_times = times_jd[::n_baselines]   # one per integration
         t = Time(unique_times, format="jd", scale="utc")
         lst_deg = t.sidereal_time("apparent", longitude=_OVRO_LON_DEG * u.deg).deg
-        ha = lst_deg - self.pointing_ra_deg
-        return ha
+        ha_deg  = lst_deg - self.pointing_ra_deg
+        return lst_deg, ha_deg
+
+    def _hour_angle_deg(self, times_jd: np.ndarray) -> np.ndarray:
+        """Compute hour angle (degrees) of the field centre for each unique time."""
+        _, ha_deg = self._lst_and_ha(times_jd)
+        return ha_deg
 
     # ── Visibility model ─────────────────────────────────────────────────────
 
@@ -506,6 +538,7 @@ class SimulationHarness:
         uvw: np.ndarray,
         freqs_hz: np.ndarray,
         sky: "pyradiosky.SkyModel",
+        phase_ra_deg: np.ndarray | None = None,
     ) -> np.ndarray:
         """Compute visibilities from a point-source sky model.
 
@@ -515,52 +548,73 @@ class SimulationHarness:
 
         The visibilities are the van Cittert–Zernike theorem integral
         evaluated analytically for point sources.
+
+        Parameters
+        ----------
+        uvw:
+            UVW array (n_blts, 3) already computed with the per-integration
+            phase centres.
+        freqs_hz:
+            Channel centre frequencies.
+        sky:
+            Point-source sky model.
+        phase_ra_deg:
+            Phase centre RA (degrees) per integration (shape: n_integrations).
+            If None, ``self.pointing_ra_deg`` is broadcast to all integrations.
         """
         import astropy.units as u
 
         n_blts, _ = uvw.shape
         n_freq    = len(freqs_hz)
+        n_baselines = self.n_antennas * (self.n_antennas - 1) // 2
         vis = np.zeros((n_blts, n_freq, 2), dtype=complex)  # XX, YY
 
-        # Source coordinates relative to phase centre
+        if phase_ra_deg is None:
+            phase_ra_deg = np.full(self.n_integrations, self.pointing_ra_deg)
+
+        # Source coordinates
         ra_src  = sky.ra.deg   # shape (n_src,)
         dec_src = sky.dec.deg
-
-        dec_c = np.radians(self.pointing_dec_deg)
-        ra_c  = np.radians(self.pointing_ra_deg)
+        dec_c   = np.radians(self.pointing_dec_deg)
 
         for s_idx in range(sky.Ncomponents):
             ra_s  = np.radians(ra_src[s_idx])
             dec_s = np.radians(dec_src[s_idx])
 
-            # Direction cosines (l, m, n) relative to phase centre
-            l = np.cos(dec_s) * np.sin(ra_s - ra_c)
-            m = np.sin(dec_s) * np.cos(dec_c) - np.cos(dec_s) * np.sin(dec_c) * np.cos(ra_s - ra_c)
-            n_coord = np.sqrt(max(1 - l**2 - m**2, 0.0))
+            # Source flux (with spectral index scaling)
+            stokes_i = float(sky.stokes[0, 0, s_idx].to(u.Jy).value)
+            ref_freq_arr = sky.reference_frequency
 
-            # Phase per baseline: φ = 2π/λ * (u·l + v·m + w·(n-1))
-            # shape (n_blts, n_freq)
-            phase_spatial = uvw[:, 0:1] * l + uvw[:, 1:2] * m + uvw[:, 2:3] * (n_coord - 1)
+            for t_idx in range(self.n_integrations):
+                sl   = slice(t_idx * n_baselines, (t_idx + 1) * n_baselines)
+                ra_c = np.radians(phase_ra_deg[t_idx])
 
-            for f_idx, freq in enumerate(freqs_hz):
-                wave = 2.998e8 / freq  # wavelength in metres
-                phase = 2 * np.pi * phase_spatial[:, 0] / wave  # shape (n_blts,)
-                # Source flux at this frequency (spectral index scaling)
-                stokes_i = float(sky.stokes[0, 0, s_idx].to(u.Jy).value)
-                # Spectral index scaling: guard against flat-spectrum sky models
-                # where reference_frequency is None.
-                ref_freq_arr = sky.reference_frequency
-                if ref_freq_arr is not None:
-                    ref_freq = float(ref_freq_arr[s_idx].to(u.Hz).value)
-                    alpha    = float(sky.spectral_index[s_idx])
-                    flux_jy  = stokes_i * (freq / ref_freq) ** alpha
-                else:
-                    # spectral_type='flat': flux constant across frequency
-                    flux_jy = stokes_i
+                # Direction cosines relative to THIS integration's phase centre
+                l = np.cos(dec_s) * np.sin(ra_s - ra_c)
+                m = (np.sin(dec_s) * np.cos(dec_c)
+                     - np.cos(dec_s) * np.sin(dec_c) * np.cos(ra_s - ra_c))
+                n_coord = np.sqrt(max(1.0 - l**2 - m**2, 0.0))
 
-                contrib = (flux_jy / 2.0) * np.exp(-1j * phase)  # XX = YY = I/2
-                vis[:, f_idx, 0] += contrib  # XX
-                vis[:, f_idx, 1] += contrib  # YY
+                # Phase per baseline for this integration
+                uvw_sl = uvw[sl]   # shape (n_baselines, 3)
+                phase_spatial = (uvw_sl[:, 0] * l
+                                 + uvw_sl[:, 1] * m
+                                 + uvw_sl[:, 2] * (n_coord - 1))  # (n_baselines,)
+
+                for f_idx, freq in enumerate(freqs_hz):
+                    wave = 2.998e8 / freq
+                    phase = 2 * np.pi * phase_spatial / wave
+
+                    if ref_freq_arr is not None:
+                        ref_freq = float(ref_freq_arr[s_idx].to(u.Hz).value)
+                        alpha    = float(sky.spectral_index[s_idx])
+                        flux_jy  = stokes_i * (freq / ref_freq) ** alpha
+                    else:
+                        flux_jy = stokes_i
+
+                    contrib = (flux_jy / 2.0) * np.exp(-1j * phase)  # XX = YY = I/2
+                    vis[sl, f_idx, 0] += contrib
+                    vis[sl, f_idx, 1] += contrib
 
         return vis.astype(np.complex64)
 
@@ -571,6 +625,7 @@ class SimulationHarness:
         subband_index: int,
         start_time: Time,
         sky: "pyradiosky.SkyModel",
+        drift_scan: bool = True,
     ) -> UVData:
         """Build a complete UVData object for one subband (pyuvdata 3.x API).
 
@@ -624,20 +679,49 @@ class SimulationHarness:
         )
 
         # ── Phase center catalog (pyuvdata 3.x) ───────────────────────────────
-        # Pass phase_center_catalog directly to UVData.new() — there is no
-        # set_phased_from_phase_center_catalog method in pyuvdata 3.x.
-        phase_cat = {
-            0: {
-                "cat_name": f"SIM_TILE_SB{subband_index:02d}",
-                "cat_type": "sidereal",
-                "cat_lon": np.radians(self.pointing_ra_deg),
-                "cat_lat": np.radians(self.pointing_dec_deg),
-                "cat_frame": "icrs",
-                "cat_epoch": 2000.0,
-                "info_source": "user",
+        # Phase centre catalogue:
+        # - drift_scan=True  (default): one entry per integration at the LST
+        #   for that moment, replicating the 24-field structure of real
+        #   DSA-110 Measurement Sets (see docs/skills/ms-generation.md).
+        # - drift_scan=False: single fixed phase centre at pointing_ra_deg
+        #   (used for calibrator observations which track a known source).
+        if drift_scan:
+            lsts_deg = np.array([
+                Time(unique_times_jd[i], format="jd", scale="utc")
+                .sidereal_time("apparent", longitude=_OVRO_LON_DEG * u.deg)
+                .deg
+                for i in range(self.n_integrations)
+            ])
+            phase_cat = {
+                i: {
+                    "cat_name": f"FIELD_{i:02d}",
+                    "cat_type": "sidereal",
+                    "cat_lon": np.radians(lsts_deg[i]),
+                    "cat_lat": np.radians(self.pointing_dec_deg),
+                    "cat_frame": "icrs",
+                    "cat_epoch": 2000.0,
+                    "info_source": "user",
+                }
+                for i in range(self.n_integrations)
             }
-        }
-        phase_id_array = np.zeros(n_blts, dtype=int)
+            phase_id_array = np.repeat(
+                np.arange(self.n_integrations, dtype=int), n_baselines
+            )
+        else:
+            # Calibrator / fixed-pointing mode: single phase centre
+            lsts_deg = np.full(self.n_integrations, self.pointing_ra_deg)
+            phase_cat = {
+                0: {
+                    "cat_name": f"SIM_TILE_SB{subband_index:02d}",
+                    "cat_type": "sidereal",
+                    "cat_lon": np.radians(self.pointing_ra_deg),
+                    "cat_lat": np.radians(self.pointing_dec_deg),
+                    "cat_frame": "icrs",
+                    "cat_epoch": 2000.0,
+                    "info_source": "user",
+                }
+            }
+            phase_id_array = np.zeros(n_blts, dtype=int)
 
         # ── Pass 1: skeleton UVData (unit visibilities) ───────────────────────
         # UVData.new() calls set_uvws_from_antenna_positions internally,
@@ -666,22 +750,19 @@ class SimulationHarness:
             blts_are_rectangular=False,
         )
 
-        # ── Pass 2: compute visibilities using our geometrically-phased UVW ─────
-        # pyuvdata's set_uvws_from_antenna_positions (called internally by
-        # UVData.new) computes UVW in a frame where the w-axis points toward the
-        # *local zenith at the array midpoint*, NOT toward the field phase centre.
-        # For a source at Dec +16° that leaves a large w component (~|w|/|u|≈1.2)
-        # which causes baseline-to-baseline phase cancellation and destroys all
-        # source coherence in the dirty image.
-        #
-        # Instead we use our own _compute_uvw(), which builds the standard
-        # Earth-rotation-synthesis UVW referenced to the field phase centre
-        # (pointing_ra_deg, pointing_dec_deg).  We then write those coordinates
-        # back into uv.uvw_array so the file is self-consistent.
-        uvw = self._compute_uvw(ant1_all, ant2_all, times_jd_blts)  # shape (n_blts, 3)
+        # ── Pass 2: compute visibilities using per-integration drift-scan UVW ──
+        # For each integration the phase centre is the LST at that moment
+        # (drift-scan: telescope tracks the meridian, so HA=0 at every
+        # timestamp and the phase centre advances in RA with the sky).
+        # We pass lsts_deg both to _compute_uvw (so HA=LST-phase_RA≈0 at each
+        # step) and to _compute_visibilities (so direction cosines are computed
+        # relative to the correct per-integration phase centre).
+        uvw = self._compute_uvw(
+            ant1_all, ant2_all, times_jd_blts, phase_ra_deg=lsts_deg
+        )  # shape (n_blts, 3)
         uv.uvw_array = uvw.astype(np.float64)  # overwrite with phased UVW
 
-        vis = self._compute_visibilities(uvw, freqs, sky)
+        vis = self._compute_visibilities(uvw, freqs, sky, phase_ra_deg=lsts_deg)
 
         # Add thermal noise
         if self.noise_jy > 0:
@@ -751,6 +832,7 @@ class SimulationHarness:
         output_path: Path | str,
         start_time: Time | None = None,
         sky: "pyradiosky.SkyModel | None" = None,
+        drift_scan: bool = True,
     ) -> Path:
         """Generate one UVH5 subband file.
 
@@ -765,6 +847,11 @@ class SimulationHarness:
             ``2026-01-25T22:26:05`` (3C454.3 at ~12.5 Jy).
         sky:
             Sky model.  If None, one is generated automatically.
+        drift_scan:
+            If True (default), each integration uses its own LST as the phase
+            centre — matching real DSA-110 multi-field drift-scan observations.
+            If False, a single fixed phase centre at ``pointing_ra_deg`` is used
+            (calibrator-observation mode).
 
         Returns
         -------
@@ -778,7 +865,7 @@ class SimulationHarness:
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        uv = self._build_uvdata(sb_index, start_time, sky)
+        uv = self._build_uvdata(sb_index, start_time, sky, drift_scan=drift_scan)
         # Use pyuvdata's high-level write API
         uv.write_uvh5(str(output_path), clobber=True)
         logger.info("Wrote subband %d → %s", sb_index, output_path)
@@ -791,6 +878,7 @@ class SimulationHarness:
         start_time: Time | None = None,
         filename_template: str = "sim_tile_sb{sb_index:02d}.uvh5",
         sky: "pyradiosky.SkyModel | None" = None,
+        drift_scan: bool = True,
     ) -> list[Path]:
         """Generate multiple UVH5 subband files into *output_dir*.
 
@@ -810,6 +898,10 @@ class SimulationHarness:
             to ensure that the simulated visibilities match a ground-truth
             registry built from the same sky object — otherwise the random
             number generator will produce a different sky on the second call.
+        drift_scan:
+            Forwarded to :meth:`generate_subband`.  True (default) enables
+            per-integration LST phase centres (drift-scan mode); False uses a
+            single fixed phase centre (calibrator / fixed-pointing mode).
 
         Returns
         -------
@@ -828,7 +920,11 @@ class SimulationHarness:
         paths: list[Path] = []
         for sb in range(n_subbands):
             out = output_dir / filename_template.format(sb_index=sb)
-            paths.append(self.generate_subband(sb, out, start_time=start_time, sky=sky))
+            paths.append(
+                self.generate_subband(
+                    sb, out, start_time=start_time, sky=sky, drift_scan=drift_scan
+                )
+            )
         return paths
 
     def generate_calibrator_subband(
@@ -891,7 +987,7 @@ class SimulationHarness:
         self.n_sky_sources = 0
 
         try:
-            self.generate_subband(subband_index, out_path, sky=sky)
+            self.generate_subband(subband_index, out_path, sky=sky, drift_scan=False)
         finally:
             # Always restore original state even if generate_subband raises
             self.noise_jy = orig_noise

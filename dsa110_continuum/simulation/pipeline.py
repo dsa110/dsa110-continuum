@@ -101,6 +101,141 @@ class SimulatedPipeline:
         self.wsclean_mem_gb = wsclean_mem_gb
 
     # ------------------------------------------------------------------ #
+    # Stage 1b — Median-meridian phaseshift (CASA-free)                   #
+    # ------------------------------------------------------------------ #
+
+    def _phaseshift_to_median(
+        self,
+        *,
+        ms_path: Path | str,
+        median_ra_deg: float,
+        dec_deg: float,
+        work_dir: Path | str,
+    ) -> Path:
+        """Re-phase all 24 drift-scan fields to a single median meridian RA.
+
+        Real DSA-110 tiles are written with one FIELD entry per integration,
+        each at the LST at that moment (∼1.29° RA spread over the tile).
+        Before calibration and imaging every field must share a common phase
+        centre — the median meridian RA — exactly as ``phaseshift_ms`` does
+        on H17 using CASA's ``phaseshift`` task.
+
+        This implementation applies the phaseshift *directly* to the
+        visibility data using the van Cittert–Zernike direction-cosine
+        formula, which avoids the UVW sign-convention issue that causes
+        ``pyuvdata.UVData.phase()`` to produce incoherent output for
+        multi-field data.
+
+        For each integration whose current phase centre is at RA=LST_i, we
+        multiply every baseline's visibility by::
+
+            exp(-2πi/λ · [u·Δl + v·Δm + w·(Δn − 1)])
+
+        where (Δl, Δm, Δn) are the direction cosines of the new phase
+        centre (median_ra_deg) relative to the old one (LST_i).
+
+        Parameters
+        ----------
+        ms_path:
+            Input MS (multi-field, 24 phase centres).
+        median_ra_deg:
+            Target RA for the single coherent phase centre (degrees).
+        dec_deg:
+            Target Dec (degrees; same as the tile's observing declination).
+        work_dir:
+            Directory for the output phased MS.
+
+        Returns
+        -------
+        Path
+            Path to the phased MS (``*_meridian.ms``).
+        """
+        ms_path  = Path(ms_path)
+        work_dir = Path(work_dir)
+        phased_ms = work_dir / ms_path.name.replace(".ms", "_meridian.ms")
+
+        # Read the multi-field MS into pyuvdata.
+        # run_check=False skips the expensive UVW-consistency check that can
+        # allocate several GB of intermediate arrays on large (96-ant) data.
+        uv = pyuvdata.UVData()
+        uv.read(str(ms_path), run_check=False)
+
+        dec_r   = np.radians(dec_deg)
+        ra_new  = np.radians(median_ra_deg)
+        C_LIGHT = 2.998e8
+        freqs   = np.atleast_1d(uv.freq_array).flatten()  # Hz, shape (Nfreqs,)
+        n_pol   = uv.data_array.shape[2]
+
+        # Build a mapping: phase_center_id → old RA (radians)
+        pc_ra_rad = {
+            pc_id: v["cat_lon"]
+            for pc_id, v in uv.phase_center_catalog.items()
+        }
+
+        # Apply the direction-cosine phase correction per integration
+        unique_pc_ids = np.unique(uv.phase_center_id_array)
+        for pc_id in unique_pc_ids:
+            mask = uv.phase_center_id_array == pc_id
+            ra_old = pc_ra_rad[pc_id]
+            dra    = ra_new - ra_old
+
+            # Direction cosines of new phase centre relative to old
+            dl = np.cos(dec_r) * np.sin(dra)
+            dm = (np.sin(dec_r) * np.cos(dec_r)
+                  - np.cos(dec_r) * np.sin(dec_r) * np.cos(dra))
+            dn = np.sqrt(max(1.0 - dl**2 - dm**2, 0.0))
+
+            uvw_sl = uv.uvw_array[mask]          # (n_bl, 3)
+            u_bl, v_bl, w_bl = uvw_sl[:, 0], uvw_sl[:, 1], uvw_sl[:, 2]
+
+            # Spatial delay (baseline-dependent, frequency-independent)
+            delay = u_bl * dl + v_bl * dm + w_bl * (dn - 1.0)  # (n_bl,)
+
+            for f_idx, freq in enumerate(freqs):
+                lam   = C_LIGHT / freq
+                phase = -2.0 * np.pi / lam * delay      # (n_bl,)
+                fac   = np.exp(1j * phase)               # (n_bl,)
+                for p in range(n_pol):
+                    uv.data_array[mask, f_idx, p] *= fac
+
+        # Rotate UVW coordinates to the new phase centre.
+        # For a pure RA shift (same Dec), this is a rotation around the V-axis:
+        #   U_new =  U_old * cos(Δra) + W_old * sin(Δra)
+        #   V_new =  V_old
+        #   W_new = -U_old * sin(Δra) + W_old * cos(Δra)
+        for pc_id_rot in np.unique(uv.phase_center_id_array):
+            mask_rot = uv.phase_center_id_array == pc_id_rot
+            ra_old_rot = pc_ra_rad[pc_id_rot]
+            dra_rot    = ra_new - ra_old_rot
+            cos_dra = np.cos(dra_rot)
+            sin_dra = np.sin(dra_rot)
+            uvw_rot = uv.uvw_array[mask_rot]           # (n_bl, 3)
+            u0, v0, w0 = uvw_rot[:, 0], uvw_rot[:, 1], uvw_rot[:, 2]
+            uv.uvw_array[mask_rot, 0] =  u0 * cos_dra + w0 * sin_dra
+            uv.uvw_array[mask_rot, 1] =  v0
+            uv.uvw_array[mask_rot, 2] = -u0 * sin_dra + w0 * cos_dra
+
+        # Collapse the 24-field catalog to a single phase centre by directly
+        # updating the pyuvdata metadata (avoids any further phase() correction).
+        new_cat_id = uv._add_phase_center(
+            "median_meridian",
+            cat_type="sidereal",
+            cat_lon=ra_new,
+            cat_lat=dec_r,
+            cat_frame="icrs",
+            cat_epoch=2000.0,
+        )
+        uv.phase_center_id_array[:] = new_cat_id
+        uv._clear_unused_phase_centers()
+
+        uv.write_ms(str(phased_ms))
+        logger.info(
+            "Phaseshifted %s → %s  (RA=%.3f°, Dec=%.3f°)",
+            ms_path.name, phased_ms.name, median_ra_deg, dec_deg,
+        )
+        return phased_ms
+
+    # ------------------------------------------------------------------ #
     # Stage 2 — Calibration (CASA-free Jacobi solver)                     #
     # ------------------------------------------------------------------ #
 
@@ -148,7 +283,9 @@ class SimulatedPipeline:
 
         # ── Step 1: Load calibrator visibilities ──────────────────────────
         uv_cal = pyuvdata.UVData()
-        uv_cal.read(str(cal_uvh5))
+        # run_check=False skips the expensive UVW-consistency check that can
+        # allocate several GB of intermediate arrays on large (96-ant) data.
+        uv_cal.read(str(cal_uvh5), run_check=False)
 
         ant_nums = np.unique(
             np.concatenate([uv_cal.ant_1_array, uv_cal.ant_2_array])
@@ -178,8 +315,10 @@ class SimulatedPipeline:
                 i = ant_idx[i_ant]
                 j = ant_idx[j_ant]
 
-                # Harness stores conj(V_ij); undo conjugation to get true V_ij
-                vis = uv_cal.data_array[row, :, 0].conj()  # shape (n_freq,)
+                # Harness stores V_ij = G_i * conj(G_j) * V_model directly
+                # (confirmed by baseline-by-baseline check vs injected gains).
+                # No conjugation needed here.
+                vis = uv_cal.data_array[row, :, 0]  # shape (n_freq,)
 
                 # Update antenna i using antenna j's current gain
                 numerator[i]   += vis * gains[j] / model_amp
@@ -204,17 +343,22 @@ class SimulatedPipeline:
             with ct.table(str(target_ms) + "::ANTENNA", readonly=True, ack=False) as tant:
                 n_ms_ant = tant.nrows()
 
-            # Build per-MS-antenna gain lookup (0-based MS antenna index)
+            # Build per-MS-antenna gain lookup (0-based MS antenna index).
+            # Store as complex64 to halve memory usage (was complex128).
             # MS ANTENNA1/ANTENNA2 are 0-based indices into the ANTENNA table.
             # Map by position: the cal UVH5 antennas are in sorted order.
-            ms_gains = np.ones((n_ms_ant, n_freq), dtype=complex)
+            ms_gains = np.ones((n_ms_ant, n_freq), dtype=np.complex64)
             for ms_idx in range(min(n_ms_ant, n_ant)):
-                ms_gains[ms_idx] = gains[ms_idx]
+                ms_gains[ms_idx] = gains[ms_idx].astype(np.complex64)
 
-            data     = t.getcol("DATA")       # shape (Nrows, Nchans, Npols)
-            ant1_col = t.getcol("ANTENNA1")   # 0-based
-            ant2_col = t.getcol("ANTENNA2")   # 0-based
-            n_rows, n_chan, n_pol = data.shape
+            ant1_col = t.getcol("ANTENNA1")   # 0-based, shape (Nrows,)
+            ant2_col = t.getcol("ANTENNA2")
+
+            # ── Add CORRECTED_DATA column if it doesn't exist (before writing) ──
+            # Peek at first data row to get shape for column descriptor
+            first_row = t.getcol("DATA", startrow=0, nrow=1)
+            n_rows = t.nrows()
+            n_chan, n_pol = first_row.shape[1], first_row.shape[2]
 
             # Guard: calibrator and target must have the same channel count
             if n_chan != n_freq:
@@ -224,31 +368,40 @@ class SimulatedPipeline:
                     "Ensure calibrator and target use the same subband."
                 )
 
-            # Vectorised application: CORRECTED = DATA / (G_i * conj(G_j))
-            # Clamp antenna indices to valid range (safety guard)
-            idx1 = np.clip(ant1_col, 0, n_ms_ant - 1)
-            idx2 = np.clip(ant2_col, 0, n_ms_ant - 1)
-            gi = ms_gains[idx1]   # shape (Nrows, Nfreqs)
-            gj = ms_gains[idx2]   # shape (Nrows, Nfreqs)
-            denom = gi * np.conj(gj)   # shape (Nrows, Nfreqs)
-            # Avoid division by near-zero
-            safe_denom = np.where(np.abs(denom) > 1e-12, denom, 1.0)
-
-            corrected = data.copy()
-            corrected /= safe_denom[:, :, np.newaxis]
-
-            # Add CORRECTED_DATA column if it doesn't exist
             if "CORRECTED_DATA" not in t.colnames():
                 from casacore.tables import makearrcoldesc, maketabdesc
                 cd = makearrcoldesc(
                     "CORRECTED_DATA",
-                    data[0],
+                    first_row[0],
                     valuetype="complex",
                     comment="Gain-calibrated data",
                 )
                 t.addcols(maketabdesc(cd))
 
-            t.putcol("CORRECTED_DATA", corrected.astype(np.complex64))
+            # ── Chunked gain application to cap peak RAM usage ──────────────
+            # Full-array vectorisation needs 5 × (Nrows, Nfreqs) complex arrays
+            # ≈ 6.7 GB for 96-ant 768-ch data.  Process CHUNK_ROWS rows at a
+            # time so peak RAM stays well under 1 GB per chunk.
+            CHUNK_ROWS = 5000  # ~60 MB per chunk at 768 ch
+            idx1_all = np.clip(ant1_col, 0, n_ms_ant - 1)
+            idx2_all = np.clip(ant2_col, 0, n_ms_ant - 1)
+
+            for start in range(0, n_rows, CHUNK_ROWS):
+                end = min(start + CHUNK_ROWS, n_rows)
+                chunk = t.getcol("DATA", startrow=start, nrow=end - start)
+                idx1 = idx1_all[start:end]
+                idx2 = idx2_all[start:end]
+                gi = ms_gains[idx1]          # (chunk, Nfreqs) complex64
+                gj = ms_gains[idx2]
+                denom = gi * np.conj(gj)     # (chunk, Nfreqs) complex64
+                safe_denom = np.where(
+                    np.abs(denom) > 1e-12, denom,
+                    np.ones_like(denom),
+                )
+                chunk /= safe_denom[:, :, np.newaxis]  # in-place
+                t.putcol("CORRECTED_DATA",
+                         chunk.astype(np.complex64),
+                         startrow=start, nrow=end - start)
 
         logger.info("Wrote CORRECTED_DATA to %s", target_ms)
         return target_ms
@@ -543,36 +696,64 @@ class SimulatedPipeline:
         imaging_passed = True
         mosaic_path: Path | None = None
 
-        # ── Build ground-truth registry from harness sky model ─────────────
-        # IMPORTANT: generate the sky ONCE and reuse it for both the registry
-        # and generate_subbands().  If make_sky_model() were called a second
-        # time inside generate_subbands(), the RNG would advance and produce a
-        # *different* sky — so WSClean would image sources at positions the
-        # photometry stage never looks for.
-        registry = GroundTruthRegistry(test_run_id="simulated_pipeline")
-        sky = harness.make_sky_model()
-        for idx in range(sky.Ncomponents):
-            ra_deg  = float(sky.ra[idx].deg)
-            dec_deg = float(sky.dec[idx].deg)
-            # Stokes I from sky model.  WSClean -pol I from linear XX/YY feeds
-            # outputs (XX + YY) / 2 = I/2 (since V_XX = V_YY = I/2 by convention).
-            # Register the *image* flux (I/2) as the ground truth so that the
-            # photometry comparison is in the same units as the WSClean FITS.
-            stokes_i = float(sky.stokes[0, 0, idx].value)
-            flux_jy  = stokes_i / 2.0   # WSClean I-pol image units: (XX+YY)/2
-            registry.register_source(
-                source_id=f"SIM_S{idx:03d}",
-                ra_deg=ra_deg,
-                dec_deg=dec_deg,
-                baseline_flux_jy=flux_jy,
+        # ── Drift-scan tile geometry ───────────────────────────────────────
+        # DSA-110 tiles are butted drift-scan segments.  Each tile's start
+        # time is offset by one tile duration so successive tiles cover
+        # adjacent, non-overlapping RA strips (~1.29 deg each at dec≈37°N).
+        from astropy.time import Time as _ATime
+        import astropy.units as _u
+
+        _T_INT    = 12.884902                    # s — correlator dump period
+        _N_INT    = harness.n_integrations       # 24 for a real tile
+        _T_TILE_S = _N_INT * _T_INT              # ≈309.2 s per tile
+        _OVRO_LON = -118.2825                    # deg E
+        _TILE_T0  = _ATime("2026-01-25T22:26:05", format="isot", scale="utc")
+
+        def _tile_start(idx: int) -> "_ATime":
+            return _ATime(
+                _TILE_T0.jd + idx * _T_TILE_S / 86400.0, format="jd", scale="utc"
             )
+
+        def _tile_median_ra(idx: int) -> float:
+            """LST at tile mid-point = correct imaging phase centre."""
+            t_mid = _ATime(
+                _tile_start(idx).jd + _T_TILE_S / 2 / 86400.0,
+                format="jd", scale="utc",
+            )
+            return float(
+                t_mid.sidereal_time("apparent", longitude=_OVRO_LON * _u.deg).deg
+            )
+
+        # ── Build per-tile sky models and ground-truth registry ────────────
+        # Each tile has its own sky centred on that tile's median RA so that
+        # sources fall within the tile's beam footprint.  The registry is
+        # populated before any visibilities are generated, ensuring the
+        # simulated data and the ground-truth positions always agree.
+        registry = GroundTruthRegistry(test_run_id="simulated_pipeline")
+        tile_skies: list = []
+        orig_dec = harness.pointing_dec_deg  # preserve across loop
+        for tile_idx in range(n_tiles):
+            med_ra = _tile_median_ra(tile_idx)
+            harness.pointing_ra_deg  = med_ra
+            harness.pointing_dec_deg = orig_dec
+            sky = harness.make_sky_model(fov_deg=3.0)
+            tile_skies.append(sky)
+            for idx in range(sky.Ncomponents):
+                stokes_i = float(sky.stokes[0, 0, idx].value)
+                registry.register_source(
+                    source_id=f"T{tile_idx}_S{idx:02d}",
+                    ra_deg=float(sky.ra[idx].deg),
+                    dec_deg=float(sky.dec[idx].deg),
+                    baseline_flux_jy=stokes_i / 2.0,  # WSClean I-pol: (XX+YY)/2
+                )
         registry.register_epoch(mjd)
 
         # Pre-generate clean calibrator subbands (shared across tiles).
-        # Each subband is corrupted inside the per-tile loop using the same
-        # seeds as the target — modelling simultaneous instrument gain errors.
         cal_dir = self.work_dir / "calibrator"
         cal_dir.mkdir(parents=True, exist_ok=True)
+        # Reset harness pointing to tile 0 before generating calibrator
+        harness.pointing_ra_deg  = _tile_median_ra(0)
+        harness.pointing_dec_deg = orig_dec
         cal_clean_paths = [
             harness.generate_calibrator_subband(
                 cal_dir / f"sb{sb:02d}",
@@ -584,15 +765,30 @@ class SimulatedPipeline:
 
         # ── Per-tile loop ──────────────────────────────────────────────────
         for tile_idx in range(n_tiles):
-            tile_dir = self.work_dir / f"tile_{tile_idx:02d}"
+            tile_dir   = self.work_dir / f"tile_{tile_idx:02d}"
             tile_dir.mkdir(parents=True, exist_ok=True)
 
+            sky       = tile_skies[tile_idx]
+            t_start   = _tile_start(tile_idx)
+            median_ra = _tile_median_ra(tile_idx)
+
+            # Set harness pointing to this tile's median RA so that UVW and
+            # visibility calculations use the correct per-tile phase centre.
+            harness.pointing_ra_deg  = median_ra
+            harness.pointing_dec_deg = orig_dec
+
+            logger.info(
+                "Tile %d: start=%s  median_ra=%.3f°",
+                tile_idx, t_start.isot, median_ra,
+            )
+
             # Stage 1: Generate and corrupt target visibilities.
-            # The same per-subband seeds are applied to the calibrator below
-            # (same physical instrument, same gain errors).
             seed = 100 * (tile_idx + 1)
             uvh5_paths = harness.generate_subbands(
-                output_dir=tile_dir, n_subbands=n_subbands, sky=sky
+                output_dir=tile_dir,
+                n_subbands=n_subbands,
+                start_time=t_start,
+                sky=sky,
             )
             corrupted_paths = [
                 corrupt_uvh5(
@@ -675,10 +871,28 @@ class SimulatedPipeline:
             # after write_ms the sign becomes correct for WSClean.  No further
             # correction is needed.
 
+            # Stage 1b: Phaseshift all 24 fields to median meridian RA.
+            # The raw MS has 24 fields each at a different RA (one per
+            # integration) — identical to real DSA-110 data.  WSClean requires
+            # a single coherent phase centre, so we phaseshift to the median
+            # meridian RA using pyuvdata's phase() method, which re-references
+            # all visibilities to the common centre without CASA.
+            try:
+                ms_phased = self._phaseshift_to_median(
+                    ms_path=ms_path,
+                    median_ra_deg=median_ra,
+                    dec_deg=orig_dec,
+                    work_dir=tile_dir,
+                )
+            except Exception as exc:
+                errors.append(f"Tile {tile_idx} phaseshift: {exc}")
+                calibration_passed = False
+                continue
+
             # Stage 2: Calibrate using the per-tile corrupted calibrator
             try:
                 self._calibrate(
-                    target_ms=ms_path,
+                    target_ms=ms_phased,
                     cal_uvh5=cal_uvh5,
                     cal_flux_jy=cal_flux_jy,
                     work_dir=tile_dir,
@@ -690,7 +904,7 @@ class SimulatedPipeline:
 
             # Stage 3: Image (with CLEAN deconvolution)
             try:
-                img_results = self._image(ms_path=ms_path, work_dir=tile_dir)
+                img_results = self._image(ms_path=ms_phased, work_dir=tile_dir)
                 restored = img_results.get("restored")
                 if restored and restored.exists():
                     tile_images.append(restored)

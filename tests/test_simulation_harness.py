@@ -69,9 +69,13 @@ def harness_realistic() -> SimulationHarness:
 
 @pytest.fixture(scope="module")
 def generated_sb0(harness_small, tmp_path_factory):
-    """Pre-generated subband-0 UVH5 file (shared across tests in the module)."""
+    """Pre-generated subband-0 UVH5 file (shared across tests in the module).
+
+    Uses drift_scan=False (fixed pointing) so that phase-centre coordinate
+    tests remain valid: the single catalog entry equals pointing_ra/dec.
+    """
     out = tmp_path_factory.mktemp("sim_sb") / "sb00.uvh5"
-    harness_small.generate_subband(0, out)
+    harness_small.generate_subband(0, out, drift_scan=False)
     return out
 
 
@@ -79,7 +83,7 @@ def generated_sb0(harness_small, tmp_path_factory):
 def generated_sb7(harness_small, tmp_path_factory):
     """Pre-generated subband-7 UVH5 file."""
     out = tmp_path_factory.mktemp("sim_sb7") / "sb07.uvh5"
-    harness_small.generate_subband(7, out)
+    harness_small.generate_subband(7, out, drift_scan=False)
     return out
 
 
@@ -375,7 +379,9 @@ class TestClosureRelations:
         harness_small.noise_jy = 0.0
         try:
             t0 = Time("2026-01-25T22:26:05", format="isot", scale="utc")
-            uv = harness_small._build_uvdata(0, t0, sky)
+            # drift_scan=False: source is placed at pointing_ra_deg which must
+            # stay at the phase centre for every integration.
+            uv = harness_small._build_uvdata(0, t0, sky, drift_scan=False)
         finally:
             harness_small.noise_jy = saved
 
@@ -660,7 +666,9 @@ class TestPhasedUVW:
         )
         from astropy.time import Time as ATime
         t0 = ATime("2026-01-25T22:26:05", format="isot", scale="utc")
-        uv = h._build_uvdata(0, t0, sky)
+        # drift_scan=False: fixed pointing so source stays at phase centre
+        # for every integration — that is the invariant being tested here.
+        uv = h._build_uvdata(0, t0, sky, drift_scan=False)
 
         data = uv.data_array  # (n_blts, n_freq, n_pol)
         # Real part should be ≈ 0.5 Jy everywhere (flux/2 per polarization)
@@ -717,7 +725,9 @@ class TestPhasedUVW:
         )
         from astropy.time import Time as ATime
         t0 = ATime("2026-01-25T22:26:05", format="isot", scale="utc")
-        uv = h._build_uvdata(0, t0, sky)
+        # drift_scan=False: fixed pointing so _compute_uvw uses a single
+        # consistent phase centre for both the stored and recomputed UVW.
+        uv = h._build_uvdata(0, t0, sky, drift_scan=False)
 
         uvw_stored = uv.uvw_array
         # Recompute independently

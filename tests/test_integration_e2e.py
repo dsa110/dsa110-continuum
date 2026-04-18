@@ -601,9 +601,11 @@ class TestStage9SiteAndPhaseCenter:
         np.testing.assert_allclose(_OVRO_LON_DEG, -118.2825, atol=0.001)
 
     def test_phase_center_ra_in_catalog(self, tmp_path):
+        # drift_scan=False: fixed pointing so the single catalog entry is
+        # exactly pointing_ra_deg (drift-scan stores median-LST RA instead).
         h = _make_small_harness()
         p = tmp_path / "phc.uvh5"
-        h.generate_subband(0, p)
+        h.generate_subband(0, p, drift_scan=False)
         uv = h.load_subband(p)
         cat = uv.phase_center_catalog[0]
         np.testing.assert_allclose(
@@ -613,7 +615,7 @@ class TestStage9SiteAndPhaseCenter:
     def test_phase_center_dec_in_catalog(self, tmp_path):
         h = _make_small_harness()
         p = tmp_path / "phc.uvh5"
-        h.generate_subband(0, p)
+        h.generate_subband(0, p, drift_scan=False)
         uv = h.load_subband(p)
         cat = uv.phase_center_catalog[0]
         np.testing.assert_allclose(
@@ -639,7 +641,9 @@ class TestStage9SiteAndPhaseCenter:
             pointing_ra_deg=custom_ra, pointing_dec_deg=custom_dec,
         )
         p = tmp_path / "custom_phc.uvh5"
-        h.generate_subband(0, p)
+        # drift_scan=False so the single catalog entry equals the custom RA/Dec
+        # exactly (drift-scan stores the median-LST RA which differs from pointing_ra_deg).
+        h.generate_subband(0, p, drift_scan=False)
         uv = h.load_subband(p)
         cat = uv.phase_center_catalog[0]
         np.testing.assert_allclose(np.degrees(cat["cat_lon"]), custom_ra, atol=0.01)

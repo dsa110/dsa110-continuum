@@ -1,12 +1,24 @@
 # Reference Implementation Docs
 
-This directory contains distillations of validated implementation knowledge from two
-reference codebases: the original DSA-110 pipeline (`dsa110-contimg`) and the ASKAP
-VAST pipeline (`askap-vast`). These files exist so that developers working in
-`dsa110-continuum` do not have to re-discover validated parameters, known failure
-modes, or design decisions that were already worked out.
+This directory contains two kinds of reference material:
 
-## Files
+1. **Instrument & simulation ground truth** — verified DSA-110 parameters that
+   every agent session should read before writing simulation or pipeline code.
+2. **Pipeline implementation knowledge** — distillations from the original
+   `dsa110-contimg` and ASKAP VAST pipelines so developers don't re-discover
+   validated parameters or known failure modes.
+
+## Ground Truth (read this first)
+
+| File | Contents |
+|---|---|
+| [`../GROUND_TRUTH.md`](../GROUND_TRUTH.md) | **Single authoritative reference** for array geometry (117-station positions, active antenna count, ENU extents), timing (12.885 s integrations, tile structure), spectral setup (244.14 kHz channels, 768-channel bandwidth), sky model, and known simulation limitations. Updated 2026-04-17. |
+
+> **Start every simulation session by reading `docs/GROUND_TRUTH.md`.**
+> It contains the exact harness configuration to use (`n_antennas=117`) and
+> explains why common alternatives (96, 8) are wrong.
+
+## Pipeline Reference Files
 
 | File | Source | Contents |
 |---|---|---|

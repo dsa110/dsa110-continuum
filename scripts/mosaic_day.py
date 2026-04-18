@@ -202,6 +202,8 @@ def get_meridian_path(ms_path: str) -> str:
 def needs_calibration(ms_path: str) -> bool:
     """Return True if CORRECTED_DATA doesn't exist or has ratio close to 1."""
     from dsa110_continuum.adapters.casa_tables import table  # noqa: PLC0415
+    # NOTE: TypeError (e.g. wrong argument type) is intentionally NOT caught
+    # here — it indicates a programming error and should propagate to the caller.
     try:
         with table(ms_path, readonly=True, ack=False) as t:
             if "CORRECTED_DATA" not in t.colnames():

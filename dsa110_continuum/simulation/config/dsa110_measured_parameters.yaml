@@ -246,19 +246,20 @@ frequency_setup:
     version: '1.0.0'
 
   channel_width:
-    value: 325.520833
+    value: 244.140625
     unit: 'kHz'
     uncertainty: 0.001
     uncertainty_type: 'systematic'
-    measurement_date: '2025-12-05T00:00:00Z'
-    source_observations: ['Correlator configuration', 'Ground truth from /data/incoming HDF5 files']
-    derivation_method: '15.625 MHz / 48 channels per subband'
+    measurement_date: '2026-04-17T00:00:00Z'
+    source_observations: ['Correlator configuration', 'Ground truth from /data/incoming HDF5 files', 'Consistent with spectral.channel_width_hz: 244140.625']
+    derivation_method: '250 MHz correlator bandwidth / 1024 total channels = 244.140625 kHz. Per-subband bandwidth is 11.71875 MHz (48 ch × 244.14 kHz), not 15.625 MHz.'
     validation_status: 'validated'
     references:
       - 'DSA-110 correlator documentation'
-    notes: 'After combining 16 subbands: 768 channels total (16 × 48), ~325.5 kHz each'
-    last_updated: '2025-12-05T00:00:00Z'
-    version: '1.1.0'
+      - 'docs/GROUND_TRUTH.md Section 3'
+    notes: 'CORRECTED 2026-04-17: previous value of 325.520833 kHz was wrong (used 15.625 MHz/48 ch, which is a different correlator mode). Correct value 244.14 kHz matches spectral.channel_width_hz and harness.subband_freqs() output.'
+    last_updated: '2026-04-17T00:00:00Z'
+    version: '1.2.0'
 
   integration_time:
     value: 12.88
