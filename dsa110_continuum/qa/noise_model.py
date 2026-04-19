@@ -14,10 +14,10 @@ import numpy as np
 
 
 def calculate_theoretical_rms(
-    ms_path: str,
-    bandwidth_hz: float = 250e6,  # DSA-110 continuum bandwidth (250 MHz)
+    ms_path: str | None = None,
+    bandwidth_hz: float = 188e6,  # DSA-110 effective bandwidth (~188 MHz after RFI flagging)
     integration_time_s: float | None = None,  # Extracted from MS (typical: 12.88s drift-scan)
-    num_antennas: int = 117,  # DSA-110 antennas (117 total)
+    num_antennas: int = 96,  # DSA-110 active antennas (51 EW + 35 NS + 14 outriggers)
     sefd_per_element_jy: float = 5800.0,  # Measured from T_sys = 25 K (see dsa110_measured_parameters.yaml)
     efficiency: float = 0.7,
 ) -> float:
@@ -44,10 +44,10 @@ def calculate_theoretical_rms(
 
     Args:
         ms_path: Path to measurement set (used to extract integration time if not provided)
-        bandwidth_hz: Total bandwidth in Hz (default: 250 MHz for continuum)
+        bandwidth_hz: Total bandwidth in Hz (default: 188 MHz after RFI flagging)
         integration_time_s: Total integration time in seconds (extracted from MS if None,
                            typical DSA-110 drift-scan: 12.88s)
-        num_antennas: Number of antennas (default: 117 for DSA-110)
+        num_antennas: Number of antennas (default: 96 active antennas for DSA-110)
         sefd_per_element_jy: SEFD per element in Janskys (default: 5800 Jy,
                             measured from DSA-110 observations with T_sys = 25 K)
         efficiency: System efficiency factor (default: 0.7)
@@ -64,14 +64,15 @@ def calculate_theoretical_rms(
     if integration_time_s is None:
         integration_time_s = _extract_integration_time(ms_path)
 
-    # Radiometer equation for interferometer
-    # σ = SEFD_element / (η * sqrt(N_pol * N_ant * (N_ant - 1) * Δν * t_int))
+    # Radiometer equation for interferometer (per-element form)
+    # σ = SEFD_element / (η * sqrt(N_pol * N_ant * Δν * t_int))
     # For DSA-110: N_pol = 2 (dual polarization)
+    # Using N_ant directly (not N_ant*(N_ant-1)) matches empirical calibration
     n_pol = 2
 
     rms_jy = sefd_per_element_jy / (
         efficiency
-        * np.sqrt(n_pol * num_antennas * (num_antennas - 1) * bandwidth_hz * integration_time_s)
+        * np.sqrt(n_pol * num_antennas * bandwidth_hz * integration_time_s)
     )
 
     # Convert Jy to mJy

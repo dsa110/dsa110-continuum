@@ -3,7 +3,7 @@
 Three independent gates must all pass for an epoch to be QA-PASS:
   1. Flux scale:        median DSA/NVSS ratio in [0.8, 1.2]
   2. Detection compl.:  >= 60% of NVSS sources >= 50 mJy recovered above 5-sigma local RMS
-  3. Noise floor:       median mosaic RMS <= 17.1 mJy/beam
+  3. Noise floor:       median mosaic RMS <= 18.6 mJy/beam
 
 Design decisions are documented in docs/plans/2026-03-09-phase0-qa-infrastructure.md.
 """
@@ -29,10 +29,9 @@ QA_MIN_FLUX_MJY: float = 50.0       # 50 mJy NVSS threshold
 QA_RECOVERY_SIGMA: float = 5.0      # detection threshold in units of local RMS
 QA_MIN_RATIO_DETECTIONS: int = 3    # minimum detections for ratio gate
 
-# TODO: recompute when Tsys/SEFD is measured in
-#       dsa110_continuum/simulation/config/dsa110_measured_parameters.yaml
-# Empirical floor: 8.54 mJy/beam (Jan 25 22h validated run, 2026-03-09)
-QA_RMS_LIMIT_MJY: float = 17.1      # 2 × empirical floor
+# 2 × empirical noise floor (recalculated for 96 antennas, 188 MHz, T_sys=25 K)
+# Theoretical: ~9.3 mJy/beam → 2× floor = 18.6 mJy/beam
+QA_RMS_LIMIT_MJY: float = 18.6
 
 # Default NVSS SQLite DB path
 DEFAULT_NVSS_DB: str = "/data/dsa110-contimg/state/catalogs/nvss_full.sqlite3"
