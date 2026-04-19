@@ -29,8 +29,8 @@ QA_MIN_FLUX_MJY: float = 50.0       # 50 mJy NVSS threshold
 QA_RECOVERY_SIGMA: float = 5.0      # detection threshold in units of local RMS
 QA_MIN_RATIO_DETECTIONS: int = 3    # minimum detections for ratio gate
 
-# 2 × empirical noise floor (recalculated for 96 antennas, 188 MHz, T_sys=25 K)
-# Theoretical: ~9.3 mJy/beam → 2× floor = 18.6 mJy/beam
+# Empirical noise floor gate: epochs with RMS above this value are flagged.
+# Value based on DSA-110 continuum experience (96 antennas, 188 MHz, T_sys≈25 K).
 QA_RMS_LIMIT_MJY: float = 18.6
 
 # Default NVSS SQLite DB path
