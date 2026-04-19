@@ -32,7 +32,7 @@ def _cone_search(catalog_type: str, ra_center: float, dec_center: float,
         from dsa110_continuum.catalog.query import cone_search
         result = cone_search(catalog_type, ra_center, dec_center, radius_deg)
         return result if result is not None else pd.DataFrame()
-    except Exception as exc:
+    except (FileNotFoundError, OSError, RuntimeError, KeyError, ValueError) as exc:
         log.warning("Catalog query failed for %s: %s", catalog_type, exc)
         return pd.DataFrame()
 
@@ -70,24 +70,25 @@ def _match_catalog(
     detected_dec: np.ndarray,
     catalog_df: pd.DataFrame,
     match_radius_arcsec: float,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Match detected sources against a catalog DataFrame.
 
-    Returns (matched_bool, sep_arcsec, flux_mjy) arrays aligned to detected sources.
-    -1.0 sentinel means no match (stored as float in FITS; -1 used instead of NaN for FITS compat).
+    Returns (matched_bool, sep_arcsec, flux_mjy, catalog_indices) arrays
+    aligned to detected sources. -1.0 / -1 sentinel means no match.
     """
     n = len(detected_ra)
     matched = np.zeros(n, dtype=bool)
     sep = np.full(n, -1.0)
     flux = np.full(n, -1.0)
+    cat_idx = np.full(n, -1, dtype=int)   # NEW: catalog row index for each match
 
     if catalog_df is None or len(catalog_df) == 0:
-        return matched, sep, flux
+        return matched, sep, flux, cat_idx
 
     required = {"ra_deg", "dec_deg", "flux_mjy"}
     if not required.issubset(catalog_df.columns):
         log.warning("Catalog missing expected columns (need ra_deg, dec_deg, flux_mjy)")
-        return matched, sep, flux
+        return matched, sep, flux, cat_idx
 
     result = cross_match_sources(
         detected_ra=detected_ra,
@@ -100,7 +101,7 @@ def _match_catalog(
     )
 
     if result is None or len(result) == 0:
-        return matched, sep, flux
+        return matched, sep, flux, cat_idx
 
     for _, row in result.iterrows():
         di = int(row["detected_idx"])
@@ -108,8 +109,9 @@ def _match_catalog(
         matched[di] = True
         sep[di] = float(row["separation_arcsec"])
         flux[di] = float(catalog_df["flux_mjy"].iloc[ci])
+        cat_idx[di] = ci   # NEW
 
-    return matched, sep, flux
+    return matched, sep, flux, cat_idx
 
 
 def run_stage_c(
@@ -168,25 +170,16 @@ def run_stage_c(
 
     # -- Primary: master catalog match ----------------------------------------
     master_df = _cone_search("master", ra_center, dec_center, radius_deg)
-    master_matched, master_sep, master_flux = _match_catalog(
+    master_matched, master_sep, master_flux, master_cat_idx = _match_catalog(
         ra_arr, dec_arr, master_df, match_radius_arcsec
     )
 
-    # Master catalog source IDs
+    # Extract master source IDs from the match results (no second query needed)
     master_ids = np.full(len(df), "", dtype=object)
     if len(master_df) > 0 and "source_id" in master_df.columns:
-        result_ids = cross_match_sources(
-            detected_ra=ra_arr,
-            detected_dec=dec_arr,
-            catalog_ra=master_df["ra_deg"].values,
-            catalog_dec=master_df["dec_deg"].values,
-            radius_arcsec=match_radius_arcsec,
-        )
-        if result_ids is not None and len(result_ids) > 0:
-            for _, row in result_ids.iterrows():
-                di = int(row["detected_idx"])
-                ci = int(row["catalog_idx"])
-                master_ids[di] = str(master_df["source_id"].iloc[ci])
+        for i in range(len(df)):
+            if master_matched[i] and master_cat_idx[i] >= 0:
+                master_ids[i] = str(master_df["source_id"].iloc[master_cat_idx[i]])
 
     # -- Flux ratio -----------------------------------------------------------
     # Only defined where master_matched=True and master_flux > 0
@@ -202,9 +195,10 @@ def run_stage_c(
         if not np.any(unmatched_mask):
             return (np.zeros(len(df), dtype=bool),
                     np.full(len(df), -1.0),
-                    np.full(len(df), -1.0))
+                    np.full(len(df), -1.0),
+                    np.full(len(df), -1, dtype=int))
         cat_df = _cone_search(catalog_name, ra_center, dec_center, radius_deg)
-        fb_matched, fb_sep, fb_flux = _match_catalog(
+        fb_matched, fb_sep, fb_flux, _ = _match_catalog(
             ra_arr, dec_arr, cat_df, match_radius_arcsec
         )
         # Only credit fallback match for sources not already master-matched
@@ -213,11 +207,11 @@ def run_stage_c(
                 fb_matched[i] = False
                 fb_sep[i] = -1.0
                 fb_flux[i] = -1.0
-        return fb_matched, fb_sep, fb_flux
+        return fb_matched, fb_sep, fb_flux, np.full(len(df), -1, dtype=int)
 
-    nvss_matched,  nvss_sep,  nvss_flux  = _fallback("nvss")
-    first_matched, first_sep, _          = _fallback("first")
-    racs_matched,  racs_sep,  _          = _fallback("rax")
+    nvss_matched,  nvss_sep,  nvss_flux,  _ = _fallback("nvss")
+    first_matched, first_sep, _,           _ = _fallback("first")
+    racs_matched,  racs_sep,  _,           _ = _fallback("rax")  # "rax" is the cone_search key for RACS
 
     any_matched = master_matched | nvss_matched | first_matched | racs_matched
     new_candidate = (~any_matched) & (snr_arr >= new_source_snr_threshold)
@@ -238,7 +232,7 @@ def run_stage_c(
                     "Astrometry QA: median ΔRA=%.2f\" ΔDec=%.2f\" MAD_RA=%.2f\" MAD_Dec=%.2f\"",
                     dra_med.value, ddec_med.value, dra_mad.value, ddec_mad.value,
                 )
-        except Exception as exc:
+        except (ValueError, RuntimeError, AttributeError) as exc:
             log.warning("Astrometry QA failed: %s", exc)
 
     n_cand = int(np.sum(new_candidate))
