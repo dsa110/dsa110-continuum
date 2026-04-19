@@ -359,7 +359,80 @@ def run_forced_photometry(
         outliers = sum(r < 0.5 or r > 2.0 for r in valid_ratios)
         log.info("Outliers (ratio outside 0.5–2.0): %d/%d", outliers, len(valid_ratios))
 
-    return {"n_sources": len(rows), "median_ratio": median_ratio, "csv_path": out_csv}
+    # ── Noise floor validation ──────────────────────────────────────────────────
+    from astropy.stats import mad_std as _mad_std
+    _finite_qa = data[np.isfinite(data)]
+    _rms_jy = float(_mad_std(_finite_qa)) if _finite_qa.size > 0 else float("nan")
+    _rms_mjy = _rms_jy * 1000.0
+
+    noise_result: dict = {}
+    rms_ratio = float("nan")
+    noise_gate = "SKIP"
+    try:
+        from dsa110_continuum.qa.noise_model import validate_noise_prediction
+        noise_result = validate_noise_prediction(
+            image_path=mosaic_path,
+            ms_path=mosaic_path,
+            measured_rms=_rms_mjy,
+            num_antennas=96,
+            bandwidth_hz=188e6,
+            integration_time_s=12.88,
+        )
+        rms_ratio = (
+            noise_result["measured_rms"] / max(noise_result["predicted_rms"], 1e-9)
+        )
+        if rms_ratio > 3.0:
+            log.error(
+                "Noise floor FAIL: measured RMS is %.1f× theoretical (threshold 3.0×)",
+                rms_ratio,
+            )
+            noise_gate = "FAIL"
+        elif rms_ratio > 1.5:
+            log.warning(
+                "Noise floor WARN: measured RMS is %.1f× theoretical (threshold 1.5×)",
+                rms_ratio,
+            )
+            noise_gate = "WARN"
+        else:
+            noise_gate = "PASS"
+        log.info(
+            "Noise floor: measured=%.3f mJy/beam  predicted=%.3f mJy/beam  ratio=%.2f  [%s]",
+            noise_result["measured_rms"],
+            noise_result["predicted_rms"],
+            rms_ratio,
+            noise_gate,
+        )
+    except Exception as exc:
+        log.warning("Noise floor validation skipped: %s", exc)
+
+    # ── Epoch QA log ────────────────────────────────────────────────────────────
+    try:
+        from dsa110_continuum.qa.epoch_log import append_epoch_qa
+        append_epoch_qa({
+            "stage": "forced_photometry",
+            "mosaic_path": str(mosaic_path),
+            "n_sources": len(rows),
+            "median_flux_ratio": round(median_ratio, 4) if np.isfinite(median_ratio) else None,
+            "rms_mjy": round(_rms_mjy, 3) if np.isfinite(_rms_mjy) else None,
+            "theoretical_rms_mjy": round(noise_result.get("predicted_rms", float("nan")), 3)
+                                   if noise_result and np.isfinite(noise_result.get("predicted_rms", float("nan")))
+                                   else None,
+            "rms_ratio": round(rms_ratio, 3) if np.isfinite(rms_ratio) else None,
+            "noise_gate": noise_gate,
+        })
+    except Exception as exc:
+        log.debug("Epoch QA log skipped: %s", exc)
+
+    return {
+        "n_sources": len(rows),
+        "median_ratio": median_ratio,
+        "csv_path": out_csv,
+        "rms_mjy": round(_rms_mjy, 3) if np.isfinite(_rms_mjy) else float("nan"),
+        "theoretical_rms_mjy": round(noise_result.get("predicted_rms", float("nan")), 3)
+                               if noise_result else float("nan"),
+        "rms_ratio": round(rms_ratio, 3) if np.isfinite(rms_ratio) else float("nan"),
+        "noise_gate": noise_gate,
+    }
 
 
 def main():
