@@ -314,6 +314,191 @@ def check_catalog(
 
 
 # ---------------------------------------------------------------------------
+# Source-finding QA: completeness and size distribution
+# ---------------------------------------------------------------------------
+
+from dataclasses import dataclass as _dataclass
+from typing import Literal as _Literal
+
+
+@_dataclass
+class CompletenessResult:
+    """NVSS source recovery completeness result."""
+    n_nvss_reference: int
+    n_recovered: int
+    completeness_frac: float
+    gate: _Literal["PASS", "WARN", "FAIL"]
+
+
+@_dataclass
+class SizeQAResult:
+    """Source size distribution QA result."""
+    n_sources: int
+    frac_subbeam: float
+    frac_elongated: float
+    beam_a_arcsec: float
+    beam_b_arcsec: float
+    gate: _Literal["PASS", "WARN"]
+
+
+def _cone_search_nvss(
+    ra_center: float, dec_center: float, radius_deg: float
+) -> "pd.DataFrame":
+    """Query NVSS via the catalog layer (patchable in tests)."""
+    import pandas as pd
+    try:
+        from dsa110_continuum.catalog.query import cone_search
+        result = cone_search("nvss", ra_center, dec_center, radius_deg)
+        return result if result is not None else pd.DataFrame()
+    except (FileNotFoundError, OSError, RuntimeError, KeyError, ValueError) as exc:
+        log.warning("NVSS query failed: %s", exc)
+        return pd.DataFrame()
+
+
+def check_source_completeness(
+    catalog: list[SourceCatalogEntry],
+    *,
+    ra_center: float,
+    dec_center: float,
+    radius_deg: float = 2.0,
+    match_radius_arcsec: float = 15.0,
+) -> CompletenessResult:
+    """Check what fraction of bright NVSS sources was recovered by Aegean.
+
+    Parameters
+    ----------
+    catalog : list[SourceCatalogEntry]
+        Aegean detection catalog.
+    ra_center, dec_center : float
+        Field center for NVSS cone query.
+    radius_deg : float
+        Cone search radius in degrees.
+    match_radius_arcsec : float
+        Position match radius (default 15 arcsec).
+
+    Returns
+    -------
+    CompletenessResult
+    """
+    import numpy as np
+
+    nvss_df = _cone_search_nvss(ra_center, dec_center, radius_deg)
+
+    if len(nvss_df) == 0 or "ra_deg" not in nvss_df.columns:
+        log.warning("No NVSS sources in field for completeness check \u2192 WARN")
+        return CompletenessResult(
+            n_nvss_reference=0,
+            n_recovered=0,
+            completeness_frac=0.0,
+            gate="WARN",
+        )
+
+    n_nvss = len(nvss_df)
+    nvss_ra = nvss_df["ra_deg"].values.astype(float)
+    nvss_dec = nvss_df["dec_deg"].values.astype(float)
+
+    det_ra = np.array([s.ra_deg for s in catalog])
+    det_dec = np.array([s.dec_deg for s in catalog])
+
+    # Brute-force match: for each NVSS source, find nearest Aegean detection
+    recovered = 0
+    thr_deg = match_radius_arcsec / 3600.0
+    for nra, ndec in zip(nvss_ra, nvss_dec):
+        if len(det_ra) == 0:
+            break
+        cos_dec = np.cos(np.radians(ndec))
+        dra = (det_ra - nra) * cos_dec
+        ddec = det_dec - ndec
+        sep = np.sqrt(dra**2 + ddec**2)
+        if sep.min() <= thr_deg:
+            recovered += 1
+
+    completeness = recovered / n_nvss if n_nvss > 0 else 0.0
+
+    if n_nvss < 3:
+        gate: _Literal["PASS", "WARN", "FAIL"] = "WARN"
+    elif completeness >= 0.60:
+        gate = "PASS"
+    elif completeness >= 0.40:
+        gate = "WARN"
+    else:
+        gate = "FAIL"
+
+    log.info(
+        "Source completeness: %d/%d NVSS recovered (%.0f%%) [%s]",
+        recovered, n_nvss, completeness * 100, gate,
+    )
+    return CompletenessResult(
+        n_nvss_reference=n_nvss,
+        n_recovered=recovered,
+        completeness_frac=round(completeness, 4),
+        gate=gate,
+    )
+
+
+def check_size_distribution(
+    catalog: list[SourceCatalogEntry],
+    *,
+    beam_a_arcsec: float = 36.9,
+    beam_b_arcsec: float = 25.5,
+) -> SizeQAResult:
+    """Check fitted source size distribution for artefact signatures.
+
+    Parameters
+    ----------
+    catalog : list[SourceCatalogEntry]
+        Aegean detection catalog.
+    beam_a_arcsec, beam_b_arcsec : float
+        Synthesized beam axes in arcseconds (DSA-110 defaults).
+
+    Returns
+    -------
+    SizeQAResult
+    """
+    import numpy as np
+
+    n = len(catalog)
+    if n == 0:
+        return SizeQAResult(
+            n_sources=0,
+            frac_subbeam=0.0,
+            frac_elongated=0.0,
+            beam_a_arcsec=beam_a_arcsec,
+            beam_b_arcsec=beam_b_arcsec,
+            gate="WARN",
+        )
+
+    a_arr = np.array([s.a_arcsec for s in catalog])
+    b_arr = np.array([s.b_arcsec for s in catalog])
+
+    # Sub-beam: major axis < 90% of synthesized beam major axis
+    subbeam_mask = a_arr < 0.9 * beam_a_arcsec
+    frac_subbeam = float(subbeam_mask.sum()) / n
+
+    # Elongated: axis ratio > 5
+    safe_b = np.where(b_arr > 0, b_arr, np.nan)
+    ratio = a_arr / safe_b
+    elongated_mask = ratio > 5.0
+    frac_elongated = float(np.sum(elongated_mask & np.isfinite(ratio))) / n
+
+    warn = frac_subbeam > 0.05 or frac_elongated > 0.10
+    gate: _Literal["PASS", "WARN"] = "WARN" if warn else "PASS"
+
+    log.info(
+        "Size QA: %.0f%% sub-beam  %.0f%% elongated  [%s]",
+        frac_subbeam * 100, frac_elongated * 100, gate,
+    )
+    return SizeQAResult(
+        n_sources=n,
+        frac_subbeam=round(frac_subbeam, 4),
+        frac_elongated=round(frac_elongated, 4),
+        beam_a_arcsec=beam_a_arcsec,
+        beam_b_arcsec=beam_b_arcsec,
+        gate=gate,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -363,4 +548,41 @@ def run_source_finding(
             "(empty catalog — QA non-fatal, inspect output)",
             out_path,
         )
+
+    # ── Source-finding QA ─────────────────────────────────────────────────────
+    if entries:
+        try:
+            import numpy as _np
+            from astropy.io import fits as _fits
+            from astropy.wcs import WCS as _WCS
+            with _fits.open(mosaic_path) as _hdul:
+                _wcs = _WCS(_hdul[0].header).celestial
+                _ny, _nx = _hdul[0].data.squeeze().shape[-2:]
+            _corners_sky = _wcs.pixel_to_world(
+                [0, _nx - 1, 0, _nx - 1], [0, 0, _ny - 1, _ny - 1]
+            )
+            _ra_c = float(sum(c.ra.deg for c in _corners_sky) / 4)
+            _dec_c = float(sum(c.dec.deg for c in _corners_sky) / 4)
+            _comp = check_source_completeness(
+                entries, ra_center=_ra_c, dec_center=_dec_c, radius_deg=1.5
+            )
+            _size = check_size_distribution(entries)
+            try:
+                from dsa110_continuum.qa.epoch_log import append_epoch_qa
+                append_epoch_qa({
+                    "stage": "source_finding",
+                    "mosaic_path": str(mosaic_path),
+                    "n_sources_aegean": len(entries),
+                    "n_nvss_reference": _comp.n_nvss_reference,
+                    "completeness_frac": _comp.completeness_frac,
+                    "completeness_gate": _comp.gate,
+                    "frac_subbeam": _size.frac_subbeam,
+                    "frac_elongated": _size.frac_elongated,
+                    "size_gate": _size.gate,
+                })
+            except Exception:
+                pass
+        except Exception as exc:
+            log.warning("Source-finding QA skipped: %s", exc)
+
     return str(out_path)
