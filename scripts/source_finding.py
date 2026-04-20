@@ -108,6 +108,36 @@ def main() -> None:
     except Exception as exc:  # noqa: BLE001
         log.warning("Could not read mosaic quick-look stats: %s", exc)
 
+    # ── Image quality gate ────────────────────────────────────────────────────
+    try:
+        from dsa110_continuum.qa.image_gate import check_image_quality_for_source_finding
+        from dsa110_continuum.qa.epoch_log import append_epoch_qa
+        img_qa = check_image_quality_for_source_finding(
+            mosaic_path, integration_time_s=12.88
+        )
+        log.info(
+            "Image QA: DR=%.1f [%s]  RMS_ratio=%.2f [%s]  coverage=%.1f%% [%s]  overall=%s",
+            img_qa.dynamic_range, img_qa.dynamic_range_gate,
+            img_qa.rms_ratio, img_qa.rms_ratio_gate,
+            img_qa.pixel_coverage_frac * 100, img_qa.pixel_coverage_gate,
+            img_qa.overall,
+        )
+        if img_qa.overall == "FAIL" and not args.sim:
+            log.error("Image quality gate FAILED — source finding on a degraded image.")
+        append_epoch_qa({
+            "stage": "image_gate",
+            "mosaic_path": str(mosaic_path),
+            "dynamic_range": img_qa.dynamic_range,
+            "dynamic_range_gate": img_qa.dynamic_range_gate,
+            "rms_mjy": img_qa.rms_mjy,
+            "rms_ratio": img_qa.rms_ratio,
+            "rms_ratio_gate": img_qa.rms_ratio_gate,
+            "pixel_coverage_frac": img_qa.pixel_coverage_frac,
+            "overall_gate": img_qa.overall,
+        })
+    except Exception as exc:
+        log.warning("Image quality gate skipped: %s", exc)
+
     # Run full pipeline
     catalog_path = run_source_finding(
         mosaic_path,
