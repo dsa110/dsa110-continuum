@@ -169,6 +169,33 @@ def main():
     n_plots = len(list(plots_dir.glob("*.png")))
     print(f"Summary: {n_candidates} variable candidates, {n_plots} plots generated.")
 
+    # ── Variability metrics summary ───────────────────────────────────────────
+    try:
+        from dsa110_continuum.lightcurves.metrics import compute_metrics, variability_summary
+        from dsa110_continuum.lightcurves.variability_output import write_variability_summary
+
+        computed = compute_metrics(lc)
+        summary = variability_summary(computed)
+        log.info(
+            "Variability summary: %d sources  %d candidates (%.1f%%)  "
+            "median_Vs=%.2f  median_eta=%.2f",
+            summary["n_sources"],
+            summary["n_candidates"],
+            summary["fraction_variable"] * 100,
+            summary["median_Vs"],
+            summary["median_eta"],
+        )
+        for sid, row in computed.iterrows():
+            if row["is_variable_candidate"]:
+                log.warning(
+                    "Variable candidate: source_id=%s  Vs=%.2f  eta=%.2f",
+                    sid, row["Vs"], row["eta"],
+                )
+        csv_path = write_variability_summary(computed, out_dir=str(plots_dir.parent))
+        print(f"Variability summary CSV: {csv_path}")
+    except Exception as exc:
+        log.warning("Variability metrics computation failed (non-fatal): %s", exc)
+
 
 if __name__ == "__main__":
     main()
