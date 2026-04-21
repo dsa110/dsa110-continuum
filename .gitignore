@@ -40,7 +40,6 @@ docs/quarto/.quarto/
 .windsurf/
 .windsurfrules
 *.log
-
 # Python packaging artifacts
 *.egg-info/
 
