@@ -191,3 +191,134 @@ def _build_result(
         tile_source=tile_source,
         gate=gate,
     )
+
+
+def _get_tile_footprints(
+    mosaic_path: str | Path,
+    tile_dir: str | Path | None,
+) -> list[TileFootprint]:
+    """Return tile pixel footprints in mosaic coordinates via WCS reprojection.
+
+    Parameters
+    ----------
+    mosaic_path : str or Path
+        Path to the stitched mosaic FITS file.
+    tile_dir : str or Path or None
+        Directory containing tile sub-directories, e.g. ``pipeline_outputs/step5``.
+        Each tile is expected at ``<tile_dir>/tile*/wsclean_out/*image.fits``.
+
+    Returns
+    -------
+    list[TileFootprint]
+        One entry per unique tile. Empty list if tile_dir is None, absent,
+        or WCS reprojection fails for all tiles.
+    """
+    if tile_dir is None:
+        return []
+
+    tile_dir = Path(tile_dir)
+    mosaic_path = Path(mosaic_path)
+
+    try:
+        import glob as _glob
+        from astropy.io import fits as _fits
+        from astropy.wcs import WCS as _WCS
+
+        with _fits.open(mosaic_path) as _hdul:
+            mosaic_wcs = _WCS(_hdul[0].header).celestial
+            mny, mnx = _hdul[0].data.squeeze().shape[-2:]
+
+        tile_fits = sorted(_glob.glob(str(tile_dir / "tile*" / "wsclean_out" / "*image.fits")))
+        if not tile_fits:
+            log.debug("No tile FITS found under %s -- using patch grid fallback", tile_dir)
+            return []
+
+        seen: set[str] = set()
+        footprints: list[TileFootprint] = []
+
+        for tf in tile_fits:
+            tile_name = Path(tf).parent.parent.name  # e.g. "tile00"
+            if tile_name in seen:
+                continue
+            seen.add(tile_name)
+
+            try:
+                with _fits.open(tf) as _th:
+                    tile_wcs = _WCS(_th[0].header).celestial
+                    tny, tnx = _th[0].data.squeeze().shape[-2:]
+
+                # Tile corners in sky coords
+                corners_sky = tile_wcs.pixel_to_world(
+                    [0, tnx - 1, 0, tnx - 1],
+                    [0, 0, tny - 1, tny - 1],
+                )
+                # Project into mosaic pixel coordinates
+                mx, my = mosaic_wcs.world_to_pixel(corners_sky)
+                mx = np.array(
+                    [float(c) if not hasattr(c, '__len__') else float(c) for c in mx],
+                    dtype=float,
+                )
+                my = np.array(
+                    [float(c) if not hasattr(c, '__len__') else float(c) for c in my],
+                    dtype=float,
+                )
+
+                x0 = int(max(0, math.floor(mx.min())))
+                x1 = int(min(mnx - 1, math.ceil(mx.max())))
+                y0 = int(max(0, math.floor(my.min())))
+                y1 = int(min(mny - 1, math.ceil(my.max())))
+
+                # Sky center
+                ra_c = float(np.mean([s.ra.deg for s in corners_sky]))
+                dec_c = float(np.mean([s.dec.deg for s in corners_sky]))
+
+                footprints.append(TileFootprint(tile_name, x0, x1, y0, y1, ra_c, dec_c))
+                log.debug(
+                    "Tile %s footprint: x=[%d,%d] y=[%d,%d]",
+                    tile_name, x0, x1, y0, y1,
+                )
+
+            except Exception as exc:  # noqa: BLE001
+                log.debug("Skipping tile %s (WCS error): %s", tile_name, exc)
+
+        return footprints
+
+    except (FileNotFoundError, OSError) as exc:
+        log.debug("Tile footprint extraction failed: %s", exc)
+        return []
+    except Exception as exc:  # noqa: BLE001
+        log.debug("Tile footprint extraction failed (unexpected): %s", exc)
+        return []
+
+
+def _build_patch_grid(
+    mosaic_shape: tuple[int, int],
+    patch_size: int = 256,
+) -> list[TileFootprint]:
+    """Build a regular non-overlapping patch grid as a fallback.
+
+    Parameters
+    ----------
+    mosaic_shape : tuple (n_rows, n_cols) -- i.e. (NAXIS2, NAXIS1)
+    patch_size : int
+        Patch edge length in pixels (must be a power of 2).
+
+    Returns
+    -------
+    list[TileFootprint]
+        One TileFootprint per patch. ``ra_center`` / ``dec_center`` are 0.0
+        (sky coords unavailable without a mosaic WCS here).
+    """
+    nrows, ncols = mosaic_shape
+    patches: list[TileFootprint] = []
+    row_idx = 0
+    for y in range(0, nrows - patch_size + 1, patch_size):
+        col_idx = 0
+        for x in range(0, ncols - patch_size + 1, patch_size):
+            name = f"grid_{row_idx}_{col_idx}"
+            patches.append(
+                TileFootprint(name, x, x + patch_size, y, y + patch_size, 0.0, 0.0)
+            )
+            col_idx += 1
+        row_idx += 1
+    return patches

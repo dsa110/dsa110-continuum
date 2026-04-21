@@ -86,3 +86,34 @@ def test_gate_warn_on_mid_min_score():
     result = _build_result(patches, tile_source="wcs")
     assert result.gate == "WARN"
     assert math.isclose(result.min_score, 0.78, abs_tol=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Test 5: _get_tile_footprints returns empty list for missing tile_dir
+# ---------------------------------------------------------------------------
+def test_get_tile_footprints_missing_dir_returns_empty():
+    """_get_tile_footprints returns [] when tile_dir does not exist."""
+    from dsa110_continuum.qa.scattering_qa import _get_tile_footprints
+
+    result = _get_tile_footprints(
+        mosaic_path="/nonexistent/mosaic.fits",
+        tile_dir="/nonexistent/step5",
+    )
+    assert result == [], f"Expected empty list, got {result}"
+
+
+# ---------------------------------------------------------------------------
+# Test 6: _build_patch_grid produces correct number of patches for known mosaic
+# ---------------------------------------------------------------------------
+def test_build_patch_grid_coverage():
+    """_build_patch_grid on 517x1188 mosaic with patch_size=256 gives 8 patches."""
+    from dsa110_continuum.qa.scattering_qa import _build_patch_grid
+
+    patches = _build_patch_grid(mosaic_shape=(517, 1188), patch_size=256)
+    assert len(patches) == 8, f"Expected 8 patches, got {len(patches)}"
+    # All patches must be within mosaic bounds
+    for p in patches:
+        assert p.x_min >= 0 and p.x_max <= 1188
+        assert p.y_min >= 0 and p.y_max <= 517
+        assert p.x_max - p.x_min == 256
+        assert p.y_max - p.y_min == 256
