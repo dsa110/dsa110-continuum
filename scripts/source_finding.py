@@ -13,6 +13,7 @@ Usage:
 """
 import argparse
 import logging
+import math
 import sys
 from pathlib import Path
 
@@ -137,6 +138,38 @@ def main() -> None:
         })
     except Exception as exc:
         log.warning("Image quality gate skipped: %s", exc)
+
+    # ── Scattering texture QA ─────────────────────────────────────────────────
+    try:
+        from dsa110_continuum.qa.scattering_qa import check_tile_scattering
+        from dsa110_continuum.qa.epoch_log import append_epoch_qa as _append_scat_qa
+        _scat_qa = check_tile_scattering(
+            mosaic_path,
+            tile_dir=str(Path(mosaic_path).parent.parent / "step5"),
+        )
+        log.info(
+            "Scattering QA: median_score=%.4f  min_score=%.4f  [%s]  source=%s",
+            _scat_qa.median_score, _scat_qa.min_score, _scat_qa.gate, _scat_qa.tile_source,
+        )
+        if _scat_qa.gate == "FAIL":
+            log.error(
+                "Scattering QA FAIL: most anomalous patch is %s (score=%.4f)",
+                _scat_qa.min_score_patch.tile_name, _scat_qa.min_score,
+            )
+        _append_scat_qa({
+            "stage": "scattering_qa",
+            "mosaic_path": str(mosaic_path),
+            "median_score": round(_scat_qa.median_score, 4)
+                            if not math.isnan(_scat_qa.median_score) else None,
+            "min_score": round(_scat_qa.min_score, 4)
+                         if not math.isnan(_scat_qa.min_score) else None,
+            "min_score_tile": _scat_qa.min_score_patch.tile_name,
+            "n_patches": len(_scat_qa.patch_scores),
+            "tile_source": _scat_qa.tile_source,
+            "gate": _scat_qa.gate,
+        })
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Scattering texture QA skipped: %s", exc)
 
     # Run full pipeline
     catalog_path = run_source_finding(

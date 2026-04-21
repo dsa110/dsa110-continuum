@@ -137,6 +137,13 @@ docs = [
 matvis = ["matvis"]
 # GPU-accelerated tests and runtime (CuPy). For a specific CUDA version use e.g. cupy-cuda12x.
 gpu = ["cupy"]
+qa = [
+    # scattering transform (DSA-2000 fork -- not on PyPI):
+    #   git clone https://gitlab.com/dsa-2000/dat/scattering_transform
+    #   pip install appdirs && pip install -e ./scattering_transform
+    "appdirs",
+    "torch",
+]
 
 [project.scripts]
 dsa110 = "dsa110_contimg.interfaces.cli.main:cli"
