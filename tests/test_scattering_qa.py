@@ -117,3 +117,56 @@ def test_build_patch_grid_coverage():
         assert p.y_min >= 0 and p.y_max <= 517
         assert p.x_max - p.x_min == 256
         assert p.y_max - p.y_min == 256
+
+
+# ---------------------------------------------------------------------------
+# Test 7 (slow): full check_tile_scattering on a real synthetic mosaic FITS
+# ---------------------------------------------------------------------------
+@pytest.mark.slow
+def test_check_tile_scattering_integration():
+    """Full pipeline: synthetic 512x512 FITS -> check_tile_scattering -> score in [0,1]."""
+    import tempfile
+    import os
+    from astropy.io import fits
+
+    # Build a synthetic 512x512 FITS (2 patches of 256x256 fit exactly)
+    rng = np.random.default_rng(0)
+    data = rng.standard_normal((512, 512)).astype(np.float32) * 0.01
+    # Inject a bright source
+    data[256, 256] = 1.0
+
+    with tempfile.NamedTemporaryFile(suffix=".fits", delete=False) as f:
+        mosaic_path = f.name
+    try:
+        hdr = fits.Header()
+        hdr["NAXIS"] = 2
+        hdr["NAXIS1"] = 512
+        hdr["NAXIS2"] = 512
+        hdr["CDELT1"] = -20.0 / 3600.0
+        hdr["CDELT2"] = 20.0 / 3600.0
+        hdr["CRPIX1"] = 256.0
+        hdr["CRPIX2"] = 256.0
+        hdr["CRVAL1"] = 344.0
+        hdr["CRVAL2"] = 16.15
+        hdr["CTYPE1"] = "RA---TAN"
+        hdr["CTYPE2"] = "DEC--TAN"
+        fits.writeto(mosaic_path, data, hdr, overwrite=True)
+
+        from dsa110_continuum.qa.scattering_qa import check_tile_scattering
+        result = check_tile_scattering(
+            mosaic_path,
+            tile_dir=None,          # force grid fallback
+            patch_size=256,
+            J=7,
+            L=4,
+            synthesis_steps=20,     # fewer steps for speed in testing
+        )
+        assert result.gate in ("PASS", "WARN", "FAIL")
+        assert len(result.patch_scores) == 4   # 512/256 x 512/256 = 4 patches
+        assert result.tile_source == "grid"
+        for ps in result.patch_scores:
+            assert math.isnan(ps.score) or 0.0 <= ps.score <= 1.0, (
+                f"Score out of range: {ps.score}"
+            )
+    finally:
+        os.unlink(mosaic_path)

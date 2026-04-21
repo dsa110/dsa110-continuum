@@ -322,3 +322,120 @@ def _build_patch_grid(
             col_idx += 1
         row_idx += 1
     return patches
+
+
+def check_tile_scattering(
+    mosaic_path: str | Path,
+    tile_dir: str | Path | None = None,
+    patch_size: int = 256,
+    J: int = 7,
+    L: int = 4,
+    synthesis_steps: int = 50,
+) -> ScatteringQAResult:
+    """Score mosaic image texture quality using the scattering transform.
+
+    Extracts patches from the mosaic (WCS-derived tile footprints if
+    ``tile_dir`` is provided and valid, otherwise a regular grid), scores
+    each patch by comparing its scattering covariance coefficients against
+    a phase-randomized synthesis of itself, and aggregates into a gated result.
+
+    Parameters
+    ----------
+    mosaic_path : str or Path
+        Path to the stitched mosaic FITS file.
+    tile_dir : str or Path or None
+        Directory containing step5 tile sub-directories. Pass None to use
+        the patch grid fallback unconditionally.
+    patch_size : int
+        Square patch edge length in pixels (default 256; must be power of 2).
+    J : int
+        Number of dyadic scales (default 7; max for 256-px patches).
+    L : int
+        Number of orientations (default 4).
+    synthesis_steps : int
+        Gradient steps for phase-randomized synthesis (default 50).
+
+    Returns
+    -------
+    ScatteringQAResult
+        Dataclass with per-patch scores, summary statistics, and an overall
+        PASS / WARN / FAIL gate.
+    """
+    mosaic_path = Path(mosaic_path)
+
+    # -- Load mosaic once -----------------------------------------------------
+    from astropy.io import fits as _fits
+    with _fits.open(mosaic_path) as _hdul:
+        mosaic_data = _hdul[0].data.squeeze().astype(np.float32)
+
+    mosaic_shape = mosaic_data.shape  # (NAXIS2, NAXIS1)
+
+    # -- Determine patch regions ----------------------------------------------
+    footprints = _get_tile_footprints(mosaic_path, tile_dir)
+    tile_source: Literal["wcs", "grid"]
+
+    if footprints:
+        tile_source = "wcs"
+        # Extract one patch per tile footprint -- largest square that fits
+        patch_regions: list[TileFootprint] = []
+        for fp in footprints:
+            w = fp.x_max - fp.x_min
+            h = fp.y_max - fp.y_min
+            side = min(w, h, patch_size)
+            # Round down to nearest multiple of patch_size
+            side = (side // patch_size) * patch_size
+            if side < patch_size:
+                log.debug(
+                    "Tile %s footprint too small for a %d-px patch -- skipping",
+                    fp.tile_name, patch_size,
+                )
+                continue
+            x0 = fp.x_min + (w - side) // 2
+            y0 = fp.y_min + (h - side) // 2
+            patch_regions.append(
+                TileFootprint(fp.tile_name, x0, x0 + side, y0, y0 + side, fp.ra_center, fp.dec_center)
+            )
+        if not patch_regions:
+            log.warning("WCS footprints found but all too small -- falling back to patch grid")
+            footprints = []
+
+    if not footprints:
+        tile_source = "grid"
+        patch_regions = _build_patch_grid(mosaic_shape, patch_size)
+
+    # -- Score each patch -----------------------------------------------------
+    stc = _get_scattering_calculator(patch_size, J, L)
+    patch_scores: list[PatchScore] = []
+
+    for fp in patch_regions:
+        patch = mosaic_data[fp.y_min:fp.y_max, fp.x_min:fp.x_max]
+        n_finite = int(np.isfinite(patch).sum())
+
+        try:
+            s = score_patch(patch, stc, synthesis_steps=synthesis_steps)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("score_patch failed for %s: %s", fp.tile_name, exc)
+            s = float("nan")
+
+        patch_scores.append(PatchScore(
+            tile_name=fp.tile_name,
+            x_min=fp.x_min, x_max=fp.x_max,
+            y_min=fp.y_min, y_max=fp.y_max,
+            score=s,
+            n_finite=n_finite,
+        ))
+        log.info(
+            "Scattering QA patch %s: score=%.4f  (%d finite pixels)",
+            fp.tile_name,
+            s if not math.isnan(s) else -1.0,
+            n_finite,
+        )
+
+    result = _build_result(patch_scores, tile_source)
+    log.info(
+        "Scattering QA overall: median=%.4f  min=%.4f  gate=%s  source=%s",
+        result.median_score if not math.isnan(result.median_score) else -1.0,
+        result.min_score if not math.isnan(result.min_score) else -1.0,
+        result.gate, result.tile_source,
+    )
+    return result
