@@ -26,12 +26,11 @@ def test_score_patch_identical_coefficients():
     mock_cov = {"for_synthesis_iso": torch.tensor(coef[None, :])}
 
     mock_stc = MagicMock()
+    mock_stc.J = 7
+    mock_stc.L = 4
     mock_stc.scattering_cov.return_value = mock_cov
 
-    with patch("dsa110_continuum.qa.scattering_qa.scattering") as mock_scat:
-        # synthesis returns a copy of the patch — same stats
-        mock_scat.synthesis.return_value = patch_data[None, :]
-        mock_scat.Scattering2d.return_value = mock_stc
+    with patch("scattering.synthesis", return_value=patch_data[None, :]):
         score = score_patch(patch_data, mock_stc, synthesis_steps=5)
 
     assert math.isclose(score, 1.0, abs_tol=1e-5), f"Expected 1.0, got {score}"
@@ -48,8 +47,7 @@ def test_score_patch_nan_heavy_returns_nan():
     patch_data[:50, :50] = 1.0  # only 50*50/256*256 = 3.8% finite
 
     mock_stc = MagicMock()
-    with patch("dsa110_continuum.qa.scattering_qa.scattering"):
-        result = score_patch(patch_data, mock_stc, synthesis_steps=5)
+    result = score_patch(patch_data, mock_stc, synthesis_steps=5)
 
     assert math.isnan(result), f"Expected nan, got {result}"
 

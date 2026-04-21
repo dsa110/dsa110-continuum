@@ -21,7 +21,6 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
-import scattering
 
 log = logging.getLogger(__name__)
 
@@ -74,9 +73,10 @@ class ScatteringQAResult:
 
 def _get_scattering_calculator(npix: int, J: int, L: int):
     """Return a cached Scattering2d instance for (npix, J, L)."""
+    import scattering as _scattering
     key = (npix, J, L)
     if key not in _STC_CACHE:
-        _STC_CACHE[key] = scattering.Scattering2d(
+        _STC_CACHE[key] = _scattering.Scattering2d(
             M=npix, N=npix, J=J, L=L, device="cpu", wavelets="morlet"
         )
     return _STC_CACHE[key]
@@ -107,6 +107,7 @@ def score_patch(
         Returns float('nan') if >50% of pixels are non-finite.
     """
     import torch
+    import scattering as _scattering
 
     # Guard: too many NaNs -> uninformative score
     n_finite = int(np.isfinite(patch).sum())
@@ -122,7 +123,7 @@ def score_patch(
     co_orig = cov_orig["for_synthesis_iso"].detach().cpu().numpy().squeeze()
 
     # Synthesize phase-randomized reference with identical scattering stats
-    syn = scattering.synthesis(
+    syn = _scattering.synthesis(
         estimator_name="s_cov_iso",
         target=img,
         mode="image",
