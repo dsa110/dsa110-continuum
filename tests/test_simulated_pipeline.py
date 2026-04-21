@@ -144,7 +144,7 @@ class TestSimulatedCalibration:
         return ms_path, cal_path, tmp_path
 
     def test_calibrate_creates_corrected_data_column(self, corrupted_ms):
-        import casacore.tables as ct
+        from dsa110_continuum.adapters import casa_tables as ct
         from dsa110_continuum.simulation.pipeline import SimulatedPipeline
         ms_path, cal_path, work_dir = corrupted_ms
         p = SimulatedPipeline(work_dir=work_dir)
@@ -167,7 +167,7 @@ class TestSimulatedCalibration:
         phases dominate when sources are off-centre, making that metric
         uninformative.  Instead we check that the amplitude correction works.
         """
-        import casacore.tables as ct
+        from dsa110_continuum.adapters import casa_tables as ct
         import numpy as np
         import pyradiosky
         import pyuvdata
@@ -206,7 +206,8 @@ class TestSimulatedCalibration:
         uv = pyuvdata.UVData()
         uv.read(str(corrupted))
         ms_path = tmp_path / "target_phctr.ms"
-        uv.write_ms(str(ms_path))
+        from dsa110_continuum.adapters.ms_write import uvdata_to_ms
+        uvdata_to_ms(uv, ms_path)
 
         # Calibrate
         p = SimulatedPipeline(work_dir=tmp_path)
