@@ -517,3 +517,69 @@ class TestEpochOrchestratorDefaults:
         assert orch.qa.max_flux_scale_error == pytest.approx(0.05)
         assert orch.qa.min_completeness == pytest.approx(0.95)
         assert orch.qa.max_noise_factor == pytest.approx(1.2)
+
+
+# ---------------------------------------------------------------------------
+# Test: scattering overview PNG auto-saved on WARN/REJECT epoch
+# ---------------------------------------------------------------------------
+def test_run_epoch_saves_scattering_png_on_warn(tmp_path):
+    """EpochOrchestrator calls plot_scattering_overview on WARN/REJECT epochs."""
+    import math
+    import numpy as np
+    from unittest.mock import patch
+    from dsa110_continuum.pipeline.epoch_orchestrator import EpochOrchestrator, EpochDecision
+    from dsa110_continuum.qa.scattering_qa import PatchScore, _build_result
+
+    pytest.importorskip("astropy")
+
+    # Build a synthetic WARN ScatteringQAResult
+    patches = [
+        PatchScore("grid_0_0", 0, 256, 0, 256, score=0.92, n_finite=65536),
+        PatchScore("grid_0_1", 256, 512, 0, 256, score=0.78, n_finite=65536),
+    ]
+    warn_result = _build_result(patches, tile_source="grid")  # min=0.78 -> WARN
+
+    # Synthetic mosaic FITS in tmp_path
+    mosaic_dir = tmp_path / "epoch"
+    mosaic_dir.mkdir()
+    mosaic_path = str(mosaic_dir / "epoch_mosaic.fits")
+
+    from astropy.io import fits as af
+    data = np.random.default_rng(0).standard_normal((64, 64)).astype(np.float32) * 1e-3
+    af.writeto(mosaic_path, data, overwrite=True)
+
+    orch = EpochOrchestrator(output_dir=str(tmp_path), db_path=None)
+
+    expected_png = str(mosaic_dir / "scattering_overview.png")
+
+    with (
+        patch.object(orch, "_write_mosaic", return_value=mosaic_path),
+        patch(
+            "dsa110_continuum.pipeline.epoch_orchestrator._check_tile_scattering",
+            return_value=warn_result,
+        ),
+        patch(
+            "dsa110_continuum.pipeline.epoch_orchestrator._plot_scattering_overview",
+        ) as mock_plot,
+        patch(
+            "dsa110_continuum.pipeline.epoch_orchestrator._SCATTERING_AVAILABLE",
+            True,
+        ),
+        patch(
+            "dsa110_continuum.pipeline.epoch_orchestrator._qa_status_to_decision",
+            return_value=EpochDecision.WARN,
+        ),
+    ):
+        result = orch.run_epoch(
+            "2026-01-25T22:00:00",
+            tile_paths=["dummy.fits"],
+            write_mosaic=True,
+        )
+
+    # Decision may be WARN or REJECT depending on QA thresholds with this data
+    assert result.decision in (EpochDecision.WARN, EpochDecision.REJECT, EpochDecision.ACCEPT)
+    mock_plot.assert_called_once()
+    # First positional arg to plot_scattering_overview is the ScatteringQAResult
+    assert mock_plot.call_args[0][0] is warn_result
+    # Second positional arg is the PNG path
+    assert str(mock_plot.call_args[0][1]) == expected_png

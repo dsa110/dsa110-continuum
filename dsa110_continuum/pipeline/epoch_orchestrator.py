@@ -45,6 +45,18 @@ from dsa110_continuum.qa.composite import (
     theoretical_rms_jyb,
 )
 
+# Optional scattering QA dependencies — absent when scattering library not installed
+try:
+    from dsa110_continuum.qa.scattering_qa import check_tile_scattering as _check_tile_scattering
+    from dsa110_continuum.visualization.scattering_diagnostics import (
+        plot_scattering_overview as _plot_scattering_overview,
+    )
+    _SCATTERING_AVAILABLE = True
+except ImportError:
+    _SCATTERING_AVAILABLE = False
+    _check_tile_scattering = None  # type: ignore[assignment]
+    _plot_scattering_overview = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -506,6 +518,33 @@ class EpochOrchestrator:
             n_tiles,
             measured_rms,
         )
+
+        # ── Step 3b: Scattering texture QA + diagnostic PNG for WARN/REJECT ──
+        scattering_png_path: Optional[str] = None
+        if (
+            mosaic_path is not None
+            and decision in (EpochDecision.WARN, EpochDecision.REJECT)
+            and _SCATTERING_AVAILABLE
+        ):
+            try:
+                _scat_result = _check_tile_scattering(mosaic_path)
+                _out_dir = Path(mosaic_path).parent
+                scattering_png_path = str(_out_dir / "scattering_overview.png")
+                _plot_scattering_overview(_scat_result, scattering_png_path)
+                notes.append(
+                    f"Scattering QA: gate={_scat_result.gate} "
+                    f"median={_scat_result.median_score:.4f} "
+                    f"min={_scat_result.min_score:.4f} "
+                    f"png={scattering_png_path}"
+                )
+                logger.info(
+                    "Scattering QA PNG saved: %s (gate=%s)",
+                    scattering_png_path,
+                    _scat_result.gate,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Scattering QA skipped: %s", exc)
+                notes.append(f"Scattering QA skipped: {exc}")
 
         result = EpochRunResult(
             epoch_id=epoch_id,
