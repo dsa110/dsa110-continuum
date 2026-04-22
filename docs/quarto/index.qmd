@@ -23,6 +23,9 @@ extending or debugging it.
 
 | Page | What it covers |
 |------|---------------|
+| [DSACamera Live Monitor](dsacamera-live-monitor.qmd) | Near-real-time incoming-file monitor generated from `dsacamera` |
+| [H23 Live Monitor](h23-live-monitor.qmd) | Near-real-time incoming-file monitor generated from `h23` |
+| [H17 Live Monitor](h17-live-monitor.qmd) | Near-real-time incoming-file monitor generated from `h17` |
 | [Agent Onboarding](agent-onboarding.qmd) | How a new AI tool or collaborator should acquire trustworthy pipeline context |
 | [Pipeline Overview](pipeline-overview.qmd) | Stages, entry points, calibration, imaging, mosaicking, known silent-failure risks |
 | [Array Reference](array-reference.qmd) | 117-station ENU layout, synthesized beam at Dec +16°, simulation parameters, harness configuration |
