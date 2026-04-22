@@ -22,18 +22,84 @@ permissions:
 
 # Only one deployment at a time; keep in-progress runs to avoid partial churn.
 concurrency:
-  group: "pages-live-monitor"
+  group: "pages-multi-monitor"
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build monitor + render Quarto site
-    runs-on: [self-hosted, linux, dsacamera]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+  pr_render:
+    name: Render docs for PR
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: "1.6.39"
+
+      - name: Render site
+        working-directory: docs/quarto
+        run: quarto render
+
+  prepare_monitor_matrix:
+    name: Prepare monitor matrix
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.prepare.outputs.matrix }}
+      enabled_slugs: ${{ steps.prepare.outputs.enabled_slugs }}
+      all_slugs: ${{ steps.prepare.outputs.all_slugs }}
+    env:
+      H23_ENABLED: ${{ vars.MONITOR_H23_ENABLED }}
+      H17_ENABLED: ${{ vars.MONITOR_H17_ENABLED }}
+    steps:
+      - name: Build enabled monitor matrix
+        id: prepare
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          def as_bool(value: str) -> bool:
+              return str(value).strip().lower() == "true"
+
+          monitors = [
+              {"monitor_slug": "dsacamera", "runner_label": "dsacamera", "source_root": "/data/incoming"},
+          ]
+          if as_bool(os.getenv("H23_ENABLED", "false")):
+              monitors.append({"monitor_slug": "h23", "runner_label": "h23", "source_root": "/data/incoming"})
+          if as_bool(os.getenv("H17_ENABLED", "false")):
+              monitors.append({"monitor_slug": "h17", "runner_label": "h17", "source_root": "/data/incoming"})
+
+          matrix = {"include": monitors}
+          enabled_slugs = ",".join(m["monitor_slug"] for m in monitors)
+          all_slugs = "dsacamera,h23,h17"
+
+          out = Path(os.environ["GITHUB_OUTPUT"])
+          with out.open("a", encoding="utf-8") as f:
+              f.write(f"matrix={json.dumps(matrix)}\n")
+              f.write(f"enabled_slugs={enabled_slugs}\n")
+              f.write(f"all_slugs={all_slugs}\n")
+          PY
+
+  build_monitors:
+    name: Build ${{ matrix.monitor_slug }} monitor
+    runs-on: [self-hosted, linux, "${{ matrix.runner_label }}"]
+    needs: prepare_monitor_matrix
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare_monitor_matrix.outputs.matrix) }}
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       MONITOR_OUT_DIR: .monitor_site
-      SITE_OUT_DIR: docs/quarto/_site
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,14 +109,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Verify Quarto is available
-        shell: bash
-        run: |
-          set -euo pipefail
-          quarto --version
-
       - name: Install dsacamera-monitor scanner
-        if: github.event_name != 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
@@ -61,16 +120,14 @@ jobs:
           fi
 
       - name: Build monitor output
-        if: github.event_name != 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
           rm -rf "${MONITOR_OUT_DIR}"
           mkdir -p "${MONITOR_OUT_DIR}"
-          dsacamera-incoming-scan --root /data/incoming --out "${MONITOR_OUT_DIR}"
+          dsacamera-incoming-scan --root "${{ matrix.source_root }}" --out "${MONITOR_OUT_DIR}"
 
       - name: Validate monitor artifact contract
-        if: github.event_name != 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
@@ -106,25 +163,82 @@ jobs:
               raise SystemExit("manifest options.no_stat must be false for KPI size/mtime support")
           PY
 
+      - name: Upload monitor artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitor-${{ matrix.monitor_slug }}
+          path: ${{ env.MONITOR_OUT_DIR }}
+
+  aggregate_site:
+    name: Render docs and aggregate monitors
+    needs: [prepare_monitor_matrix, build_monitors]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      SITE_OUT_DIR: docs/quarto/_site
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: "1.6.39"
+
       - name: Render site
         working-directory: docs/quarto
         run: quarto render
 
-      - name: Mount monitor under _site/dsacamera-live-monitor
-        if: github.event_name != 'pull_request'
+      - name: Download monitor artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: monitor-*
+          path: .monitor_artifacts
+          merge-multiple: false
+
+      - name: Mount monitor artifacts under _site
+        env:
+          ENABLED_SLUGS: ${{ needs.prepare_monitor_matrix.outputs.enabled_slugs }}
+          ALL_SLUGS: ${{ needs.prepare_monitor_matrix.outputs.all_slugs }}
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "${SITE_OUT_DIR}/dsacamera-live-monitor"
-          cp -r "${MONITOR_OUT_DIR}/." "${SITE_OUT_DIR}/dsacamera-live-monitor/"
+          for slug in ${ALL_SLUGS//,/ }; do
+            src=".monitor_artifacts/monitor-${slug}"
+            mkdir -p "${SITE_OUT_DIR}/${slug}-live-monitor"
+            if [[ -f "${src}/index.html" && -f "${src}/manifest.json" ]]; then
+              cp -r "${src}/." "${SITE_OUT_DIR}/${slug}-live-monitor/"
+            elif [[ ",${ENABLED_SLUGS}," == *",${slug},"* ]]; then
+              echo "Missing expected artifact at ${src}"
+              exit 1
+            else
+              cat > "${SITE_OUT_DIR}/${slug}-live-monitor/index.html" <<EOF
+              <!doctype html>
+              <html lang="en">
+              <head><meta charset="utf-8"><title>${slug} live monitor unavailable</title></head>
+              <body style="font-family: sans-serif; padding: 2rem;">
+                <h1>${slug} live monitor unavailable</h1>
+                <p>This monitor is not enabled yet in CI. Set repository variable MONITOR_${slug^^}_ENABLED=true and ensure a matching self-hosted runner label exists.</p>
+              </body>
+              </html>
+              EOF
+            fi
+          done
 
       - name: Validate mounted monitor output
-        if: github.event_name != 'pull_request'
+        env:
+          ENABLED_SLUGS: ${{ needs.prepare_monitor_matrix.outputs.enabled_slugs }}
+          ALL_SLUGS: ${{ needs.prepare_monitor_matrix.outputs.all_slugs }}
         shell: bash
         run: |
           set -euo pipefail
-          [[ -f "${SITE_OUT_DIR}/dsacamera-live-monitor/index.html" ]] || { echo "Mounted site missing index.html"; exit 1; }
-          [[ -f "${SITE_OUT_DIR}/dsacamera-live-monitor/manifest.json" ]] || { echo "Mounted site missing manifest.json"; exit 1; }
+          for slug in ${ALL_SLUGS//,/ }; do
+            [[ -f "${SITE_OUT_DIR}/${slug}-live-monitor/index.html" ]] || { echo "Mounted site missing ${slug} index.html"; exit 1; }
+            if [[ ",${ENABLED_SLUGS}," == *",${slug},"* ]]; then
+              [[ -f "${SITE_OUT_DIR}/${slug}-live-monitor/manifest.json" ]] || { echo "Mounted site missing ${slug} manifest.json"; exit 1; }
+            fi
+          done
 
       - name: Upload Pages artifact
         # Only upload on main branch (never on PRs or non-main dispatches)
@@ -135,7 +249,7 @@ jobs:
 
   deploy:
     name: Deploy to GitHub Pages
-    needs: build
+    needs: aggregate_site
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:

@@ -1,0 +1,18 @@
+---
+title: "H23 Live Monitor"
+---
+
+This page embeds the near-real-time `/data/incoming` inventory monitor generated on the `h23` runner.
+Scheduled refreshes target a 5-minute cadence (plus GitHub Pages deployment latency).
+
+If the embedded dashboard does not load in your browser, open it directly:
+[Open H23 live monitor](h23-live-monitor/).
+
+<iframe
+  src="h23-live-monitor/"
+  title="H23 Live Monitor"
+  style="width: 100%; min-height: 900px; border: 1px solid #d8d8d8; border-radius: 6px;"
+  loading="lazy"
+  referrerpolicy="no-referrer"
+>
+</iframe>
