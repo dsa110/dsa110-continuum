@@ -49,10 +49,11 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Quarto
-        uses: quarto-dev/quarto-actions/setup@v2
-        with:
-          version: "1.6.39" # pin to the version that authored the existing _site
+      - name: Verify Quarto is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          quarto --version
 
       - name: Install dsacamera-monitor scanner
         if: github.event_name != 'pull_request'
