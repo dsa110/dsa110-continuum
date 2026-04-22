@@ -31,7 +31,7 @@ def test_score_patch_identical_coefficients():
     mock_stc.scattering_cov.return_value = mock_cov
 
     with patch("scattering.synthesis", return_value=patch_data[None, :]):
-        score = score_patch(patch_data, mock_stc, synthesis_steps=5)
+        score, _co_orig, _co_syn = score_patch(patch_data, mock_stc, synthesis_steps=5)
 
     assert math.isclose(score, 1.0, abs_tol=1e-5), f"Expected 1.0, got {score}"
 
@@ -47,9 +47,11 @@ def test_score_patch_nan_heavy_returns_nan():
     patch_data[:50, :50] = 1.0  # only 50*50/256*256 = 3.8% finite
 
     mock_stc = MagicMock()
-    result = score_patch(patch_data, mock_stc, synthesis_steps=5)
+    result, co_orig, co_syn = score_patch(patch_data, mock_stc, synthesis_steps=5)
 
     assert math.isnan(result), f"Expected nan, got {result}"
+    assert co_orig is None
+    assert co_syn is None
 
 
 # ---------------------------------------------------------------------------
@@ -170,3 +172,66 @@ def test_check_tile_scattering_integration():
             )
     finally:
         os.unlink(mosaic_path)
+
+
+# ---------------------------------------------------------------------------
+# Test 8: score_patch returns coefficient vectors alongside score
+# ---------------------------------------------------------------------------
+def test_score_patch_returns_coefficients():
+    """score_patch returns (score, co_orig, co_syn) where co_orig/co_syn are ndarray."""
+    import torch
+    from dsa110_continuum.qa.scattering_qa import score_patch
+
+    rng = np.random.default_rng(7)
+    patch_data = rng.standard_normal((256, 256)).astype(np.float32)
+
+    coef_orig = np.ones(371, dtype=np.float32) * 2.0
+    coef_syn  = np.ones(371, dtype=np.float32) * 2.0
+    call_count = {"n": 0}
+
+    def mock_scattering_cov(img):
+        call_count["n"] += 1
+        coef = coef_orig if call_count["n"] == 1 else coef_syn
+        return {"for_synthesis_iso": torch.tensor(coef[None, :])}
+
+    mock_stc = MagicMock()
+    mock_stc.J = 7
+    mock_stc.L = 4
+    mock_stc.scattering_cov.side_effect = mock_scattering_cov
+
+    with patch("scattering.synthesis", return_value=patch_data[None, :]):
+        score, co_orig, co_syn = score_patch(patch_data, mock_stc, synthesis_steps=5)
+
+    assert isinstance(co_orig, np.ndarray), "co_orig should be ndarray"
+    assert isinstance(co_syn, np.ndarray), "co_syn should be ndarray"
+    assert co_orig.shape == (371,)
+    assert co_syn.shape == (371,)
+    assert math.isclose(score, 1.0, abs_tol=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# Test 9: PatchScore.to_dict excludes numpy fields; None default works
+# ---------------------------------------------------------------------------
+def test_patch_score_to_dict_excludes_numpy():
+    """PatchScore.to_dict() omits co_orig/co_syn; None default leaves them absent."""
+    from dsa110_continuum.qa.scattering_qa import PatchScore
+
+    # With no coefficients (default)
+    ps = PatchScore("t0", 0, 256, 0, 256, score=0.9, n_finite=65536)
+    assert ps.co_orig is None
+    assert ps.co_syn is None
+    d = ps.to_dict()
+    assert "co_orig" not in d
+    assert "co_syn" not in d
+    assert d["tile_name"] == "t0"
+    assert d["score"] == 0.9
+
+    # With coefficients stored — to_dict still excludes them
+    arr = np.ones(371, dtype=np.float32)
+    ps2 = PatchScore("t1", 0, 256, 0, 256, score=0.8, n_finite=65536,
+                     co_orig=arr, co_syn=arr * 0.9)
+    assert ps2.co_orig is not None
+    d2 = ps2.to_dict()
+    assert "co_orig" not in d2
+    assert "co_syn" not in d2
+    assert d2["score"] == 0.8

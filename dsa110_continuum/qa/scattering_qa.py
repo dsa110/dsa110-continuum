@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import math
 from collections import namedtuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -54,6 +54,20 @@ class PatchScore:
     y_max: int
     score: float        # normalized dot product in [0, 1]; nan if patch unusable
     n_finite: int       # number of finite pixels in patch
+    co_orig: "np.ndarray | None" = field(default=None, repr=False)
+    co_syn:  "np.ndarray | None" = field(default=None, repr=False)
+
+    def to_dict(self) -> dict:
+        """Return a JSON-serialisable dict, excluding numpy array fields."""
+        return {
+            "tile_name": self.tile_name,
+            "x_min": self.x_min,
+            "x_max": self.x_max,
+            "y_min": self.y_min,
+            "y_max": self.y_max,
+            "score": self.score,
+            "n_finite": self.n_finite,
+        }
 
 
 @dataclass
@@ -86,7 +100,7 @@ def score_patch(
     patch: np.ndarray,
     stc,
     synthesis_steps: int = 50,
-) -> float:
+) -> "tuple[float, np.ndarray | None, np.ndarray | None]":
     """Compute scattering similarity score for one square patch.
 
     Parameters
@@ -101,10 +115,15 @@ def score_patch(
 
     Returns
     -------
-    float
-        Normalized dot product of scattering covariance coefficients:
-        1.0 = texture fully self-consistent, 0.0 = maximally anomalous.
-        Returns float('nan') if >50% of pixels are non-finite.
+    tuple of (score, co_orig, co_syn)
+        score : float
+            Normalized dot product in [0, 1]; nan if patch unusable.
+        co_orig : np.ndarray or None
+            Raw scattering covariance vector for the original patch.
+            None if the patch was rejected (>50% NaN).
+        co_syn : np.ndarray or None
+            Raw scattering covariance vector for the synthesized reference.
+            None if the patch was rejected.
     """
     import torch
     import scattering as _scattering
@@ -112,7 +131,7 @@ def score_patch(
     # Guard: too many NaNs -> uninformative score
     n_finite = int(np.isfinite(patch).sum())
     if n_finite < patch.size * 0.5:
-        return float("nan")
+        return float("nan"), None, None
 
     # Replace NaNs with zero (scattering library requires finite input)
     clean = np.where(np.isfinite(patch), patch, 0.0).astype(np.float32)
@@ -144,9 +163,9 @@ def score_patch(
     norm_orig = np.linalg.norm(co_orig)
     norm_syn = np.linalg.norm(co_syn)
     if norm_orig < 1e-12 or norm_syn < 1e-12:
-        return float("nan")
+        return float("nan"), None, None
 
-    return float(np.dot(co_orig / norm_orig, co_syn / norm_syn))
+    return float(np.dot(co_orig / norm_orig, co_syn / norm_syn)), co_orig, co_syn
 
 
 def _build_result(
@@ -411,8 +430,10 @@ def check_tile_scattering(
         patch = mosaic_data[fp.y_min:fp.y_max, fp.x_min:fp.x_max]
         n_finite = int(np.isfinite(patch).sum())
 
+        co_orig_arr: "np.ndarray | None" = None
+        co_syn_arr:  "np.ndarray | None" = None
         try:
-            s = score_patch(patch, stc, synthesis_steps=synthesis_steps)
+            s, co_orig_arr, co_syn_arr = score_patch(patch, stc, synthesis_steps=synthesis_steps)
         except Exception as exc:  # noqa: BLE001
             log.warning("score_patch failed for %s: %s", fp.tile_name, exc)
             s = float("nan")
@@ -423,6 +444,8 @@ def check_tile_scattering(
             y_min=fp.y_min, y_max=fp.y_max,
             score=s,
             n_finite=n_finite,
+            co_orig=co_orig_arr,
+            co_syn=co_syn_arr,
         ))
         log.info(
             "Scattering QA patch %s: score=%.4f  (%d finite pixels)",
