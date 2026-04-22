@@ -11,52 +11,139 @@ on:
     paths:
       - "docs/quarto/**"
       - ".github/workflows/docs.yml"
-  workflow_dispatch: # allow manual trigger from the Actions tab
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      full_scan:
+        description: "Run full scan (with stat metadata). Default false uses --no-stat."
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Only one deployment at a time; don't cancel in-progress so a partial
-# deploy isn't left dangling.
+# Only one deployment at a time; keep in-progress runs to avoid partial churn.
 concurrency:
-  group: "pages"
+  group: "pages-live-monitor"
   cancel-in-progress: false
 
 jobs:
   build:
-    name: Render Quarto site
-    runs-on: ubuntu-latest
+    name: Build monitor + render Quarto site
+    runs-on: [self-hosted, linux, dsacamera]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      MONITOR_OUT_DIR: .monitor_site
+      SITE_OUT_DIR: docs/quarto/_site
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
       - name: Install Quarto
         uses: quarto-dev/quarto-actions/setup@v2
         with:
           version: "1.6.39" # pin to the version that authored the existing _site
 
-      # Quarto uses Mermaid (bundled) and no Python/R execution in this site,
-      # so no additional language runtimes are needed.
+      - name: Install dsacamera-monitor scanner
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -d "/data/jfaber/dsacamera-monitor" ]]; then
+            python -m pip install "/data/jfaber/dsacamera-monitor"
+          else
+            python -m pip install "git+https://github.com/dsa110/dsacamera-monitor.git"
+          fi
+
+      - name: Build monitor output
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "${MONITOR_OUT_DIR}"
+          mkdir -p "${MONITOR_OUT_DIR}"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.full_scan }}" == "true" ]]; then
+            dsacamera-incoming-scan --root /data/incoming --out "${MONITOR_OUT_DIR}"
+          else
+            dsacamera-incoming-scan --root /data/incoming --out "${MONITOR_OUT_DIR}" --no-stat
+          fi
+
+      - name: Validate monitor artifact contract
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -f "${MONITOR_OUT_DIR}/index.html" ]] || { echo "Missing index.html"; exit 1; }
+          [[ -f "${MONITOR_OUT_DIR}/manifest.json" ]] || { echo "Missing manifest.json"; exit 1; }
+          [[ -d "${MONITOR_OUT_DIR}/css" ]] || { echo "Missing css/"; exit 1; }
+          [[ -d "${MONITOR_OUT_DIR}/js" ]] || { echo "Missing js/"; exit 1; }
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest_path = Path(".monitor_site/manifest.json")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          required = {
+              "schema_version",
+              "generated_at",
+              "source_root",
+              "totals",
+              "by_day",
+              "by_beam",
+              "gaps",
+              "freshness",
+              "options",
+          }
+          missing = sorted(required - set(manifest.keys()))
+          if missing:
+              raise SystemExit(f"manifest missing keys: {missing}")
+          if not isinstance(manifest.get("schema_version"), int):
+              raise SystemExit("manifest schema_version must be int")
+          if not isinstance(manifest.get("by_day"), list):
+              raise SystemExit("manifest by_day must be list")
+          PY
 
       - name: Render site
         working-directory: docs/quarto
         run: quarto render
 
-      - name: Upload Pages artifact
-        # Only upload on pushes to main (not on PRs)
+      - name: Mount monitor under _site/live-monitor
         if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${SITE_OUT_DIR}/live-monitor"
+          cp -r "${MONITOR_OUT_DIR}/." "${SITE_OUT_DIR}/live-monitor/"
+
+      - name: Validate mounted monitor output
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -f "${SITE_OUT_DIR}/live-monitor/index.html" ]] || { echo "Mounted site missing index.html"; exit 1; }
+          [[ -f "${SITE_OUT_DIR}/live-monitor/manifest.json" ]] || { echo "Mounted site missing manifest.json"; exit 1; }
+
+      - name: Upload Pages artifact
+        # Only upload on main branch (never on PRs or non-main dispatches)
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@v3
         with:
-          path: docs/quarto/_site
+          path: ${{ env.SITE_OUT_DIR }}
 
   deploy:
     name: Deploy to GitHub Pages
     needs: build
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

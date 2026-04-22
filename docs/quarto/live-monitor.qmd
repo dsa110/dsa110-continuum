@@ -1,0 +1,18 @@
+---
+title: "Live Monitor"
+---
+
+This page embeds the near-real-time `/data/incoming` inventory monitor generated on the `dsacamera` runner.
+Scheduled refreshes target a 5-minute cadence (plus GitHub Pages deployment latency).
+
+If the embedded dashboard does not load in your browser, open it directly:
+[Open live monitor](live-monitor/).
+
+<iframe
+  src="live-monitor/"
+  title="DSA Camera Live Monitor"
+  style="width: 100%; min-height: 900px; border: 1px solid #d8d8d8; border-radius: 6px;"
+  loading="lazy"
+  referrerpolicy="no-referrer"
+>
+</iframe>
