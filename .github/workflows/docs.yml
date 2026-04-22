@@ -14,12 +14,6 @@ on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
-    inputs:
-      full_scan:
-        description: "Run full scan (with stat metadata). Default false uses --no-stat."
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -73,11 +67,7 @@ jobs:
           set -euo pipefail
           rm -rf "${MONITOR_OUT_DIR}"
           mkdir -p "${MONITOR_OUT_DIR}"
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.full_scan }}" == "true" ]]; then
-            dsacamera-incoming-scan --root /data/incoming --out "${MONITOR_OUT_DIR}"
-          else
-            dsacamera-incoming-scan --root /data/incoming --out "${MONITOR_OUT_DIR}" --no-stat
-          fi
+          dsacamera-incoming-scan --root /data/incoming --out "${MONITOR_OUT_DIR}"
 
       - name: Validate monitor artifact contract
         if: github.event_name != 'pull_request'
@@ -112,6 +102,8 @@ jobs:
               raise SystemExit("manifest schema_version must be int")
           if not isinstance(manifest.get("by_day"), list):
               raise SystemExit("manifest by_day must be list")
+          if manifest.get("options", {}).get("no_stat", True):
+              raise SystemExit("manifest options.no_stat must be false for KPI size/mtime support")
           PY
 
       - name: Render site
