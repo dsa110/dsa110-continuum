@@ -64,11 +64,16 @@ pipeline logic.
 
 - When pipeline or repo state is uncertain, prefer tests, diagnostics, or direct
   filesystem inspection over asking the user to supply answers the tools can
-  determine.
+  determine; ground recommendations in concrete repo/runtime evidence.
 
 ## Learned Workspace Facts
 
 - Do not track Measurement Sets or other large stage/correlation data in Git.
+- Treat calibration-table provenance as a hard requirement: prefer valid same-date
+  tables, then generated calibrator tables, then validated borrowed tables; fail
+  loudly if no viable option exists.
+- If a sibling `dsa110-antpos` checkout is available, `ant_ids*.csv` files are
+  useful for cross-checking antenna-selection behavior.
 - Sliding-window mosaic settings (tiles per mosaic product and stride between
   products) describe how successive mosaic outputs are built from the tile
   stream, not the number of tiles whose beams significantly overlap one sky

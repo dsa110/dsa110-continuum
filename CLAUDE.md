@@ -115,11 +115,32 @@ New dates must be indexed first: dsa110 index add --start YYYY-MM-DD --end YYYY-
 
 ## Calibration tables
 
-Cal tables live at /stage/dsa110-contimg/ms/{date}T22:26:05_0~23.{b,g}.
-Until per-date calibration runs are available, symlink new dates from 2026-01-25:
-  ln -s /stage/dsa110-contimg/ms/2026-01-25T22:26:05_0~23.b /stage/dsa110-contimg/ms/YYYY-MM-DDT22:26:05_0~23.b
-  ln -s /stage/dsa110-contimg/ms/2026-01-25T22:26:05_0~23.g /stage/dsa110-contimg/ms/YYYY-MM-DDT22:26:05_0~23.g
-Then run batch_pipeline.py with --cal-date 2026-01-25 to use those tables for a different --date.
+Operational policy for obtaining BP/G tables (in order):
+1. Use valid same-date tables if present.
+2. Else generate from a primary flux calibrator transit (preferred).
+3. Else generate from a bright-source VLA catalog fallback.
+4. Else borrow nearest validated tables (strip-compatible provenance required).
+5. Else fail loudly (do not silently proceed with unknown calibration provenance).
+
+This order should remain aligned with calibration implementation behavior; if code
+changes, update this section in the same PR.
+
+Flux/provenance semantics:
+- Primary-calibrator path is model-anchored (`flux_anchor=perley_butler_primary`).
+- Bright-source fallback is catalog-anchored (`flux_anchor=vla_catalog`).
+- Provenance records `selection_pool` (`primary` or `bright_fallback`) and
+  `flux_anchor` for downstream QA/photometry interpretation.
+
+Declination selection note:
+- If `obs_dec_deg` is known, fallback search is Dec-local (configured tolerance).
+- If `obs_dec_deg` is unknown, fallback search uses full-sky Dec range to avoid
+  false "no usable calibrator" failures.
+
+Legacy compatibility:
+- Existing table discovery still supports legacy names like
+  `/stage/dsa110-contimg/ms/{date}T22:26:05_0~23.{b,g}`.
+- Manual symlinking from a validated reference date is acceptable for operational
+  recovery, but must satisfy strip-compatibility validation before use.
 
 ## Reference docs
 
