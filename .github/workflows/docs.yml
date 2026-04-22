@@ -110,21 +110,21 @@ jobs:
         working-directory: docs/quarto
         run: quarto render
 
-      - name: Mount monitor under _site/live-monitor
+      - name: Mount monitor under _site/dsacamera-live-monitor
         if: github.event_name != 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "${SITE_OUT_DIR}/live-monitor"
-          cp -r "${MONITOR_OUT_DIR}/." "${SITE_OUT_DIR}/live-monitor/"
+          mkdir -p "${SITE_OUT_DIR}/dsacamera-live-monitor"
+          cp -r "${MONITOR_OUT_DIR}/." "${SITE_OUT_DIR}/dsacamera-live-monitor/"
 
       - name: Validate mounted monitor output
         if: github.event_name != 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
-          [[ -f "${SITE_OUT_DIR}/live-monitor/index.html" ]] || { echo "Mounted site missing index.html"; exit 1; }
-          [[ -f "${SITE_OUT_DIR}/live-monitor/manifest.json" ]] || { echo "Mounted site missing manifest.json"; exit 1; }
+          [[ -f "${SITE_OUT_DIR}/dsacamera-live-monitor/index.html" ]] || { echo "Mounted site missing index.html"; exit 1; }
+          [[ -f "${SITE_OUT_DIR}/dsacamera-live-monitor/manifest.json" ]] || { echo "Mounted site missing manifest.json"; exit 1; }
 
       - name: Upload Pages artifact
         # Only upload on main branch (never on PRs or non-main dispatches)

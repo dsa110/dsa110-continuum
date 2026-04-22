@@ -13,7 +13,7 @@ website:
     style: "docked"
     contents:
       - index.qmd
-      - live-monitor.qmd
+      - dsacamera-live-monitor.qmd
       - agent-onboarding.qmd
       - pipeline-overview.qmd
       - array-reference.qmd
