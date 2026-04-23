@@ -54,7 +54,6 @@ jobs:
       enabled_slugs: ${{ steps.prepare.outputs.enabled_slugs }}
       all_slugs: ${{ steps.prepare.outputs.all_slugs }}
     env:
-      H23_ENABLED: ${{ vars.MONITOR_H23_ENABLED }}
       H17_ENABLED: ${{ vars.MONITOR_H17_ENABLED }}
     steps:
       - name: Build enabled monitor matrix
@@ -73,15 +72,12 @@ jobs:
           monitors = [
               {"monitor_slug": "dsacamera", "runner_label": "dsacamera", "source_root": "/data/incoming"},
           ]
-          if as_bool(os.getenv("H23_ENABLED", "false")):
-              # h23 writes correlator HDF5s to a ZFS pool, not /data/incoming.
-              monitors.append({"monitor_slug": "h23", "runner_label": "h23", "source_root": "/dataz/dsa110/operations/correlator"})
           if as_bool(os.getenv("H17_ENABLED", "false")):
               monitors.append({"monitor_slug": "h17", "runner_label": "h17", "source_root": "/data/incoming"})
 
           matrix = {"include": monitors}
           enabled_slugs = ",".join(m["monitor_slug"] for m in monitors)
-          all_slugs = "dsacamera,h23,h17"
+          all_slugs = "dsacamera,h17"
 
           out = Path(os.environ["GITHUB_OUTPUT"])
           with out.open("a", encoding="utf-8") as f:

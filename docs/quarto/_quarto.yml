@@ -14,7 +14,6 @@ website:
     contents:
       - index.qmd
       - dsacamera-live-monitor.qmd
-      - h23-live-monitor.qmd
       - h17-live-monitor.qmd
       - agent-onboarding.qmd
       - pipeline-overview.qmd
