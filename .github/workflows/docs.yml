@@ -169,7 +169,10 @@ jobs:
   aggregate_site:
     name: Render docs and aggregate monitors
     needs: [prepare_monitor_matrix, build_monitors]
-    if: github.event_name != 'pull_request'
+    # Run whenever the matrix prepared successfully, even if some per-host legs
+    # failed. Failed legs render a placeholder so the rest of the site still
+    # publishes -- one bad host should not take down the whole inventory page.
+    if: always() && needs.prepare_monitor_matrix.result == 'success' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -198,6 +201,7 @@ jobs:
         env:
           ENABLED_SLUGS: ${{ needs.prepare_monitor_matrix.outputs.enabled_slugs }}
           ALL_SLUGS: ${{ needs.prepare_monitor_matrix.outputs.all_slugs }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         shell: bash
         run: |
           set -euo pipefail
@@ -207,8 +211,23 @@ jobs:
             if [[ -f "${src}/index.html" && -f "${src}/manifest.json" ]]; then
               cp -r "${src}/." "${SITE_OUT_DIR}/${slug}-live-monitor/"
             elif [[ ",${ENABLED_SLUGS}," == *",${slug},"* ]]; then
-              echo "Missing expected artifact at ${src}"
-              exit 1
+              # Enabled slug but no artifact: the per-host build leg failed.
+              # Emit a placeholder instead of hard-failing so the rest of the
+              # site still deploys; flag the failure via a workflow warning so
+              # it surfaces in the run summary.
+              echo "::warning title=Monitor leg failed::No artifact for enabled slug '${slug}'; rendering placeholder. See build_monitors job for details."
+              cat > "${SITE_OUT_DIR}/${slug}-live-monitor/index.html" <<EOF
+              <!doctype html>
+              <html lang="en">
+              <head><meta charset="utf-8"><title>${slug} live monitor unavailable (build failed)</title></head>
+              <body style="font-family: sans-serif; padding: 2rem;">
+                <h1>${slug} live monitor unavailable</h1>
+                <p>The ${slug} monitor build failed for this run; no fresh artifact is available.</p>
+                <p>See the <a href="${RUN_URL}">Actions run</a> (job "Build ${slug} monitor") for the specific failure.</p>
+                <p>This page will self-heal on the next successful run (scheduled every 5 minutes).</p>
+              </body>
+              </html>
+              EOF
             else
               cat > "${SITE_OUT_DIR}/${slug}-live-monitor/index.html" <<EOF
               <!doctype html>
@@ -230,10 +249,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Every slug must have an index.html (real artifact or placeholder).
+          # manifest.json presence is no longer required for enabled slugs:
+          # enabled+mounted legs already passed the per-leg contract check
+          # upstream; enabled+placeholder legs legitimately have no manifest.
           for slug in ${ALL_SLUGS//,/ }; do
-            [[ -f "${SITE_OUT_DIR}/${slug}-live-monitor/index.html" ]] || { echo "Mounted site missing ${slug} index.html"; exit 1; }
-            if [[ ",${ENABLED_SLUGS}," == *",${slug},"* ]]; then
-              [[ -f "${SITE_OUT_DIR}/${slug}-live-monitor/manifest.json" ]] || { echo "Mounted site missing ${slug} manifest.json"; exit 1; }
+            dest="${SITE_OUT_DIR}/${slug}-live-monitor"
+            [[ -f "${dest}/index.html" ]] || { echo "Mounted site missing ${slug} index.html"; exit 1; }
+            if [[ -f "${dest}/manifest.json" ]]; then
+              echo "  ${slug}: real artifact mounted"
+            elif [[ ",${ENABLED_SLUGS}," == *",${slug},"* ]]; then
+              echo "  ${slug}: placeholder (enabled but build leg failed)"
+            else
+              echo "  ${slug}: placeholder (not enabled)"
             fi
           done
 
