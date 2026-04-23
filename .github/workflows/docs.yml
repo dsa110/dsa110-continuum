@@ -74,7 +74,8 @@ jobs:
               {"monitor_slug": "dsacamera", "runner_label": "dsacamera", "source_root": "/data/incoming"},
           ]
           if as_bool(os.getenv("H23_ENABLED", "false")):
-              monitors.append({"monitor_slug": "h23", "runner_label": "h23", "source_root": "/data/incoming"})
+              # h23 writes correlator HDF5s to a ZFS pool, not /data/incoming.
+              monitors.append({"monitor_slug": "h23", "runner_label": "h23", "source_root": "/dataz/dsa110/operations/correlator"})
           if as_bool(os.getenv("H17_ENABLED", "false")):
               monitors.append({"monitor_slug": "h17", "runner_label": "h17", "source_root": "/data/incoming"})
 
