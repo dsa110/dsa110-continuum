@@ -110,11 +110,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -d "/data/jfaber/dsacamera-monitor" ]]; then
-            python -m pip install "/data/jfaber/dsacamera-monitor"
-          else
-            python -m pip install "git+https://github.com/dsa110/dsacamera-monitor.git"
-          fi
+          python -m pip install ./tools/dsacamera-monitor
 
       - name: Build monitor output
         shell: bash
@@ -217,28 +213,28 @@ jobs:
               # it surfaces in the run summary.
               echo "::warning title=Monitor leg failed::No artifact for enabled slug '${slug}'; rendering placeholder. See build_monitors job for details."
               cat > "${SITE_OUT_DIR}/${slug}-live-monitor/index.html" <<EOF
-              <!doctype html>
-              <html lang="en">
-              <head><meta charset="utf-8"><title>${slug} live monitor unavailable (build failed)</title></head>
-              <body style="font-family: sans-serif; padding: 2rem;">
-                <h1>${slug} live monitor unavailable</h1>
-                <p>The ${slug} monitor build failed for this run; no fresh artifact is available.</p>
-                <p>See the <a href="${RUN_URL}">Actions run</a> (job "Build ${slug} monitor") for the specific failure.</p>
-                <p>This page will self-heal on the next successful run (scheduled every 5 minutes).</p>
-              </body>
-              </html>
-              EOF
+          <!doctype html>
+          <html lang="en">
+          <head><meta charset="utf-8"><title>${slug} live monitor unavailable (build failed)</title></head>
+          <body style="font-family: sans-serif; padding: 2rem;">
+            <h1>${slug} live monitor unavailable</h1>
+            <p>The ${slug} monitor build failed for this run; no fresh artifact is available.</p>
+            <p>See the <a href="${RUN_URL}">Actions run</a> (job "Build ${slug} monitor") for the specific failure.</p>
+            <p>This page will self-heal on the next successful run (scheduled every 5 minutes).</p>
+          </body>
+          </html>
+          EOF
             else
               cat > "${SITE_OUT_DIR}/${slug}-live-monitor/index.html" <<EOF
-              <!doctype html>
-              <html lang="en">
-              <head><meta charset="utf-8"><title>${slug} live monitor unavailable</title></head>
-              <body style="font-family: sans-serif; padding: 2rem;">
-                <h1>${slug} live monitor unavailable</h1>
-                <p>This monitor is not enabled yet in CI. Set repository variable MONITOR_${slug^^}_ENABLED=true and ensure a matching self-hosted runner label exists.</p>
-              </body>
-              </html>
-              EOF
+          <!doctype html>
+          <html lang="en">
+          <head><meta charset="utf-8"><title>${slug} live monitor unavailable</title></head>
+          <body style="font-family: sans-serif; padding: 2rem;">
+            <h1>${slug} live monitor unavailable</h1>
+            <p>This monitor is not enabled yet in CI. Set repository variable MONITOR_${slug^^}_ENABLED=true and ensure a matching self-hosted runner label exists.</p>
+          </body>
+          </html>
+          EOF
             fi
           done
 

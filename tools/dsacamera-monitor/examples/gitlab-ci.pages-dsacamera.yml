@@ -1,0 +1,29 @@
+# Example GitLab CI for GitLab Pages when a runner on dsacamera can see /data/incoming.
+#
+# Copy relevant parts into your project's .gitlab-ci.yml, or include this file.
+#
+# Requirements:
+# - GitLab Pages enabled on code.deepsynoptic.org
+# - A runner registered on the dsacamera host with tag "dsacamera" (change to match your setup)
+#
+# Resulting URL: see your project's Deploy → Pages (often *.pages.<gitlab-host>/...)
+
+workflow:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+pages:
+  stage: deploy
+  tags:
+    - dsacamera
+  # Remove `image` if this job runs on a shell executor on dsacamera with Python + scan already installed.
+  image: python:3.11-slim
+  before_script:
+    - pip install --no-cache-dir .
+  script:
+    - dsacamera-incoming-scan --root /data/incoming --out public --no-stat
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

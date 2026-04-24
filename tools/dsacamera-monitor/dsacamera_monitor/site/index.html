@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DSA-110 /data/incoming inventory</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+</head>
+<body>
+  <header class="header">
+    <h1>DSA-110 incoming data</h1>
+    <p class="subtitle">Static snapshot from <code>manifest.json</code> (regenerate with <code>dsacamera-incoming-scan</code>).</p>
+  </header>
+
+  <section class="kpis" id="kpis">
+    <div class="kpi"><span class="label">Files</span><span class="value" id="kpi-files">—</span></div>
+    <div class="kpi"><span class="label">Total size</span><span class="value" id="kpi-bytes">—</span></div>
+    <div class="kpi"><span class="label">Source</span><span class="value kpi-path" id="kpi-root">—</span></div>
+    <div class="kpi"><span class="label">Generated (UTC)</span><span class="value" id="kpi-generated">—</span></div>
+    <div class="kpi"><span class="label">Filename span (UTC)</span><span class="value" id="kpi-span">—</span></div>
+    <div class="kpi"><span class="label">mtime span (UTC)</span><span class="value" id="kpi-mtime">—</span></div>
+  </section>
+
+  <section class="panel">
+    <h2>Daily file count</h2>
+    <div class="chart-wrap"><canvas id="chart-daily" height="120"></canvas></div>
+  </section>
+
+  <section class="panel">
+    <h2>Cumulative files</h2>
+    <div class="chart-wrap"><canvas id="chart-cum" height="120"></canvas></div>
+  </section>
+
+  <section class="panel">
+    <h2>Coverage heatmap (by day)</h2>
+    <p class="hint">Darker = more files that day. Scroll horizontally if the range is long.</p>
+    <div class="heatmap-wrap" id="heatmap"></div>
+    <div class="heatmap-axis-wrap" id="heatmap-axis-wrap">
+      <div class="heatmap-axis" id="heatmap-axis"></div>
+    </div>
+    <div class="heatmap-legend" id="heatmap-legend"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Largest gaps (no files)</h2>
+    <p class="hint">Gaps between the first and last day that have at least one file.</p>
+    <ol id="gaps-list" class="gaps"></ol>
+  </section>
+
+  <section class="panel">
+    <h2>Last active days</h2>
+    <table class="table" id="table-recent">
+      <thead><tr><th>Date (UTC)</th><th>Files</th><th>Size</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section class="panel">
+    <h2>By beam</h2>
+    <p class="hint">From <code>_sbNN</code> in filenames.</p>
+    <table class="table" id="table-beam">
+      <thead><tr><th>sb</th><th>Files</th><th>Size</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <footer class="footer">
+    <p>Schema <span id="schema-ver">—</span> · <span id="opt-no-stat"></span></p>
+  </footer>
+
+  <script src="js/dashboard.js"></script>
+</body>
+</html>

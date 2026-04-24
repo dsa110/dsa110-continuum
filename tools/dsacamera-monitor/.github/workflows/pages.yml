@@ -1,0 +1,76 @@
+# GitHub Pages deployment using a self-hosted runner on dsacamera.
+# This job performs a real scan of /data/incoming and deploys _site.
+
+name: Build and deploy GitHub Pages
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "dsacamera_monitor/**"
+      - "scripts/**"
+      - ".github/workflows/pages.yml"
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      full_scan:
+        description: "Collect file sizes/mtime (slower). If false, uses --no-stat for faster updates."
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-live
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build static site from /data/incoming
+    runs-on: [self-hosted, linux, dsacamera]
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package
+        run: pip install .
+
+      - name: Build _site with real scan
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.full_scan }}" == "true" ]]; then
+            echo "Running full scan with stat() metadata"
+            dsacamera-incoming-scan --root /data/incoming --out _site
+          else
+            echo "Running fast scan with --no-stat for near-real-time updates"
+            dsacamera-incoming-scan --root /data/incoming --out _site --no-stat
+          fi
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
