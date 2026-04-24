@@ -17,6 +17,7 @@ from pathlib import Path
 
 
 def main() -> int:
+    """Copy static site to a build directory for manual Pages upload."""
     root = Path(__file__).resolve().parent.parent
     site_src = root / "dsacamera_monitor" / "site"
     if not site_src.is_dir():

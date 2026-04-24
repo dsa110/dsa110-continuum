@@ -1,4 +1,4 @@
-"""Manifest schema v1 for DSA-110 incoming HDF5 inventory."""
+"""Manifest schema for DSA-110 incoming HDF5 inventory (schema v2)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from typing import Any
 
 from dsacamera_monitor import MANIFEST_SCHEMA_VERSION
 from dsacamera_monitor.gaps import compute_gaps
-
 
 FILENAME_PATTERN = (
     r"^(?P<ymd>\d{4}-\d{2}-\d{2})T(?P<hms>\d{2}:\d{2}:\d{2})_sb(?P<beam>\d+)\.hdf5$"
@@ -31,18 +30,27 @@ def try_parse_filename(name: str) -> tuple[datetime, int] | None:
 
 @dataclass
 class DayAgg:
+    """Per-calendar-day aggregates (file sizes and optional Dec from HDF5)."""
+
     count: int = 0
     bytes: int = 0
+    dec_min: float | None = None
+    dec_max: float | None = None
+    decs_rounded: set[float] = field(default_factory=set)
 
 
 @dataclass
 class BeamAgg:
+    """Per-beam (subband) file aggregates."""
+
     count: int = 0
     bytes: int = 0
 
 
 @dataclass
 class ScanAccum:
+    """Full scan result before JSON serialization."""
+
     by_day: dict[date, DayAgg] = field(default_factory=dict)
     by_beam: dict[int, BeamAgg] = field(default_factory=dict)
     latest_filename_dt: datetime | None = None
@@ -51,6 +59,15 @@ class ScanAccum:
     earliest_mtime: datetime | None = None
     file_count: int = 0
     total_bytes: int = 0
+    files_with_dec: int = 0
+    files_dec_missing: int = 0
+    files_dec_read_failed: int = 0
+    files_pointing_read_failed: int = 0
+    global_dec_min: float | None = None
+    global_dec_max: float | None = None
+    global_decs_rounded: set[float] = field(default_factory=set)
+    timeseries_rows: list[dict[str, Any]] = field(default_factory=list)
+    timeseries_truncated: bool = False
 
 
 def build_manifest(
@@ -58,9 +75,11 @@ def build_manifest(
     source_root: str,
     accum: ScanAccum,
     no_stat: bool,
+    hdf5_metadata: bool = False,
+    pointing_timeseries: bool = False,
     generated_at: datetime | None = None,
 ) -> dict[str, Any]:
-    """Assemble the version-1 manifest dict from scan aggregates."""
+    """Assemble the schema-v2 manifest dict from scan aggregates."""
     gen = generated_at or datetime.now(timezone.utc)
     if gen.tzinfo is None:
         gen = gen.replace(tzinfo=timezone.utc)
@@ -73,6 +92,10 @@ def build_manifest(
             row["bytes"] = agg.bytes
         else:
             row["bytes"] = 0
+        if hdf5_metadata and agg.decs_rounded:
+            row["dec_deg_min"] = agg.dec_min
+            row["dec_deg_max"] = agg.dec_max
+            row["dec_unique_count"] = len(agg.decs_rounded)
         by_day_rows.append(row)
 
     days_with_files = set(accum.by_day.keys())
@@ -116,11 +139,17 @@ def build_manifest(
         ),
     }
 
+    options: dict[str, Any] = {
+        "no_stat": no_stat,
+        "hdf5_metadata": hdf5_metadata,
+        "pointing_timeseries": pointing_timeseries,
+    }
+
     manifest: dict[str, Any] = {
         "schema_version": MANIFEST_SCHEMA_VERSION,
         "generated_at": gen.isoformat().replace("+00:00", "Z"),
         "source_root": source_root,
-        "options": {"no_stat": no_stat},
+        "options": options,
         "totals": {
             "file_count": accum.file_count,
             "total_bytes": accum.total_bytes if not no_stat else 0,
@@ -130,4 +159,21 @@ def build_manifest(
         "gaps": gap_list,
         "freshness": freshness,
     }
+    if hdf5_metadata:
+        manifest["pointing"] = {
+            "dec_deg_min": accum.global_dec_min,
+            "dec_deg_max": accum.global_dec_max,
+            "unique_strip_count": len(accum.global_decs_rounded),
+            "files_with_dec": accum.files_with_dec,
+            "files_dec_missing": accum.files_dec_missing,
+            "files_dec_read_failed": accum.files_dec_read_failed,
+            "files_pointing_read_failed": accum.files_pointing_read_failed,
+            "sampled": False,
+        }
+    if pointing_timeseries and accum.timeseries_rows:
+        manifest["pointing_timeseries"] = {
+            "file": "pointing_timeseries.json",
+            "row_count": len(accum.timeseries_rows),
+            "truncated": accum.timeseries_truncated,
+        }
     return manifest

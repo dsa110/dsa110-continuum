@@ -45,7 +45,7 @@ def compute_gaps(
 
 
 def gaps_from_by_day_rows(by_day: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Helper for tests: derive gaps from manifest-style by_day rows."""
+    """Build a gap list from manifest-style by_day rows (test helper)."""
     days_with_files: set[date] = set()
     for row in by_day:
         days_with_files.add(date.fromisoformat(row["date"]))
