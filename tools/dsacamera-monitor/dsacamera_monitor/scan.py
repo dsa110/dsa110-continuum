@@ -10,7 +10,7 @@ import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from dsacamera_monitor.hdf5_pointing import read_phase_center_dec_deg, read_pointing_row
+from dsacamera_monitor.hdf5_pointing import DEC_ROUND_DIGITS, read_pointing_metadata
 from dsacamera_monitor.manifest import (
     BeamAgg,
     DayAgg,
@@ -21,7 +21,7 @@ from dsacamera_monitor.manifest import (
 
 
 def _record_dec(accum: ScanAccum, day: date, dec: float) -> None:
-    dr = round(dec, 3)
+    dr = round(dec, DEC_ROUND_DIGITS)
     accum.global_decs_rounded.add(dr)
     if accum.global_dec_min is None:
         accum.global_dec_min = dec
@@ -96,15 +96,28 @@ def scan_directory(
             accum.file_count += 1
 
             if hdf5_metadata:
-                dec = read_phase_center_dec_deg(full_path)
-                if dec is None:
-                    accum.files_dec_missing += 1
-                else:
+                meta = read_pointing_metadata(full_path)
+                if meta["dec_status"] == "ok":
+                    dec = meta["dec_deg"]
+                    assert dec is not None
                     accum.files_with_dec += 1
                     _record_dec(accum, day, dec)
+                elif meta["dec_status"] == "missing":
+                    accum.files_dec_missing += 1
+                else:
+                    accum.files_dec_read_failed += 1
 
                 if pointing_timeseries and len(accum.timeseries_rows) < pointing_timeseries_max_files:
-                    accum.timeseries_rows.append(read_pointing_row(full_path))
+                    accum.timeseries_rows.append(
+                        {
+                            "filename": meta["filename"],
+                            "t_mid_utc": meta["t_mid_utc"],
+                            "ra_deg": meta["ra_deg"],
+                            "dec_deg": meta["dec_deg"],
+                        }
+                    )
+                if meta["pointing_status"] == "read_failed":
+                    accum.files_pointing_read_failed += 1
 
     if pointing_timeseries and hdf5_metadata and accum.file_count > len(accum.timeseries_rows):
         accum.timeseries_truncated = True
@@ -121,7 +134,7 @@ def build_out(
     hdf5_metadata: bool = True,
     pointing_timeseries: bool = False,
     pointing_timeseries_max_files: int = 5000,
-) -> Path:
+) -> tuple[Path, bool]:
     """Scan, write manifest.json, optional pointing_timeseries.json, copy static site into out_dir."""
     accum = scan_directory(
         root,
@@ -144,11 +157,13 @@ def build_out(
         json.dump(manifest, f, indent=2)
         f.write("\n")
 
+    wrote_timeseries = False
     if accum.timeseries_rows:
         ts_path = out_dir / "pointing_timeseries.json"
         with open(ts_path, "w", encoding="utf-8") as f:
             json.dump(accum.timeseries_rows, f, indent=2)
             f.write("\n")
+        wrote_timeseries = True
 
     if site_dir is None:
         site_dir = Path(__file__).resolve().parent / "site"
@@ -160,7 +175,7 @@ def build_out(
             else:
                 shutil.copytree(child, dest, dirs_exist_ok=True)
 
-    return manifest_path
+    return manifest_path, wrote_timeseries
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -223,7 +238,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
 
-    build_out(
+    _, wrote_timeseries = build_out(
         root=root,
         out_dir=args.out,
         no_stat=args.no_stat,
@@ -233,7 +248,7 @@ def main(argv: list[str] | None = None) -> int:
         pointing_timeseries_max_files=max(1, args.pointing_timeseries_max_files),
     )
     print(f"Wrote {args.out / 'manifest.json'}")
-    if pointing_ts:
+    if pointing_ts and wrote_timeseries:
         print(f"Wrote {args.out / 'pointing_timeseries.json'}")
     return 0
 

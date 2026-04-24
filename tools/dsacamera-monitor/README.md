@@ -9,7 +9,7 @@ This repository was split out from `dsa110-FLITS`; the CLI was renamed from `dsa
 `manifest.json` is **schema version 2** (v1 is still valid for old snapshots). Key fields:
 
 | Field | Description |
-|--------|-------------|
+| -------- | ----------- |
 | `schema_version` | Integer (currently `2`) |
 | `generated_at` | ISO8601 UTC when the scan finished |
 | `source_root` | Directory that was scanned |
@@ -21,7 +21,7 @@ This repository was split out from `dsa110-FLITS`; the CLI was renamed from `dsa
 | `by_beam` | `{ beam, count, bytes }[]` sorted by beam id |
 | `gaps` | `{ start, end, days }` ranges with zero files between first/last day with data |
 | `freshness` | Earliest/latest timestamp from filenames; mtime range when not `no_stat` |
-| `pointing` | When metadata scan is on: global Dec min/max, unique rounded strips, file counts |
+| `pointing` | When metadata scan is on: global Dec min/max, unique rounded strip count, and file counters |
 | `pointing_timeseries` | When `--pointing-timeseries` is used: `{ file, row_count, truncated }` pointing at `pointing_timeseries.json` |
 
 Filenames must match:
@@ -51,7 +51,7 @@ python -m dsacamera_monitor.scan --root /data/incoming --out /path/to/out
 - Writes `/path/to/out/manifest.json` and copies static assets from `dsacamera_monitor/site/` into `out/`.
 - By default each matching `.hdf5` is opened once to read phase-center **Declination** from UVH5 headers (cheap metadata only; no visibilities). Use `--no-hdf5-metadata` to skip that (faster on huge trees, no Dec in manifest).
 - Optional `--pointing-timeseries` writes `pointing_timeseries.json` (per file: median time, RA, Dec) with rows capped by `--pointing-timeseries-max-files` (default 5000). RA may be derived from `ha_phase_center` + LST at median time, matching the main pipeline’s HDF5 convention.
-- **Performance:** the scan is O(number of files): one `h5py.File` open per file for metadata. On slow NFS, prefer cron spacing or metadata-off for smoke tests.
+- **Performance:** metadata extraction is O(number of files) and uses one `h5py.File` open per file (Dec and optional timeseries fields are extracted in that single pass). On slow NFS, prefer cron spacing or metadata-off for smoke tests.
 - Open `out/index.html` in a browser (or serve the directory with any static file server).
 
 ### Fast count-only (no `stat`)

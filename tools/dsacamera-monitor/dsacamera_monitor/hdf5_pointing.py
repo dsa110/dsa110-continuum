@@ -1,8 +1,4 @@
-"""Read phase-center metadata from DSA-110 UVH5/HDF5 without loading visibilities.
-
-Key paths match dsa110_continuum.pointing.transit_selection.get_pointing_from_hdf5
-and dsa110_continuum.pointing.utils.read_uvh5_dec_fast.
-"""
+"""Read phase-center metadata from DSA-110 UVH5/HDF5 without loading visibilities."""
 
 from __future__ import annotations
 
@@ -12,30 +8,31 @@ from typing import Any
 
 # OVRO / DSA-110 (WGS84), same as dsa110_continuum simulation.harness
 _OVRO_LON_DEG = -118.2825
+_OVRO_LAT_DEG = 37.2339
+_OVRO_ALT_M = 1222.0
+DEC_ROUND_DIGITS = 3
 
-_DEC_ROUND = 3
+try:
+    from astropy import units as u
+    from astropy.coordinates import EarthLocation
+    from astropy.time import Time
+    from astropy.utils import iers
+
+    # Keep metadata scans independent of network/IERS download state.
+    iers.conf.auto_download = False
+    _OVRO_LOCATION = EarthLocation.from_geodetic(
+        lon=_OVRO_LON_DEG * u.deg, lat=_OVRO_LAT_DEG * u.deg, height=_OVRO_ALT_M * u.m
+    )
+except Exception:  # pragma: no cover - astropy import/runtime failure handled in scan path
+    u = None
+    Time = None
+    _OVRO_LOCATION = None
 
 
 def read_phase_center_dec_deg(path: Path) -> float | None:
     """Return phase-center declination in degrees, or None if missing/unreadable."""
-    try:
-        import h5py
-        import numpy as np
-
-        with h5py.File(path, "r") as h:
-            dec_rad = None
-            if "Header/extra_keywords/phase_center_dec" in h:
-                dec_rad = h["Header/extra_keywords/phase_center_dec"][()]
-            elif "Header/phase_center_app_dec" in h:
-                dec_rad = h["Header/phase_center_app_dec"][()]
-            elif "Header/phase_center_dec" in h:
-                dec_rad = h["Header/phase_center_dec"][()]
-            if dec_rad is None:
-                return None
-            v = float(np.asarray(dec_rad).reshape(-1)[0])
-            return float(np.degrees(v))
-    except Exception:
-        return None
+    meta = read_pointing_metadata(path)
+    return meta["dec_deg"] if meta["dec_status"] == "ok" else None
 
 
 def _ha_to_deg(ha_val: float) -> float | None:
@@ -67,65 +64,113 @@ def read_time_median_jd(path: Path) -> float | None:
         return None
 
 
-def read_pointing_ra_dec_deg(path: Path) -> tuple[float | None, float | None]:
-    """RA/Dec in degrees from headers; RA may be derived from HA + LST at median time."""
+def _extract_float(h5_obj: Any, key: str) -> float | None:
+    import numpy as np
+
+    if key not in h5_obj:
+        return None
+    return float(np.asarray(h5_obj[key][()]).reshape(-1)[0])
+
+
+def read_pointing_metadata(path: Path) -> dict[str, Any]:
+    """Read Dec/RA/mid-time from one HDF5 open.
+
+    Returns status-bearing metadata so callers can distinguish missing keys from read failures.
+    """
+    meta: dict[str, Any] = {
+        "filename": path.name,
+        "t_mid_utc": None,
+        "ra_deg": None,
+        "dec_deg": None,
+        "dec_status": "missing",  # one of: ok, missing, read_failed
+        "pointing_status": "missing",  # one of: ok, missing, read_failed
+        "error": None,
+    }
     try:
         import h5py
         import numpy as np
-        from astropy import units as u
-        from astropy.coordinates import EarthLocation
-        from astropy.time import Time
+    except (ImportError, ModuleNotFoundError) as exc:
+        meta["dec_status"] = "read_failed"
+        meta["pointing_status"] = "read_failed"
+        meta["error"] = f"{type(exc).__name__}: {exc}"
+        return meta
 
+    try:
         with h5py.File(path, "r") as h:
-            ra_deg: float | None = None
-            dec_deg: float | None = None
+            try:
+                dec_rad = _extract_float(h, "Header/extra_keywords/phase_center_dec")
+                if dec_rad is None:
+                    dec_rad = _extract_float(h, "Header/phase_center_app_dec")
+                if dec_rad is None:
+                    dec_rad = _extract_float(h, "Header/phase_center_dec")
+                if dec_rad is not None:
+                    meta["dec_deg"] = float(np.degrees(dec_rad))
+                    meta["dec_status"] = "ok"
+            except (KeyError, ValueError, TypeError) as exc:
+                meta["dec_status"] = "read_failed"
+                meta["error"] = f"{type(exc).__name__}: {exc}"
 
-            if "Header/extra_keywords/phase_center_dec" in h:
-                v = h["Header/extra_keywords/phase_center_dec"][()]
-                dec_deg = float(np.degrees(float(np.asarray(v).reshape(-1)[0])))
-            elif "Header/phase_center_app_dec" in h:
-                v = h["Header/phase_center_app_dec"][()]
-                dec_deg = float(np.degrees(float(np.asarray(v).reshape(-1)[0])))
+            try:
+                # Direct RA keys first.
+                ra_rad = _extract_float(h, "Header/extra_keywords/phase_center_ra")
+                if ra_rad is None:
+                    ra_rad = _extract_float(h, "Header/phase_center_app_ra")
+                if ra_rad is None:
+                    ra_rad = _extract_float(h, "Header/phase_center_ra")
+                if ra_rad is not None:
+                    meta["ra_deg"] = float(np.degrees(ra_rad))
 
-            if "Header/extra_keywords/phase_center_ra" in h:
-                v = h["Header/extra_keywords/phase_center_ra"][()]
-                ra_deg = float(np.degrees(float(np.asarray(v).reshape(-1)[0])))
-            elif "Header/phase_center_app_ra" in h:
-                v = h["Header/phase_center_app_ra"][()]
-                ra_deg = float(np.degrees(float(np.asarray(v).reshape(-1)[0])))
-
-            if ra_deg is None and "Header/extra_keywords/ha_phase_center" in h and "Header/time_array" in h:
-                ha_val = float(h["Header/extra_keywords/ha_phase_center"][()])
-                ha_deg = _ha_to_deg(ha_val)
-                time_array = h["Header/time_array"][()]
-                if ha_deg is not None and time_array is not None and len(time_array) > 0:
+                time_array = h["Header/time_array"][()] if "Header/time_array" in h else None
+                if time_array is not None and len(time_array) > 0 and Time is not None:
                     mid_jd = float(np.median(time_array))
                     obs_time = Time(mid_jd, format="jd", scale="utc")
-                    loc = EarthLocation.from_geodetic(
-                        lon=_OVRO_LON_DEG * u.deg, lat=37.2339 * u.deg, height=1222.0 * u.m
-                    )
-                    lst = obs_time.sidereal_time("mean", longitude=loc.lon).to(u.deg).value
-                    ra_deg = (lst - ha_deg) % 360.0
+                    meta["t_mid_utc"] = obs_time.isot + "Z"
 
-            return ra_deg, dec_deg
-    except Exception:
-        return None, None
+                # HA fallback if direct RA is missing.
+                if (
+                    meta["ra_deg"] is None
+                    and "Header/extra_keywords/ha_phase_center" in h
+                    and time_array is not None
+                    and len(time_array) > 0
+                ):
+                    ha_val = float(h["Header/extra_keywords/ha_phase_center"][()])
+                    ha_deg = _ha_to_deg(ha_val)
+                    if ha_deg is not None and Time is not None and _OVRO_LOCATION is not None:
+                        mid_jd = float(np.median(time_array))
+                        obs_time = Time(mid_jd, format="jd", scale="utc")
+                        lst = obs_time.sidereal_time("mean", longitude=_OVRO_LOCATION.lon).to(u.deg).value
+                        meta["ra_deg"] = (lst - ha_deg) % 360.0
+
+                if meta["ra_deg"] is not None or meta["t_mid_utc"] is not None:
+                    meta["pointing_status"] = "ok"
+                elif "Header/time_array" in h or "Header/extra_keywords/ha_phase_center" in h:
+                    meta["pointing_status"] = "read_failed"
+                    if meta["error"] is None:
+                        meta["error"] = "Could not derive RA/time from available header keys"
+            except (KeyError, ValueError, TypeError, RuntimeError) as exc:
+                meta["pointing_status"] = "read_failed"
+                if meta["error"] is None:
+                    meta["error"] = f"{type(exc).__name__}: {exc}"
+    except OSError as exc:
+        meta["dec_status"] = "read_failed"
+        meta["pointing_status"] = "read_failed"
+        meta["error"] = f"{type(exc).__name__}: {exc}"
+
+    return meta
+
+
+def read_pointing_ra_dec_deg(path: Path) -> tuple[float | None, float | None]:
+    """RA/Dec in degrees from headers; RA may be derived from HA + LST at median time."""
+    meta = read_pointing_metadata(path)
+    return meta["ra_deg"], meta["dec_deg"]
 
 
 def read_pointing_row(path: Path) -> dict[str, Any]:
     """One manifest row: filename, ISO UTC at median JD, ra_deg, dec_deg (nullable)."""
-    from astropy.time import Time
-
-    ra, dec = read_pointing_ra_dec_deg(path)
-    t_mid: str | None = None
-    mid_jd = read_time_median_jd(path)
-    if mid_jd is not None:
-        t = Time(mid_jd, format="jd", scale="utc")
-        t_mid = t.isot + "Z"  # UTC, ISO-8601-like
-
+    meta = read_pointing_metadata(path)
     return {
         "filename": path.name,
-        "t_mid_utc": t_mid,
-        "ra_deg": ra,
-        "dec_deg": dec,
+        "t_mid_utc": meta["t_mid_utc"],
+        "ra_deg": meta["ra_deg"],
+        "dec_deg": meta["dec_deg"],
     }

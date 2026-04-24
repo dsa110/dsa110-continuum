@@ -1,4 +1,4 @@
-"""Manifest schema for DSA-110 incoming HDF5 inventory (v2 with optional pointing)."""
+"""Manifest schema for DSA-110 incoming HDF5 inventory (schema v2)."""
 
 from __future__ import annotations
 
@@ -61,6 +61,8 @@ class ScanAccum:
     total_bytes: int = 0
     files_with_dec: int = 0
     files_dec_missing: int = 0
+    files_dec_read_failed: int = 0
+    files_pointing_read_failed: int = 0
     global_dec_min: float | None = None
     global_dec_max: float | None = None
     global_decs_rounded: set[float] = field(default_factory=set)
@@ -77,7 +79,7 @@ def build_manifest(
     pointing_timeseries: bool = False,
     generated_at: datetime | None = None,
 ) -> dict[str, Any]:
-    """Assemble the manifest dict from scan aggregates (schema v2 when hdf5_metadata)."""
+    """Assemble the schema-v2 manifest dict from scan aggregates."""
     gen = generated_at or datetime.now(timezone.utc)
     if gen.tzinfo is None:
         gen = gen.replace(tzinfo=timezone.utc)
@@ -161,10 +163,11 @@ def build_manifest(
         manifest["pointing"] = {
             "dec_deg_min": accum.global_dec_min,
             "dec_deg_max": accum.global_dec_max,
-            "dec_unique": sorted(accum.global_decs_rounded),
             "unique_strip_count": len(accum.global_decs_rounded),
             "files_with_dec": accum.files_with_dec,
             "files_dec_missing": accum.files_dec_missing,
+            "files_dec_read_failed": accum.files_dec_read_failed,
+            "files_pointing_read_failed": accum.files_pointing_read_failed,
             "sampled": False,
         }
     if pointing_timeseries and accum.timeseries_rows:

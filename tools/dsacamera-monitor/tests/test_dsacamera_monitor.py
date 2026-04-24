@@ -7,7 +7,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from dsacamera_monitor.gaps import compute_gaps, gaps_from_by_day_rows
-from dsacamera_monitor.hdf5_pointing import read_phase_center_dec_deg
+from dsacamera_monitor.hdf5_pointing import read_phase_center_dec_deg, read_pointing_ra_dec_deg
 from dsacamera_monitor.manifest import (
     BeamAgg,
     DayAgg,
@@ -116,6 +116,7 @@ def test_scan_directory_with_hdf5_dec(tmp_path: Path) -> None:
     assert accum.file_count == 1
     assert accum.files_with_dec == 1
     assert accum.files_dec_missing == 0
+    assert accum.files_dec_read_failed == 0
     assert accum.global_dec_min is not None and abs(accum.global_dec_min - 40.5) < 1e-6
     assert read_phase_center_dec_deg(p) is not None
 
@@ -127,7 +128,8 @@ def test_build_out_copies_site(tmp_path: Path) -> None:
     src.mkdir()
     (src / "2025-01-01T00:00:00_sb01.hdf5").write_bytes(b"x")
     out = tmp_path / "out"
-    build_out(root=src, out_dir=out, no_stat=True, hdf5_metadata=False)
+    _, wrote_ts = build_out(root=src, out_dir=out, no_stat=True, hdf5_metadata=False)
+    assert wrote_ts is False
     assert (out / "manifest.json").is_file()
     assert (out / "index.html").is_file()
     assert (out / "js" / "dashboard.js").is_file()
@@ -150,7 +152,7 @@ def test_pointing_timeseries_file(tmp_path: Path) -> None:
         f.create_dataset("Header/time_array", data=np.array([2450000.5, 2450000.6]))
 
     out = tmp_path / "out"
-    build_out(
+    _, wrote_ts = build_out(
         root=src,
         out_dir=out,
         no_stat=True,
@@ -158,7 +160,39 @@ def test_pointing_timeseries_file(tmp_path: Path) -> None:
         pointing_timeseries=True,
         pointing_timeseries_max_files=10,
     )
+    assert wrote_ts is True
     assert (out / "pointing_timeseries.json").is_file()
     m = __import__("json").loads((out / "manifest.json").read_text())
     assert m["pointing_timeseries"]["row_count"] == 1
     assert "pointing" in m
+    assert "dec_unique" not in m["pointing"]
+
+
+def test_pointing_fallback_header_keys(tmp_path: Path) -> None:
+    import h5py
+    import numpy as np
+
+    fn = "2025-04-01T00:00:00_sb01.hdf5"
+    p = tmp_path / fn
+    with h5py.File(p, "w") as f:
+        f.create_dataset("Header/phase_center_dec", data=np.float64(np.deg2rad(15.25)))
+        f.create_dataset("Header/phase_center_ra", data=np.float64(np.deg2rad(230.5)))
+        f.create_dataset("Header/time_array", data=np.array([2450100.1, 2450100.2]))
+
+    ra, dec = read_pointing_ra_dec_deg(p)
+    assert ra is not None and abs(ra - 230.5) < 1e-6
+    assert dec is not None and abs(dec - 15.25) < 1e-6
+
+
+def test_scan_counts_read_failures(tmp_path: Path) -> None:
+    from dsacamera_monitor.scan import scan_directory
+
+    bad = tmp_path / "2025-07-01T00:00:00_sb01.hdf5"
+    bad.write_bytes(b"not hdf5")
+    accum = scan_directory(tmp_path, no_stat=True, hdf5_metadata=True, pointing_timeseries=True)
+    assert accum.file_count == 1
+    assert accum.files_with_dec == 0
+    assert accum.files_dec_missing == 0
+    assert accum.files_dec_read_failed == 1
+    assert accum.files_pointing_read_failed == 1
+    assert len(accum.timeseries_rows) == 1
