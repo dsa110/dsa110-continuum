@@ -161,6 +161,11 @@ jobs:
         with:
           name: monitor-${{ matrix.monitor_slug }}
           path: ${{ env.MONITOR_OUT_DIR }}
+          # MONITOR_OUT_DIR is a dot-prefixed path (.monitor_site); upload-artifact@v4
+          # treats dot-prefixed paths as hidden and skips them by default, yielding an
+          # empty artifact and a silent "No files were found" warning. Include hidden
+          # files so the whole output tree ships.
+          include-hidden-files: true
 
   aggregate_site:
     name: Render docs and aggregate monitors
@@ -271,7 +276,10 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     needs: aggregate_site
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # Key on aggregate_site's explicit result rather than the implicit success() check,
+    # which otherwise cascades from any upstream build_monitors leg failure and skips
+    # the deploy even when aggregate_site published a full site (with placeholders).
+    if: needs.aggregate_site.result == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
