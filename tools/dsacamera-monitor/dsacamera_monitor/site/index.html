@@ -20,6 +20,8 @@
     <div class="kpi"><span class="label">Generated (UTC)</span><span class="value" id="kpi-generated">—</span></div>
     <div class="kpi"><span class="label">Filename span (UTC)</span><span class="value" id="kpi-span">—</span></div>
     <div class="kpi"><span class="label">mtime span (UTC)</span><span class="value" id="kpi-mtime">—</span></div>
+    <div class="kpi" id="kpi-dec-wrap" style="display:none"><span class="label">Phase-center Dec (°)</span><span class="value" id="kpi-dec">—</span></div>
+    <div class="kpi" id="kpi-dec-files-wrap" style="display:none"><span class="label">Dec metadata</span><span class="value" id="kpi-dec-files">—</span></div>
   </section>
 
   <section class="panel">
@@ -30,6 +32,19 @@
   <section class="panel">
     <h2>Cumulative files</h2>
     <div class="chart-wrap"><canvas id="chart-cum" height="120"></canvas></div>
+  </section>
+
+  <section class="panel" id="panel-dec-by-day" style="display:none">
+    <h2>Declination by day (phase center)</h2>
+    <p class="hint">Min/max Dec (°) from HDF5 headers per calendar day, when metadata scan is enabled.</p>
+    <div class="chart-wrap"><canvas id="chart-dec" height="120"></canvas></div>
+  </section>
+
+  <section class="panel" id="panel-pointing-series" style="display:none">
+    <h2>Pointing vs time (per file, median integration time)</h2>
+    <p class="hint">From <code>pointing_timeseries.json</code> when generated. RA may be derived from HA + LST.</p>
+    <p class="hint" id="ts-trunc" style="display:none"></p>
+    <div class="chart-wrap"><canvas id="chart-pointing" height="140"></canvas></div>
   </section>
 
   <section class="panel">
@@ -66,7 +81,7 @@
   </section>
 
   <footer class="footer">
-    <p>Schema <span id="schema-ver">—</span> · <span id="opt-no-stat"></span></p>
+    <p>Schema <span id="schema-ver">—</span> · <span id="opt-no-stat"></span> · <span id="opt-hdf5"></span></p>
   </footer>
 
   <script src="js/dashboard.js"></script>

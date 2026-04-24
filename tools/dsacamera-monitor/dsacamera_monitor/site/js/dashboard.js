@@ -51,6 +51,32 @@ function fillKpis(m) {
   document.getElementById("opt-no-stat").textContent = m.options.no_stat
     ? "Scan used --no-stat (counts only)"
     : "Full stat() for sizes and mtime";
+  let hdf5Line = "—";
+  if (m.options && m.options.hdf5_metadata === false) {
+    hdf5Line = "HDF5 header reads disabled (--no-hdf5-metadata)";
+  } else if (m.pointing) {
+    hdf5Line = "Phase-center Dec (and optional timeseries) from HDF5 headers";
+  } else if (m.schema_version < 2) {
+    hdf5Line = "Schema v1: regenerate with current scanner for Dec metadata";
+  } else {
+    hdf5Line = "No Dec block in this manifest";
+  }
+  document.getElementById("opt-hdf5").textContent = hdf5Line;
+
+  if (m.pointing) {
+    document.getElementById("kpi-dec-wrap").style.display = "block";
+    document.getElementById("kpi-dec-files-wrap").style.display = "block";
+    const a = m.pointing.dec_deg_min;
+    const b = m.pointing.dec_deg_max;
+    document.getElementById("kpi-dec").textContent =
+      a != null && b != null
+        ? `${a.toFixed(3)} → ${b.toFixed(3)} · ${m.pointing.unique_strip_count} distinct (rounded)`
+        : "—";
+    document.getElementById("kpi-dec-files").textContent = `${m.pointing.files_with_dec} with Dec · ${m.pointing.files_dec_missing} missing`;
+  } else {
+    document.getElementById("kpi-dec-wrap").style.display = "none";
+    document.getElementById("kpi-dec-files-wrap").style.display = "none";
+  }
 }
 
 function renderDailyAndCumulative(m) {
@@ -117,6 +143,153 @@ function renderDailyAndCumulative(m) {
     },
     options: chartOpts,
   });
+}
+
+function renderDecByDay(m) {
+  const panel = document.getElementById("panel-dec-by-day");
+  const has =
+    m.pointing && m.by_day && m.by_day.some((r) => r.dec_deg_min != null && r.dec_deg_max != null);
+  if (!has) {
+    panel.style.display = "none";
+    return;
+  }
+  panel.style.display = "block";
+  const labels = m.by_day.map((r) => r.date);
+  const mins = m.by_day.map((r) => (r.dec_deg_min != null ? r.dec_deg_min : null));
+  const maxs = m.by_day.map((r) => (r.dec_deg_max != null ? r.dec_deg_max : null));
+  const decCtx = document.getElementById("chart-dec");
+  const chartOpts = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: true, labels: { color: "#8b949e" } },
+    },
+    scales: {
+      x: {
+        ticks: { maxTicksLimit: 12, color: "#8b949e" },
+        grid: { color: "#30363d" },
+      },
+      y: {
+        title: { display: true, text: "Dec (°)", color: "#8b949e" },
+        ticks: { color: "#8b949e" },
+        grid: { color: "#30363d" },
+      },
+    },
+  };
+  new Chart(decCtx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Dec min",
+          data: mins,
+          borderColor: "rgba(240, 136, 62, 1)",
+          backgroundColor: "rgba(240, 136, 62, 0.15)",
+          fill: true,
+          tension: 0.15,
+          pointRadius: 0,
+        },
+        {
+          label: "Dec max",
+          data: maxs,
+          borderColor: "rgba(163, 113, 247, 1)",
+          backgroundColor: "rgba(163, 113, 247, 0.1)",
+          fill: true,
+          tension: 0.15,
+          pointRadius: 0,
+        },
+      ],
+    },
+    options: chartOpts,
+  });
+}
+
+/**
+ * @param {object} m manifest
+ * @param {Array<{ filename: string, t_mid_utc: string|null, ra_deg: number|null, dec_deg: number|null }>|null} rows
+ */
+function renderPointingTimeseries(m, rows) {
+  const panel = document.getElementById("panel-pointing-series");
+  const note = document.getElementById("ts-trunc");
+  if (!rows || !Array.isArray(rows) || rows.length === 0) {
+    panel.style.display = "none";
+    return;
+  }
+  panel.style.display = "block";
+  if (m.pointing_timeseries && m.pointing_timeseries.truncated) {
+    note.style.display = "block";
+    note.textContent = "Rows capped; scan omitted some files (see manifest pointing_timeseries).";
+  } else {
+    note.style.display = "none";
+  }
+  const labels = rows.map((r) => (r.t_mid_utc || r.filename || "—").slice(0, 19));
+  const ra = rows.map((r) => (r.ra_deg != null ? r.ra_deg : null));
+  const dec = rows.map((r) => (r.dec_deg != null ? r.dec_deg : null));
+  const pctx = document.getElementById("chart-pointing");
+  new Chart(pctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "RA (°)",
+          data: ra,
+          borderColor: "rgba(88, 166, 255, 1)",
+          yAxisID: "y",
+          pointRadius: 0,
+          tension: 0.1,
+        },
+        {
+          label: "Dec (°)",
+          data: dec,
+          borderColor: "rgba(240, 136, 62, 1)",
+          yAxisID: "y1",
+          pointRadius: 0,
+          tension: 0.1,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { labels: { color: "#8b949e" } },
+      },
+      scales: {
+        x: {
+          ticks: { maxTicksLimit: 16, color: "#8b949e", maxRotation: 60 },
+          grid: { color: "#30363d" },
+        },
+        y: {
+          type: "linear",
+          position: "left",
+          title: { display: true, text: "RA (°)", color: "#8b949e" },
+          ticks: { color: "#8b949e" },
+          grid: { color: "#30363d" },
+        },
+        y1: {
+          type: "linear",
+          position: "right",
+          title: { display: true, text: "Dec (°)", color: "#8b949e" },
+          ticks: { color: "#8b949e" },
+          grid: { drawOnChartArea: false },
+        },
+      },
+    },
+  });
+}
+
+async function loadTimeseriesIfPresent(m) {
+  if (!m.pointing_timeseries || !m.pointing_timeseries.file) {
+    return null;
+  }
+  const res = await fetch(m.pointing_timeseries.file, { cache: "no-store" });
+  if (!res.ok) {
+    return null;
+  }
+  return res.json();
 }
 
 function renderHeatmap(m) {
@@ -236,9 +409,17 @@ function renderBeams(m) {
 
 function main() {
   loadManifest()
-    .then((m) => {
+    .then(async (m) => {
       fillKpis(m);
       renderDailyAndCumulative(m);
+      renderDecByDay(m);
+      let ts = null;
+      try {
+        ts = await loadTimeseriesIfPresent(m);
+      } catch (e) {
+        ts = null;
+      }
+      renderPointingTimeseries(m, ts);
       renderHeatmap(m);
       renderGaps(m);
       renderRecent(m);

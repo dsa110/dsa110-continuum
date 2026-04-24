@@ -118,7 +118,7 @@ jobs:
           set -euo pipefail
           rm -rf "${MONITOR_OUT_DIR}"
           mkdir -p "${MONITOR_OUT_DIR}"
-          dsacamera-incoming-scan --root "${{ matrix.source_root }}" --out "${MONITOR_OUT_DIR}"
+          dsacamera-incoming-scan --root "${{ matrix.source_root }}" --out "${MONITOR_OUT_DIR}" --pointing-timeseries --pointing-timeseries-max-files 5000
 
       - name: Validate monitor artifact contract
         shell: bash

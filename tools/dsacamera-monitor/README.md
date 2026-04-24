@@ -6,19 +6,23 @@ This repository was split out from `dsa110-FLITS`; the CLI was renamed from `dsa
 
 ## Manifest schema
 
-`manifest.json` is **schema version 1**. Key fields:
+`manifest.json` is **schema version 2** (v1 is still valid for old snapshots). Key fields:
 
 | Field | Description |
 |--------|-------------|
-| `schema_version` | Integer (currently `1`) |
+| `schema_version` | Integer (currently `2`) |
 | `generated_at` | ISO8601 UTC when the scan finished |
 | `source_root` | Directory that was scanned |
 | `options.no_stat` | If true, sizes and mtime freshness were not collected |
+| `options.hdf5_metadata` | If false (`--no-hdf5-metadata`), HDF5 files are not opened; no `pointing` block |
+| `options.pointing_timeseries` | If true, `pointing_timeseries.json` may be emitted (see below) |
 | `totals` | `file_count`, `total_bytes` (bytes zero when `no_stat`) |
-| `by_day` | `{ date, count, bytes }[]` sorted by date |
+| `by_day` | `{ date, count, bytes, dec_deg_min?, dec_deg_max?, dec_unique_count? }[]` |
 | `by_beam` | `{ beam, count, bytes }[]` sorted by beam id |
 | `gaps` | `{ start, end, days }` ranges with zero files between first/last day with data |
 | `freshness` | Earliest/latest timestamp from filenames; mtime range when not `no_stat` |
+| `pointing` | When metadata scan is on: global Dec min/max, unique rounded strips, file counts |
+| `pointing_timeseries` | When `--pointing-timeseries` is used: `{ file, row_count, truncated }` pointing at `pointing_timeseries.json` |
 
 Filenames must match:
 
@@ -45,6 +49,9 @@ python -m dsacamera_monitor.scan --root /data/incoming --out /path/to/out
 ```
 
 - Writes `/path/to/out/manifest.json` and copies static assets from `dsacamera_monitor/site/` into `out/`.
+- By default each matching `.hdf5` is opened once to read phase-center **Declination** from UVH5 headers (cheap metadata only; no visibilities). Use `--no-hdf5-metadata` to skip that (faster on huge trees, no Dec in manifest).
+- Optional `--pointing-timeseries` writes `pointing_timeseries.json` (per file: median time, RA, Dec) with rows capped by `--pointing-timeseries-max-files` (default 5000). RA may be derived from `ha_phase_center` + LST at median time, matching the main pipeline’s HDF5 convention.
+- **Performance:** the scan is O(number of files): one `h5py.File` open per file for metadata. On slow NFS, prefer cron spacing or metadata-off for smoke tests.
 - Open `out/index.html` in a browser (or serve the directory with any static file server).
 
 ### Fast count-only (no `stat`)

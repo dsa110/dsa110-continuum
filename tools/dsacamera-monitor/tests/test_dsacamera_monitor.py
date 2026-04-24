@@ -1,3 +1,4 @@
+# ruff: noqa: D103
 """Tests for DSA-110 incoming HDF5 manifest and gap logic."""
 
 from __future__ import annotations
@@ -6,6 +7,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from dsacamera_monitor.gaps import compute_gaps, gaps_from_by_day_rows
+from dsacamera_monitor.hdf5_pointing import read_phase_center_dec_deg
 from dsacamera_monitor.manifest import (
     BeamAgg,
     DayAgg,
@@ -75,12 +77,15 @@ def test_build_manifest_roundtrip() -> None:
         source_root="/tmp/incoming",
         accum=accum,
         no_stat=False,
+        hdf5_metadata=False,
         generated_at=datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
     )
-    assert m["schema_version"] == 1
+    assert m["schema_version"] == 2
     assert m["totals"]["file_count"] == 2
     assert m["by_day"][0]["date"] == "2025-01-01"
     assert m["gaps"] == []
+    assert "pointing" not in m
+    assert m["options"]["hdf5_metadata"] is False
 
 
 def test_scan_directory(tmp_path: Path) -> None:
@@ -89,10 +94,30 @@ def test_scan_directory(tmp_path: Path) -> None:
     (tmp_path / "2025-01-01T00:00:00_sb01.hdf5").write_bytes(b"x")
     (tmp_path / "2025-01-01T01:00:00_sb02.hdf5").write_bytes(b"yy")
     (tmp_path / "skip.txt").write_text("x")
-    accum = scan_directory(tmp_path, no_stat=False)
+    accum = scan_directory(tmp_path, no_stat=False, hdf5_metadata=False)
     assert accum.file_count == 2
     assert accum.total_bytes == 3
     assert set(accum.by_beam.keys()) == {1, 2}
+
+
+def test_scan_directory_with_hdf5_dec(tmp_path: Path) -> None:
+    import h5py
+    import numpy as np
+    from dsacamera_monitor.scan import scan_directory
+
+    fn = "2025-06-15T10:00:00_sb05.hdf5"
+    p = tmp_path / fn
+    with h5py.File(p, "w") as f:
+        f.create_dataset(
+            "Header/extra_keywords/phase_center_dec",
+            data=np.float64(np.deg2rad(40.5)),
+        )
+    accum = scan_directory(tmp_path, no_stat=True, hdf5_metadata=True)
+    assert accum.file_count == 1
+    assert accum.files_with_dec == 1
+    assert accum.files_dec_missing == 0
+    assert accum.global_dec_min is not None and abs(accum.global_dec_min - 40.5) < 1e-6
+    assert read_phase_center_dec_deg(p) is not None
 
 
 def test_build_out_copies_site(tmp_path: Path) -> None:
@@ -102,7 +127,38 @@ def test_build_out_copies_site(tmp_path: Path) -> None:
     src.mkdir()
     (src / "2025-01-01T00:00:00_sb01.hdf5").write_bytes(b"x")
     out = tmp_path / "out"
-    build_out(root=src, out_dir=out, no_stat=True)
+    build_out(root=src, out_dir=out, no_stat=True, hdf5_metadata=False)
     assert (out / "manifest.json").is_file()
     assert (out / "index.html").is_file()
     assert (out / "js" / "dashboard.js").is_file()
+    man = (out / "manifest.json").read_text()
+    assert '"schema_version": 2' in man
+
+
+def test_pointing_timeseries_file(tmp_path: Path) -> None:
+    import h5py
+    import numpy as np
+    from dsacamera_monitor.scan import build_out
+
+    src = tmp_path / "src"
+    src.mkdir()
+    fn = "2025-03-01T08:00:00_sb00.hdf5"
+    p = src / fn
+    with h5py.File(p, "w") as f:
+        f.create_dataset("Header/extra_keywords/phase_center_dec", data=np.float64(0.7))
+        f.create_dataset("Header/extra_keywords/ha_phase_center", data=np.float64(0.01))
+        f.create_dataset("Header/time_array", data=np.array([2450000.5, 2450000.6]))
+
+    out = tmp_path / "out"
+    build_out(
+        root=src,
+        out_dir=out,
+        no_stat=True,
+        hdf5_metadata=True,
+        pointing_timeseries=True,
+        pointing_timeseries_max_files=10,
+    )
+    assert (out / "pointing_timeseries.json").is_file()
+    m = __import__("json").loads((out / "manifest.json").read_text())
+    assert m["pointing_timeseries"]["row_count"] == 1
+    assert "pointing" in m

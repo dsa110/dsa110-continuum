@@ -7,9 +7,10 @@ import json
 import os
 import shutil
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
+from dsacamera_monitor.hdf5_pointing import read_phase_center_dec_deg, read_pointing_row
 from dsacamera_monitor.manifest import (
     BeamAgg,
     DayAgg,
@@ -19,7 +20,33 @@ from dsacamera_monitor.manifest import (
 )
 
 
-def scan_directory(root: Path, *, no_stat: bool) -> ScanAccum:
+def _record_dec(accum: ScanAccum, day: date, dec: float) -> None:
+    dr = round(dec, 3)
+    accum.global_decs_rounded.add(dr)
+    if accum.global_dec_min is None:
+        accum.global_dec_min = dec
+        accum.global_dec_max = dec
+    else:
+        accum.global_dec_min = min(accum.global_dec_min, dec)
+        accum.global_dec_max = max(accum.global_dec_max, dec)
+    dagg = accum.by_day[day]
+    dagg.decs_rounded.add(dr)
+    if dagg.dec_min is None:
+        dagg.dec_min = dec
+        dagg.dec_max = dec
+    else:
+        dagg.dec_min = min(dagg.dec_min, dec)
+        dagg.dec_max = max(dagg.dec_max, dec)
+
+
+def scan_directory(
+    root: Path,
+    *,
+    no_stat: bool,
+    hdf5_metadata: bool = True,
+    pointing_timeseries: bool = False,
+    pointing_timeseries_max_files: int = 5000,
+) -> ScanAccum:
     """Single pass over directory entries; only matching *.hdf5 names are counted."""
     accum = ScanAccum()
     with os.scandir(root) as it:
@@ -34,6 +61,7 @@ def scan_directory(root: Path, *, no_stat: bool) -> ScanAccum:
                 continue
             dt_utc, beam = parsed
             day = dt_utc.date()
+            full_path = Path(entry.path)
 
             if day not in accum.by_day:
                 accum.by_day[day] = DayAgg()
@@ -67,6 +95,20 @@ def scan_directory(root: Path, *, no_stat: bool) -> ScanAccum:
 
             accum.file_count += 1
 
+            if hdf5_metadata:
+                dec = read_phase_center_dec_deg(full_path)
+                if dec is None:
+                    accum.files_dec_missing += 1
+                else:
+                    accum.files_with_dec += 1
+                    _record_dec(accum, day, dec)
+
+                if pointing_timeseries and len(accum.timeseries_rows) < pointing_timeseries_max_files:
+                    accum.timeseries_rows.append(read_pointing_row(full_path))
+
+    if pointing_timeseries and hdf5_metadata and accum.file_count > len(accum.timeseries_rows):
+        accum.timeseries_truncated = True
+
     return accum
 
 
@@ -76,13 +118,24 @@ def build_out(
     out_dir: Path,
     no_stat: bool,
     site_dir: Path | None = None,
+    hdf5_metadata: bool = True,
+    pointing_timeseries: bool = False,
+    pointing_timeseries_max_files: int = 5000,
 ) -> Path:
-    """Scan, write manifest.json, copy static site into out_dir."""
-    accum = scan_directory(root, no_stat=no_stat)
+    """Scan, write manifest.json, optional pointing_timeseries.json, copy static site into out_dir."""
+    accum = scan_directory(
+        root,
+        no_stat=no_stat,
+        hdf5_metadata=hdf5_metadata,
+        pointing_timeseries=pointing_timeseries,
+        pointing_timeseries_max_files=pointing_timeseries_max_files,
+    )
     manifest = build_manifest(
         source_root=str(root.resolve()),
         accum=accum,
         no_stat=no_stat,
+        hdf5_metadata=hdf5_metadata,
+        pointing_timeseries=pointing_timeseries,
     )
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -90,6 +143,12 @@ def build_out(
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
         f.write("\n")
+
+    if accum.timeseries_rows:
+        ts_path = out_dir / "pointing_timeseries.json"
+        with open(ts_path, "w", encoding="utf-8") as f:
+            json.dump(accum.timeseries_rows, f, indent=2)
+            f.write("\n")
 
     if site_dir is None:
         site_dir = Path(__file__).resolve().parent / "site"
@@ -105,6 +164,7 @@ def build_out(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Parse arguments and run a scan; used as setuptools console script."""
     parser = argparse.ArgumentParser(
         description="Scan DSA-110 incoming HDF5 files and build static dashboard output."
     )
@@ -126,6 +186,23 @@ def main(argv: list[str] | None = None) -> int:
         help="Do not stat() files; counts only (bytes and mtime freshness omitted)",
     )
     parser.add_argument(
+        "--no-hdf5-metadata",
+        action="store_true",
+        help="Do not open HDF5 files; skip declination and pointing timeseries",
+    )
+    parser.add_argument(
+        "--pointing-timeseries",
+        action="store_true",
+        help="Emit pointing_timeseries.json (per-file RA/Dec, mid-time); requires HDF5 metadata",
+    )
+    parser.add_argument(
+        "--pointing-timeseries-max-files",
+        type=int,
+        default=5000,
+        metavar="N",
+        help="Cap rows in pointing_timeseries.json (default: 5000)",
+    )
+    parser.add_argument(
         "--site",
         type=Path,
         default=None,
@@ -138,8 +215,26 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: not a directory: {root}", file=sys.stderr)
         return 1
 
-    build_out(root=root, out_dir=args.out, no_stat=args.no_stat, site_dir=args.site)
+    hdf5_metadata = not args.no_hdf5_metadata
+    pointing_ts = bool(args.pointing_timeseries) and hdf5_metadata
+    if args.pointing_timeseries and not hdf5_metadata:
+        print(
+            "warning: --pointing-timeseries ignored because --no-hdf5-metadata was set",
+            file=sys.stderr,
+        )
+
+    build_out(
+        root=root,
+        out_dir=args.out,
+        no_stat=args.no_stat,
+        site_dir=args.site,
+        hdf5_metadata=hdf5_metadata,
+        pointing_timeseries=pointing_ts,
+        pointing_timeseries_max_files=max(1, args.pointing_timeseries_max_files),
+    )
     print(f"Wrote {args.out / 'manifest.json'}")
+    if pointing_ts:
+        print(f"Wrote {args.out / 'pointing_timeseries.json'}")
     return 0
 
 
