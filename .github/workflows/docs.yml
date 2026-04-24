@@ -276,10 +276,12 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     needs: aggregate_site
-    # Key on aggregate_site's explicit result rather than the implicit success() check,
-    # which otherwise cascades from any upstream build_monitors leg failure and skips
-    # the deploy even when aggregate_site published a full site (with placeholders).
-    if: needs.aggregate_site.result == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # Lead with always() so the implicit transitive success() check does not cascade
+    # from a failed build_monitors leg and skip us; then explicitly require
+    # aggregate_site to have succeeded (it runs under always() too, so this is the
+    # real gate). Without always() here, GitHub still skips deploy whenever any
+    # upstream job -- including transitive build_monitors legs -- failed.
+    if: always() && needs.aggregate_site.result == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
