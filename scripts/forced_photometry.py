@@ -90,6 +90,8 @@ def run_forced_photometry(
     method: str = "two_stage",       # NEW
     sim_mode: bool = False,           # NEW
     snr_coarse: float = 3.0,          # NEW
+    workers: int = 1,                 # Batch D
+    chunk_size: int | None = None,    # Batch D
 ) -> dict:
     """Run forced photometry on a mosaic and write results to CSV.
 
@@ -206,9 +208,12 @@ def run_forced_photometry(
         augments = None
 
     elif method == "two_stage":
-        from dsa110_continuum.photometry.two_stage import run_two_stage
-        fine_results, augments = run_two_stage(
-            mosaic_path, coords, snr_coarse_min=snr_coarse,
+        from dsa110_continuum.photometry.two_stage import run_two_stage_parallel
+        fine_results, augments = run_two_stage_parallel(
+            mosaic_path, coords,
+            snr_coarse_min=snr_coarse,
+            workers=workers,
+            chunk_size=chunk_size,
         )
         simple_results = None
 
@@ -491,6 +496,22 @@ def main():
         help="Coarse SNR gate for two_stage method (default: 3.0)",
     )
     parser.add_argument(
+        "--workers", type=int, default=1,
+        help=(
+            "Number of worker processes for the two_stage method (default: 1 = "
+            "serial). Catalog source list is split into deterministic contiguous "
+            "chunks; results are concatenated in input order for bit-for-bit "
+            "equivalence with the serial path."
+        ),
+    )
+    parser.add_argument(
+        "--chunk-size", type=int, default=0, dest="chunk_size",
+        help=(
+            "Sources per worker chunk for --workers > 1. Default 0 = auto "
+            "(targets ~4 chunks per worker for load balance)."
+        ),
+    )
+    parser.add_argument(
         "--plots", action="store_true", default=True,
         help="Generate flux scale and field source diagnostic plots (default: on).",
     )
@@ -513,6 +534,8 @@ def main():
             method=args.method,
             sim_mode=args.sim,
             snr_coarse=args.snr_coarse,
+            workers=args.workers,
+            chunk_size=(args.chunk_size or None),
         )
     except (FileNotFoundError, RuntimeError) as e:
         log.error("%s", e)
