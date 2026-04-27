@@ -119,6 +119,50 @@ def timestamp_from_fits(fits_path: str) -> datetime | None:
         return None
 
 
+# ── Run logging ───────────────────────────────────────────────────────────────
+
+def _run_log_filename(started_at: datetime) -> str:
+    """Return ``run_<UTC-ISO>.log`` with a filename-safe timestamp.
+
+    Colons replaced with underscores so the file is portable across
+    filesystems that disallow ``:`` (Windows shares, some cloud
+    bucket mounts). Always UTC, always second-resolution; sorts
+    correctly under ``ls`` since the year-first ISO form is monotonic.
+    """
+    stamp = started_at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H_%M_%SZ")
+    return f"run_{stamp}.log"
+
+
+def _attach_run_logfile(products_dir: str, date: str, started_at: datetime) -> str:
+    """Attach a per-run :class:`logging.FileHandler` to the root logger.
+
+    Idempotent: if a ``FileHandler`` with the target ``baseFilename`` is
+    already attached (e.g. ``main()`` called twice in the same process,
+    as happens in some test harnesses) this is a no-op. Returns the
+    absolute log file path so the caller can record it in the run
+    summary.
+    """
+    log_dir = os.path.join(products_dir, date)
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.abspath(os.path.join(log_dir, _run_log_filename(started_at)))
+
+    root = logging.getLogger()
+    for h in root.handlers:
+        if isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", None) == log_path:
+            return log_path  # already attached for this exact path
+
+    fh = logging.FileHandler(log_path, mode="a", encoding="utf-8")
+    fh.setLevel(logging.INFO)
+    # Use full ISO date+time in the file (the console keeps the short HH:MM:SS
+    # format from basicConfig); a multi-day cron run's log file is unambiguous.
+    fh.setFormatter(logging.Formatter(
+        fmt="%(asctime)s %(levelname)s %(name)s %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S",
+    ))
+    root.addHandler(fh)
+    return log_path
+
+
 # ── Checkpoint helpers ────────────────────────────────────────────────────────
 
 def _write_tile_checkpoint(
@@ -806,6 +850,15 @@ def main() -> None:
     os.makedirs(paths["stage_dir"], exist_ok=True)
     os.makedirs(paths["products_dir"], exist_ok=True)
 
+    # ── Per-run log file ─────────────────────────────────────────────────────
+    # Attach a FileHandler so the entire pipeline run lands in a single
+    # diagnostic file under the date's products dir. All subsequent stages
+    # (Phase 0/1/2/3) emit through it; the console handler from
+    # logging.basicConfig() is preserved unchanged.
+    _run_started_at = datetime.now(timezone.utc)
+    _run_log_path = _attach_run_logfile(paths["products_dir"], date, _run_started_at)
+    log.info("Run log: %s", _run_log_path)
+
     # ── Migrate stale qa_summary.csv if schema doesn't match ─────────────────
     if os.path.isfile(QA_SUMMARY_CSV):
         try:
@@ -1300,7 +1353,11 @@ def main() -> None:
     manifest.finalize(_wall)
     manifest.save(paths["products_dir"])
 
-    emit_run_summary(date, cal_date, epoch_results, _wall, products_dir=paths["products_dir"])
+    emit_run_summary(
+        date, cal_date, epoch_results, _wall,
+        products_dir=paths["products_dir"],
+        run_log_path=_run_log_path,
+    )
 
 def emit_run_summary(
     date: str,
@@ -1308,8 +1365,15 @@ def emit_run_summary(
     epoch_results: list,
     wall_time_sec: float,
     products_dir: str | None = None,
+    run_log_path: str | None = None,
 ) -> None:
-    """Write run summary JSON to products dir and symlink at /tmp for backward compat."""
+    """Write run summary JSON to products dir and symlink at /tmp for backward compat.
+
+    ``run_log_path`` is the absolute path of the per-run log file created by
+    :func:`_attach_run_logfile`; if provided it is recorded under the
+    ``run_log`` key so an operator inspecting the summary can locate the
+    diagnostic log without searching.
+    """
     import json as _json
     from datetime import datetime as _dt
 
@@ -1329,6 +1393,7 @@ def emit_run_summary(
         "n_fail": n_exec_fail,
         "n_qa_pass": n_qa_pass,
         "n_qa_fail": n_qa_fail,
+        "run_log": run_log_path,
         "epochs": epochs_list,
     }
 
