@@ -1775,6 +1775,14 @@ def main() -> None:
         run_log_path=_run_log_path,
     )
 
+    # Static run report (Batch F). A failure to render must not fail the
+    # actual run — operators still have manifest.json + run_summary.json.
+    try:
+        from dsa110_continuum.qa.run_report import write_run_report
+        write_run_report(manifest, paths["products_dir"])
+    except Exception as _report_err:
+        log.warning("Run report render failed (non-fatal): %s", _report_err)
+
 def emit_run_summary(
     date: str,
     cal_date: str,
