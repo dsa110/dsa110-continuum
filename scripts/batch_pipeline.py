@@ -160,6 +160,33 @@ def _write_tile_checkpoint(
         log.warning("Could not write checkpoint: %s", e)
 
 
+def _should_skip_photometry(
+    qa_verdict: str | None,
+    skip_photometry_flag: bool,
+    lenient_qa: bool,
+) -> tuple[bool, str]:
+    """Return ``(skip, reason)`` for the per-epoch forced-photometry gate.
+
+    Default-strict policy: a QA-FAIL epoch is skipped unless the operator
+    explicitly passes ``--lenient-qa``. This prevents bad-flux measurements
+    from leaking into the master lightcurve table on unattended runs.
+
+    Reasons:
+    - ``"skip-photometry-flag"`` → operator passed ``--skip-photometry``
+    - ``"qa-fail-default-strict"`` → QA-FAIL with no override
+    - ``"lenient-qa-override"``    → QA-FAIL but ``--lenient-qa`` is set;
+      caller should record a gate so verdict reflects the override.
+    - ``""`` (empty)               → run photometry as normal
+    """
+    if skip_photometry_flag:
+        return True, "skip-photometry-flag"
+    if qa_verdict == "FAIL":
+        if lenient_qa:
+            return False, "lenient-qa-override"
+        return True, "qa-fail-default-strict"
+    return False, ""
+
+
 def _epoch_should_rebuild(
     mosaic_path: str,
     prior_manifest,
@@ -640,7 +667,22 @@ def main() -> None:
         "--strict-qa",
         action="store_true",
         default=False,
-        help="Abort on cal quality gate failures and skip photometry for QA-FAIL epochs.",
+        help=(
+            "Abort the whole run on cal-quality gate WARN. Independent of the "
+            "default-strict per-epoch photometry skip on QA-FAIL (use "
+            "--lenient-qa to override that)."
+        ),
+    )
+    parser.add_argument(
+        "--lenient-qa",
+        action="store_true",
+        default=False,
+        help=(
+            "Operator override: run forced photometry on QA-FAIL epochs even "
+            "though they failed the three-gate epoch QA. Emits a 'lenient_qa' "
+            "gate so the run finishes with pipeline_verdict=DEGRADED. Use only "
+            "for investigative re-runs; the default is strict (skip)."
+        ),
     )
     parser.add_argument(
         "--archive-all",
@@ -1151,15 +1193,36 @@ def main() -> None:
             except Exception as e:
                 log.warning("  Could not update FITS header with QA: %s", e)
 
-        # ── Forced photometry — gated on QA result ────────────────────────────
+        # ── Forced photometry — default-strict on QA-FAIL ────────────────────
+        # Default policy: do NOT run photometry on a QA-FAIL epoch (would
+        # leak bad fluxes into the master lightcurve table). --lenient-qa
+        # is the explicit operator override for investigation.
         n_sources: int | None = None
         median_ratio: float | None = None
         qa_verdict = epoch_qa.qa_result if epoch_qa else None
-        skip_phot = args.skip_photometry or (args.strict_qa and qa_verdict == "FAIL")
+        skip_phot, skip_reason = _should_skip_photometry(
+            qa_verdict, args.skip_photometry, args.lenient_qa,
+        )
 
-        if skip_phot and args.strict_qa and qa_verdict == "FAIL":
-            log.warning("  --strict-qa: skipping photometry for QA-FAIL epoch %s", label)
-        elif not skip_phot:
+        if skip_reason == "qa-fail-default-strict":
+            log.warning(
+                "  QA FAIL — skipping photometry for epoch %s (use --lenient-qa to override)",
+                label,
+            )
+        elif skip_reason == "lenient-qa-override":
+            log.warning(
+                "  --lenient-qa: running photometry on QA-FAIL epoch %s "
+                "(verdict will be DEGRADED)",
+                label,
+            )
+            manifest.add_gate(
+                gate="lenient_qa",
+                verdict="OVERRIDE",
+                reason=f"photometry ran on QA-FAIL epoch {label} via --lenient-qa",
+                epoch_label=label,
+            )
+
+        if not skip_phot:
             try:
                 from forced_photometry import run_forced_photometry
                 phot_result = run_forced_photometry(
