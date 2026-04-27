@@ -1069,7 +1069,30 @@ def main() -> None:
         help=(
             "Reset failure_count to 0 for every MS in the checkpoint, "
             "releasing all quarantined files. Failure history (timestamps, "
-            "errors) is preserved for diagnostics."
+            "errors) is preserved for diagnostics. Note: combining with "
+            "--force-recal is a no-op for the clear because force-recal "
+            "deletes the checkpoint first."
+        ),
+    )
+    parser.add_argument(
+        "--photometry-workers",
+        type=int,
+        default=1,
+        metavar="N",
+        help=(
+            "Worker processes for the per-epoch forced photometry call "
+            "(default: 1 = serial). Threaded through run_two_stage_parallel; "
+            "see scripts/forced_photometry.py for benchmark numbers."
+        ),
+    )
+    parser.add_argument(
+        "--photometry-chunk-size",
+        type=int,
+        default=0,
+        metavar="N",
+        help=(
+            "Sources per worker chunk when --photometry-workers > 1. "
+            "0 = auto (~4 chunks per worker)."
         ),
     )
     args = parser.parse_args()
@@ -1194,6 +1217,7 @@ def main() -> None:
     # logging.basicConfig() is preserved unchanged.
     _run_started_at = datetime.now(timezone.utc)
     _run_log_path = _attach_run_logfile(paths["products_dir"], date, _run_started_at)
+    manifest.run_log = _run_log_path
     log.info("Run log: %s", _run_log_path)
 
     # ── Migrate stale qa_summary.csv if schema doesn't match ─────────────────
@@ -1661,13 +1685,21 @@ def main() -> None:
                 from forced_photometry import run_forced_photometry
                 phot_result = run_forced_photometry(
                     mosaic_path, output_csv=phot_csv_path, min_flux_mjy=10.0,
+                    workers=args.photometry_workers,
+                    chunk_size=(args.photometry_chunk_size or None),
                 )
                 n_sources = phot_result["n_sources"]
                 median_ratio = phot_result["median_ratio"]
                 if np.isfinite(median_ratio):
                     log.info("  Median DSA/Cat ratio: %.3f  (%d sources)", median_ratio, n_sources)
             except Exception as e:
-                log.error("  Forced photometry failed: %s", e)
+                log.error("  Forced photometry failed for epoch %s: %s", label, e)
+                manifest.add_gate(
+                    gate="photometry",
+                    verdict="FAILED",
+                    reason=f"forced photometry crashed for epoch {label}: {e}",
+                    epoch_label=label,
+                )
 
         # ── Diagnostic PNG ────────────────────────────────────────────────────
         if epoch_qa is not None:

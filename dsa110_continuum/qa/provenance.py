@@ -77,6 +77,10 @@ class RunManifest:
     gaincal_status: str = ""
     pipeline_verdict: str = ""  # "CLEAN", "DEGRADED", or "FAILED"
 
+    # Per-run diagnostic log file path (Batch C; recorded here so a single
+    # load of the manifest tells operators where to find the full run log).
+    run_log: str | None = None
+
     @classmethod
     def start(
         cls,
