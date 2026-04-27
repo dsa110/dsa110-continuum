@@ -177,18 +177,35 @@ def _write_tile_checkpoint(
 
     The checkpoint tracks both successes and failures so that chronic-offender
     MS files are visible across re-runs rather than silently re-attempted each
-    time. Prior failures are merged with current failures, deduplicated by
-    ms_path (latest wins).
+    time. Each failed[] entry carries a ``failure_count`` that increments on
+    every repeat failure, supporting Batch E quarantine policy. Prior and
+    current failures are merged by ms_path; a current failure for an MS that
+    already had a prior failure increments the existing count.
     """
     failure_by_ms: dict[str, dict] = {}
     for rec in prior_failures:
         ms = rec.get("ms_path")
         if ms:
+            # Ensure failure_count exists so older checkpoints upgrade in place
+            rec = dict(rec)
+            rec.setdefault("failure_count", 1)
             failure_by_ms[ms] = rec
     for rec in current_failures:
         ms = rec.get("ms_path")
-        if ms:
-            failure_by_ms[ms] = rec  # current supersedes prior
+        if not ms:
+            continue
+        prior = failure_by_ms.get(ms)
+        merged = dict(rec)
+        if prior is not None:
+            merged["failure_count"] = int(prior.get("failure_count", 1)) + 1
+            # Preserve the first-failure timestamp for operator forensics
+            merged["first_failed_at"] = prior.get(
+                "first_failed_at", prior.get("failed_at")
+            )
+        else:
+            merged["failure_count"] = 1
+            merged["first_failed_at"] = merged.get("failed_at")
+        failure_by_ms[ms] = merged
     payload = {
         "date": date,
         "cal_date": cal_date,
@@ -257,6 +274,285 @@ def _epoch_should_rebuild(
     # None = hour not recorded (crash before QA ran). FAIL = previously bad.
     # Anything else (PASS, WARN etc) is trusted.
     return prior in (None, "FAIL")
+
+
+# ── Quarantine policy ────────────────────────────────────────────────────────
+
+def _compute_quarantine_set(
+    failures: list[dict],
+    threshold: int,
+) -> set[str]:
+    """Return the set of ms_paths whose ``failure_count`` >= ``threshold``.
+
+    These MS files are skipped by the orchestrator: they have failed at least
+    ``threshold`` times in a row across previous runs, so retrying them is
+    almost certainly a waste of compute and an entry in the failure log.
+    A ``threshold <= 0`` disables quarantine entirely (returns an empty set).
+    Quarantine is purely advisory — nothing is moved or deleted; operators can
+    re-enable an MS by clearing its failure_count via ``--clear-quarantine``
+    or by hand-editing the checkpoint.
+    """
+    if threshold <= 0:
+        return set()
+    return {
+        rec["ms_path"]
+        for rec in failures
+        if isinstance(rec, dict)
+        and rec.get("ms_path")
+        and int(rec.get("failure_count", 0)) >= threshold
+    }
+
+
+def _clear_failure_counts(failures: list[dict]) -> list[dict]:
+    """Return a copy of ``failures`` with every ``failure_count`` reset to 0.
+
+    Used by ``--clear-quarantine``: the failure history is preserved (so
+    operators can still see what happened) but the counts no longer trigger
+    quarantine on the next run.
+    """
+    cleared = []
+    for rec in failures:
+        new_rec = dict(rec)
+        new_rec["failure_count"] = 0
+        cleared.append(new_rec)
+    return cleared
+
+
+# ── Dry-run plan ─────────────────────────────────────────────────────────────
+
+def _collect_dry_run_plan(
+    *,
+    date: str,
+    cal_date: str,
+    obs_dec_deg: float | None,
+    paths: dict,
+    bp_table: str,
+    g_table: str,
+    ms_list_after_filters: list[str],
+    epoch_hours: list[int],
+    epoch_decisions: list[dict],
+    prior_manifest_verdict: str | None,
+    prior_manifest_present: bool,
+    checkpoint_completed: int,
+    checkpoint_failures: list[dict],
+    quarantine_threshold: int,
+    quarantine_set: set[str],
+    skip_epoch_gaincal: bool,
+    skip_photometry: bool,
+    lenient_qa: bool,
+) -> dict:
+    """Build a structured plan dict describing what a normal run would do.
+
+    Pure data; no I/O. The caller decides whether to print it (dry-run) or
+    discard it. A dict (rather than a string) is returned so tests can assert
+    on individual fields without parsing log output.
+    """
+    n_total = len(ms_list_after_filters)
+    n_quarantined = sum(1 for ms in ms_list_after_filters if ms in quarantine_set)
+    n_to_attempt = n_total - n_quarantined
+
+    n_epoch_rebuild = sum(1 for d in epoch_decisions if d.get("action") == "rebuild")
+    n_epoch_skip = sum(1 for d in epoch_decisions if d.get("action") == "skip")
+
+    return {
+        "date": date,
+        "cal_date": cal_date,
+        "obs_dec_deg": obs_dec_deg,
+        "stage_dir": paths.get("stage_dir"),
+        "products_dir": paths.get("products_dir"),
+        "cal_tables": {
+            "bp": bp_table,
+            "g": g_table,
+            "bp_exists": os.path.exists(bp_table) if bp_table else False,
+            "g_exists": os.path.exists(g_table) if g_table else False,
+        },
+        "ms_files_after_filters": n_total,
+        "epoch_hours": list(epoch_hours),
+        "epoch_decisions": list(epoch_decisions),
+        "prior_manifest_present": prior_manifest_present,
+        "prior_manifest_verdict": prior_manifest_verdict,
+        "checkpoint_completed_count": checkpoint_completed,
+        "checkpoint_failed_count": len(checkpoint_failures),
+        "quarantine_threshold": quarantine_threshold,
+        "quarantine_count": n_quarantined,
+        "quarantine_ms_paths": sorted(ms for ms in ms_list_after_filters if ms in quarantine_set),
+        "phase0_gaincal": "skipped (--skip-epoch-gaincal)" if skip_epoch_gaincal else "would run",
+        "phase1_tiles_to_attempt": n_to_attempt,
+        "phase1_tiles_quarantined": n_quarantined,
+        "phase2_epochs_to_rebuild": n_epoch_rebuild,
+        "phase2_epochs_to_skip": n_epoch_skip,
+        "phase3_photometry": (
+            "skipped (--skip-photometry)" if skip_photometry
+            else f"would run; QA gating={'lenient' if lenient_qa else 'strict'}"
+        ),
+    }
+
+
+def _format_dry_run_plan(plan: dict) -> list[str]:
+    """Render a dry-run plan dict as human-readable lines."""
+    bp = plan["cal_tables"]
+    lines: list[str] = [
+        "=== DRY RUN — DSA-110 batch_pipeline ===",
+        f"Date:           {plan['date']}",
+        f"Cal date:       {plan['cal_date']}",
+        f"Obs Dec:        {plan['obs_dec_deg']}°",
+        f"Stage dir:      {plan['stage_dir']}",
+        f"Products dir:   {plan['products_dir']}",
+        f"Cal tables (BP): {bp['bp']}  [{'exists' if bp['bp_exists'] else 'MISSING — would generate'}]",
+        f"Cal tables (G):  {bp['g']}  [{'exists' if bp['g_exists'] else 'MISSING — would generate'}]",
+        f"MS files (post-filter): {plan['ms_files_after_filters']}",
+        f"Epoch hours: {plan['epoch_hours']}",
+        f"Prior manifest: {'present (verdict=' + str(plan['prior_manifest_verdict']) + ')' if plan['prior_manifest_present'] else 'absent'}",
+        f"Checkpoint: completed={plan['checkpoint_completed_count']}  failed={plan['checkpoint_failed_count']}",
+        f"Quarantine: {plan['quarantine_count']} MS (threshold={plan['quarantine_threshold']})",
+    ]
+    for ms in plan["quarantine_ms_paths"]:
+        lines.append(f"  QUARANTINED: {ms}")
+    lines.append("Resume plan:")
+    for d in plan["epoch_decisions"]:
+        lines.append(
+            f"  hour {int(d['hour']):02d}: {d['action']} ({d.get('reason', '')})"
+        )
+    lines.extend([
+        f"Phase 0 (gaincal):    {plan['phase0_gaincal']}",
+        f"Phase 1 (per-tile):   would attempt {plan['phase1_tiles_to_attempt']} tiles "
+        f"({plan['phase1_tiles_quarantined']} quarantined)",
+        f"Phase 2 (mosaic):     {plan['phase2_epochs_to_rebuild']} rebuild, "
+        f"{plan['phase2_epochs_to_skip']} skip",
+        f"Phase 3 (photometry): {plan['phase3_photometry']}",
+        "",
+        "Pipeline NOT executed (--dry-run set). No products written.",
+    ])
+    return lines
+
+
+# ── Dry-run orchestration ────────────────────────────────────────────────────
+
+def _dry_run_main(args, date: str, cal_date: str, obs_dec_deg: float | None) -> None:
+    """Read-only dry-run: build a plan and print it, no side effects.
+
+    Bypasses ``ensure_bandpass`` (which generates cal tables) and uses only
+    the filesystem-glob ``resolve_cal_table_paths`` to discover what cal
+    tables would be used. Does not create products/stage directories or a
+    run log file.
+    """
+    from dsa110_continuum.calibration.ensure import resolve_cal_table_paths
+
+    paths = get_paths(date)
+    bp_table, g_table = resolve_cal_table_paths(MS_DIR, cal_date)
+
+    # Discover MS files using the same find + filter logic as a real run.
+    # Importing here keeps the module-level import light for the regular path.
+    import mosaic_day as _md  # type: ignore  (scripts/ is on sys.path)
+
+    cfg = _md.TileConfig.build(
+        date=date,
+        cal_date=cal_date,
+        image_dir=paths["stage_dir"],
+        products_dir=paths["products_dir"],
+    )
+    try:
+        ms_list = _md.find_valid_ms(cfg)
+    except Exception as exc:
+        log.error("Dry-run: could not enumerate MS files (%s)", exc)
+        ms_list = []
+
+    def _ms_ts(ms_path: str):
+        ts_str = Path(ms_path).stem
+        try:
+            return datetime.strptime(ts_str, "%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            return None
+
+    ms_list = [
+        p for p in ms_list
+        if (t := _ms_ts(p)) is not None and t.strftime("%Y-%m-%d") == date
+    ]
+    if args.start_hour is not None or args.end_hour is not None:
+        ms_list = [
+            p for p in ms_list
+            if (t := _ms_ts(p)) is not None
+            and (args.start_hour is None or t.hour >= args.start_hour)
+            and (args.end_hour is None or t.hour < args.end_hour)
+        ]
+
+    epoch_hours = sorted({_ms_ts(p).hour for p in ms_list if _ms_ts(p) is not None})
+
+    # Prior manifest + checkpoint (read-only)
+    prior_manifest = try_load_prior_manifest(date, products_dir=PRODUCTS_BASE)
+    checkpoint_path = os.path.join(paths["stage_dir"], ".tile_checkpoint.json")
+    checkpoint_completed: list[str] = []
+    checkpoint_failures: list[dict] = []
+    if os.path.exists(checkpoint_path):
+        try:
+            with open(checkpoint_path) as f:
+                ck = json.load(f)
+            checkpoint_completed = list(ck.get("completed", []))
+            checkpoint_failures = [
+                rec for rec in ck.get("failed", [])
+                if isinstance(rec, dict) and rec.get("ms_path")
+            ]
+        except Exception as exc:
+            log.warning("Dry-run: could not read checkpoint (%s)", exc)
+
+    # Apply --clear-quarantine to the in-memory copy so the dry-run plan
+    # reflects what *would* happen with that flag — without writing.
+    effective_failures = (
+        _clear_failure_counts(checkpoint_failures)
+        if args.clear_quarantine else checkpoint_failures
+    )
+    quarantine_set = _compute_quarantine_set(
+        effective_failures, args.quarantine_after_failures,
+    )
+
+    # Per-epoch resume decisions
+    epoch_decisions: list[dict] = []
+    for hour in epoch_hours:
+        mosaic_path = epoch_mosaic_path(paths, date, hour)
+        rebuild = _epoch_should_rebuild(
+            mosaic_path, prior_manifest, hour, args.force_recal,
+        )
+        prior_v = (
+            None if prior_manifest is None else prior_manifest.epoch_verdict(hour)
+        )
+        if not rebuild:
+            reason = f"prior verdict={prior_v}"
+            action = "skip"
+        elif args.force_recal:
+            reason = "--force-recal"
+            action = "rebuild"
+        elif not os.path.exists(mosaic_path):
+            reason = "no mosaic on disk"
+            action = "rebuild"
+        else:
+            reason = f"prior verdict={prior_v}"
+            action = "rebuild"
+        epoch_decisions.append({"hour": hour, "action": action, "reason": reason})
+
+    plan = _collect_dry_run_plan(
+        date=date,
+        cal_date=cal_date,
+        obs_dec_deg=obs_dec_deg,
+        paths=paths,
+        bp_table=bp_table,
+        g_table=g_table,
+        ms_list_after_filters=ms_list,
+        epoch_hours=epoch_hours,
+        epoch_decisions=epoch_decisions,
+        prior_manifest_verdict=(
+            prior_manifest.pipeline_verdict if prior_manifest else None
+        ),
+        prior_manifest_present=prior_manifest is not None,
+        checkpoint_completed=len(checkpoint_completed),
+        checkpoint_failures=effective_failures,
+        quarantine_threshold=args.quarantine_after_failures,
+        quarantine_set=quarantine_set,
+        skip_epoch_gaincal=args.skip_epoch_gaincal,
+        skip_photometry=args.skip_photometry,
+        lenient_qa=args.lenient_qa,
+    )
+    for line in _format_dry_run_plan(plan):
+        log.info("%s", line)
 
 
 # ── Epoch binning ─────────────────────────────────────────────────────────────
@@ -744,6 +1040,38 @@ def main() -> None:
             "Use when you want manual control over calibration."
         ),
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help=(
+            "Do not execute any pipeline stage; instead print a plan summary "
+            "(MS files found, epoch resume decisions, quarantine state, what "
+            "each phase would do) and exit 0. Reads prior manifest and "
+            "checkpoint to inform the plan but writes nothing."
+        ),
+    )
+    parser.add_argument(
+        "--quarantine-after-failures",
+        type=int,
+        default=3,
+        metavar="N",
+        help=(
+            "Quarantine an MS file after N consecutive failures across runs "
+            "(default: 3). Quarantined MS are skipped without retry. Set 0 "
+            "to disable. Quarantine is reversible via --clear-quarantine."
+        ),
+    )
+    parser.add_argument(
+        "--clear-quarantine",
+        action="store_true",
+        default=False,
+        help=(
+            "Reset failure_count to 0 for every MS in the checkpoint, "
+            "releasing all quarantined files. Failure history (timestamps, "
+            "errors) is preserved for diagnostics."
+        ),
+    )
     args = parser.parse_args()
 
     date = args.date
@@ -769,6 +1097,15 @@ def main() -> None:
         log.warning("No MS files found for %s yet — using --expected-dec for cal selection", date)
         _obs_dec = args.expected_dec
     log.info("Observation Dec for calibrator selection: %.1f°", _obs_dec)
+
+    # ── Dry-run plan (Batch E) ───────────────────────────────────────────────
+    # Read-only inspection: resolve existing cal tables (glob only — no
+    # generation), find MS, consult prior manifest + checkpoint for resume
+    # and quarantine state, print the plan, exit. No mkdir, no FileHandler,
+    # no Phase 0/1/2/3 dispatch.
+    if args.dry_run:
+        _dry_run_main(args, date, cal_date, _obs_dec)
+        return
 
     # ── Automatic bandpass table generation ────────────────────────────────
     _auto_cal_result = None
@@ -1066,13 +1403,57 @@ def main() -> None:
 
     completed_fits = set(tile_fits)
     current_tile_failures: list[dict] = []
+
+    # ── Quarantine policy (Batch E) ──────────────────────────────────────────
+    # --clear-quarantine zeros every failure_count before the threshold check
+    # so the next run is allowed to retry every MS regardless of history.
+    if args.clear_quarantine and prior_tile_failures:
+        log.info("--clear-quarantine: zeroing failure_count for %d MS",
+                 len(prior_tile_failures))
+        prior_tile_failures = _clear_failure_counts(prior_tile_failures)
+        # Persist the cleared counts immediately so even if the run aborts the
+        # release survives.
+        _write_tile_checkpoint(
+            checkpoint_path, date, cal_date, tile_fits,
+            prior_tile_failures, current_tile_failures,
+        )
+    quarantine_set = _compute_quarantine_set(
+        prior_tile_failures, args.quarantine_after_failures,
+    )
+    if quarantine_set:
+        log.warning(
+            "Quarantine: %d MS skipped (>= %d consecutive failures). "
+            "Run --clear-quarantine to re-enable.",
+            len(quarantine_set), args.quarantine_after_failures,
+        )
+        manifest.add_gate(
+            gate="quarantine",
+            verdict="BLOCKED",
+            reason=(
+                f"{len(quarantine_set)} MS file(s) skipped after "
+                f">={args.quarantine_after_failures} failures"
+            ),
+            quarantined_ms_paths=sorted(quarantine_set),
+        )
+
     log.info("=== Phase 1/3: Calibrate + Image all tiles (timeout=%ds, retry=%s) ===",
              tile_timeout, retry_failed)
-    n_imaged = n_skipped_tiles = n_failed_tiles = 0
+    n_imaged = n_skipped_tiles = n_failed_tiles = n_quarantined = 0
 
     for i, ms_path in enumerate(ms_list, 1):
         tag = Path(ms_path).stem
         log.info("[%d/%d] %s", i, len(ms_list), tag)
+
+        # Quarantined MS: skip without retry (it has crossed the failure
+        # threshold). Recorded in manifest so operators see what was skipped.
+        if ms_path in quarantine_set:
+            log.warning("  QUARANTINED — skipping %s", ms_path)
+            n_quarantined += 1
+            manifest.record_tile(
+                ms_path, None, "quarantined",
+                0.0, error="quarantined",
+            )
+            continue
 
         # Guard: skip corrupt or incomplete Measurement Sets before spawning
         # a subprocess.  A corrupt MS (missing MAIN table, incomplete write,
@@ -1136,8 +1517,8 @@ def main() -> None:
             )
 
     log.info(
-        "Tiles: %d imaged, %d already done, %d failed",
-        n_imaged, n_skipped_tiles, n_failed_tiles,
+        "Tiles: %d imaged, %d already done, %d failed, %d quarantined",
+        n_imaged, n_skipped_tiles, n_failed_tiles, n_quarantined,
     )
 
     if len(tile_fits) < 2:
