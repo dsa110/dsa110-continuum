@@ -1300,7 +1300,10 @@ def main() -> None:
         _cached_ap = _glob.glob(os.path.join(epoch_gaincal_dir, "*.ap.G"))
         for _f in _cached_ap:
             try:
-                import shutil
+                # shutil is imported at module scope (line 32); a redundant
+                # local import here shadowed the name across all of main(),
+                # causing UnboundLocalError at the qa_summary migration site
+                # whenever a stale-schema CSV triggered shutil.copy2.
                 shutil.rmtree(_f) if os.path.isdir(_f) else os.remove(_f)
                 log.info("--force-recal: removed cached ap.G: %s", _f)
             except Exception as _e:
