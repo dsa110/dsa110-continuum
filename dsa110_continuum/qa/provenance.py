@@ -195,6 +195,38 @@ class RunManifest:
                 pass
         self.epochs.append(rec)
 
+    def add_gate(
+        self,
+        gate: str,
+        verdict: str,
+        reason: str,
+        **extras: Any,
+    ) -> None:
+        """Append a structured gate entry.
+
+        Any QA check that records a ``gate`` here will cause
+        :meth:`finalize` to mark the run ``DEGRADED``. Use this for
+        every degradation signal (cal quality, strip mismatch, archive
+        block, gaincal fallback, etc.) so the verdict cannot silently
+        disagree with an operator reading the manifest.
+        """
+        entry: dict[str, Any] = {"gate": gate, "verdict": verdict, "reason": reason}
+        entry.update(extras)
+        self.gates.append(entry)
+
+    def epoch_verdict(self, hour: int) -> str | None:
+        """Return ``qa_result`` for a previously-recorded epoch, else ``None``.
+
+        Used by the orchestrator to decide whether a mosaic file from a
+        prior crashed run can be trusted (PASS) or must be rebuilt
+        (FAIL / missing / WARN-ish).
+        """
+        for rec in self.epochs:
+            if rec.get("hour") == hour:
+                verdict = rec.get("qa_result")
+                return str(verdict) if verdict is not None else None
+        return None
+
     def finalize(self, wall_time_sec: float) -> None:
         """Mark the run as finished and compute pipeline verdict."""
         self.finished_at = datetime.now(timezone.utc).isoformat()
@@ -330,6 +362,31 @@ def load_manifest(date: str, products_dir: str | None = None) -> RunManifest:
     if not os.path.exists(manifest_path):
         raise FileNotFoundError(f"Manifest not found: {manifest_path}")
     return RunManifest.load(manifest_path)
+
+
+def try_load_prior_manifest(
+    date: str,
+    products_dir: str | None = None,
+) -> RunManifest | None:
+    """Load the prior-run manifest for *date*, or return ``None``.
+
+    Unlike :func:`load_manifest`, this does not raise when the file is
+    missing, unreadable, or structurally invalid — it returns ``None``
+    so callers can treat "no prior state" and "prior state unusable"
+    identically. Used by the orchestrator to consult prior epoch
+    verdicts on re-run without making resume conditional on manifest
+    presence.
+    """
+    if products_dir is None:
+        products_dir = os.environ.get("DSA_PRODUCTS_DIR", _DEFAULT_PRODUCTS_BASE)
+    manifest_path = os.path.join(products_dir, date, f"{date}_manifest.json")
+    if not os.path.exists(manifest_path):
+        return None
+    try:
+        return RunManifest.load(manifest_path)
+    except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        logger.warning("Prior manifest %s unreadable (%s); ignoring", manifest_path, exc)
+        return None
 
 
 def get_cal_qa_for_tile(

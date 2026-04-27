@@ -58,7 +58,7 @@ from astropy.wcs import WCS
 
 from dsa110_continuum.photometry.epoch_qa import EpochQAResult, measure_epoch_qa
 from dsa110_continuum.photometry.epoch_qa_plot import plot_epoch_qa
-from dsa110_continuum.qa.provenance import RunManifest
+from dsa110_continuum.qa.provenance import RunManifest, try_load_prior_manifest
 
 logging.basicConfig(
     level=logging.INFO,
@@ -117,6 +117,75 @@ def timestamp_from_fits(fits_path: str) -> datetime | None:
         return datetime.strptime(ts_str, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
     except ValueError:
         return None
+
+
+# ── Checkpoint helpers ────────────────────────────────────────────────────────
+
+def _write_tile_checkpoint(
+    checkpoint_path: str,
+    date: str,
+    cal_date: str,
+    completed: list[str],
+    prior_failures: list[dict],
+    current_failures: list[dict],
+) -> None:
+    """Atomically write the tile checkpoint JSON.
+
+    The checkpoint tracks both successes and failures so that chronic-offender
+    MS files are visible across re-runs rather than silently re-attempted each
+    time. Prior failures are merged with current failures, deduplicated by
+    ms_path (latest wins).
+    """
+    failure_by_ms: dict[str, dict] = {}
+    for rec in prior_failures:
+        ms = rec.get("ms_path")
+        if ms:
+            failure_by_ms[ms] = rec
+    for rec in current_failures:
+        ms = rec.get("ms_path")
+        if ms:
+            failure_by_ms[ms] = rec  # current supersedes prior
+    payload = {
+        "date": date,
+        "cal_date": cal_date,
+        "completed": completed,
+        "failed": list(failure_by_ms.values()),
+    }
+    try:
+        tmp = checkpoint_path + ".tmp"
+        with open(tmp, "w") as ck_f:
+            json.dump(payload, ck_f, indent=2)
+        os.replace(tmp, checkpoint_path)
+    except Exception as e:
+        log.warning("Could not write checkpoint: %s", e)
+
+
+def _epoch_should_rebuild(
+    mosaic_path: str,
+    prior_manifest,
+    hour: int,
+    force_recal: bool,
+) -> bool:
+    """Decide whether to (re)build an epoch mosaic.
+
+    Rules:
+    - ``force_recal``              → rebuild (caller handles stale-file cleanup)
+    - mosaic file missing          → rebuild
+    - no prior manifest            → skip (backward-compat; trust file)
+    - prior verdict was ``PASS``   → skip (trust prior PASS mosaic)
+    - prior verdict was ``FAIL`` /
+      ``None`` (crashed mid-epoch) → rebuild (don't trust stale mosaic)
+    """
+    if force_recal:
+        return True
+    if not os.path.exists(mosaic_path):
+        return True
+    if prior_manifest is None:
+        return False
+    prior = prior_manifest.epoch_verdict(hour)
+    # None = hour not recorded (crash before QA ran). FAIL = previously bad.
+    # Anything else (PASS, WARN etc) is trusted.
+    return prior in (None, "FAIL")
 
 
 # ── Epoch binning ─────────────────────────────────────────────────────────────
@@ -839,10 +908,35 @@ def main() -> None:
     manifest.gaincal_status = _epoch_gaincal_status
     manifest.epoch_g_table = _epoch_g_table
 
+    # Gaincal fallback/error is a degradation signal: record it as a gate so the
+    # pipeline verdict reflects that the per-epoch phase solution was not used.
+    # "skipped" is intentional (--skip-epoch-gaincal) and does not degrade.
+    if _epoch_gaincal_status in ("fallback", "error"):
+        manifest.add_gate(
+            gate="gaincal",
+            verdict="FALLBACK" if _epoch_gaincal_status == "fallback" else "ERROR",
+            reason=f"epoch gaincal {_epoch_gaincal_status}; static daily G table used",
+            static_g_table=_ga,
+        )
+
     # ── Phase 1: Calibrate + image all tiles ──────────────────────────────────
     tile_timeout = args.tile_timeout
     retry_failed = args.retry_failed
     checkpoint_path = os.path.join(paths["stage_dir"], ".tile_checkpoint.json")
+
+    # Consult the prior-run manifest (if any). Used for QA-aware epoch skip
+    # (below) and to carry tile-failure history across re-runs.
+    prior_manifest = (
+        None if args.force_recal
+        else try_load_prior_manifest(date, products_dir=PRODUCTS_BASE)
+    )
+    if prior_manifest is not None:
+        log.info(
+            "Prior manifest loaded: verdict=%s, %d epochs, %d tiles recorded",
+            prior_manifest.pipeline_verdict or "?",
+            len(prior_manifest.epochs),
+            len(prior_manifest.tiles),
+        )
 
     # --force-recal means "fresh rerun", so discard any old checkpoint state
     if args.force_recal and os.path.exists(checkpoint_path):
@@ -852,18 +946,31 @@ def main() -> None:
         except Exception as e:
             log.warning("--force-recal: could not remove checkpoint %s: %s", checkpoint_path, e)
 
-    # Load completed tiles from a previous (crashed) run
+    # Load completed tiles (and prior failure history) from a previous run.
+    # Failures are preserved so operators can see chronic offenders across
+    # re-runs; they do not prevent re-attempting the same MS.
     tile_fits: list[str] = []
+    prior_tile_failures: list[dict] = []
     if os.path.exists(checkpoint_path):
         try:
             ck = json.load(open(checkpoint_path))
             tile_fits = [p for p in ck.get("completed", []) if os.path.exists(p)]
+            prior_tile_failures = [
+                rec for rec in ck.get("failed", [])
+                if isinstance(rec, dict) and rec.get("ms_path")
+            ]
             if tile_fits:
                 log.info("Checkpoint: resuming with %d previously completed tiles", len(tile_fits))
+            if prior_tile_failures:
+                log.info(
+                    "Checkpoint: %d tiles previously failed (will be re-attempted)",
+                    len(prior_tile_failures),
+                )
         except Exception as e:
             log.warning("Could not read checkpoint file: %s", e)
 
     completed_fits = set(tile_fits)
+    current_tile_failures: list[dict] = []
     log.info("=== Phase 1/3: Calibrate + Image all tiles (timeout=%ds, retry=%s) ===",
              tile_timeout, retry_failed)
     n_imaged = n_skipped_tiles = n_failed_tiles = 0
@@ -886,6 +993,12 @@ def main() -> None:
                 ms_path, None, "failed",
                 0.0, error="corrupt_ms_skipped",
             )
+            current_tile_failures.append({
+                "ms_path": ms_path,
+                "error": "corrupt_ms_skipped",
+                "elapsed_sec": 0.0,
+                "failed_at": datetime.now(timezone.utc).isoformat(),
+            })
             continue
 
         t0 = time.time()
@@ -896,11 +1009,21 @@ def main() -> None:
         elapsed = time.time() - t0
 
         if not result.ok:
+            err_msg = result.error or result.failed_stage
             log.error("  FAILED after %.0fs (%s: %s)", elapsed,
-                       result.failed_stage, result.error or "unknown")
+                       result.failed_stage, err_msg or "unknown")
             n_failed_tiles += 1
-            manifest.record_tile(ms_path, None, "failed", elapsed,
-                                 error=result.error or result.failed_stage)
+            manifest.record_tile(ms_path, None, "failed", elapsed, error=err_msg)
+            current_tile_failures.append({
+                "ms_path": ms_path,
+                "error": err_msg,
+                "elapsed_sec": round(elapsed, 1),
+                "failed_at": datetime.now(timezone.utc).isoformat(),
+            })
+            _write_tile_checkpoint(
+                checkpoint_path, date, cal_date, tile_fits,
+                prior_tile_failures, current_tile_failures,
+            )
         else:
             if result.fits_path not in completed_fits:
                 tile_fits.append(result.fits_path)
@@ -912,12 +1035,10 @@ def main() -> None:
                 n_imaged += 1
             manifest.record_tile(ms_path, result.fits_path, "ok", elapsed)
 
-            # Write checkpoint after every successful tile
-            try:
-                with open(checkpoint_path, "w") as ck_f:
-                    json.dump({"date": date, "cal_date": cal_date, "completed": tile_fits}, ck_f, indent=2)
-            except Exception as e:
-                log.warning("Could not write checkpoint: %s", e)
+            _write_tile_checkpoint(
+                checkpoint_path, date, cal_date, tile_fits,
+                prior_tile_failures, current_tile_failures,
+            )
 
     log.info(
         "Tiles: %d imaged, %d already done, %d failed",
@@ -954,20 +1075,36 @@ def main() -> None:
         phot_csv_path = epoch_phot_path(paths, date, hour)
         mosaic_fits_dst = Path(paths["products_dir"]) / Path(mosaic_path).name
 
-        # --force-recal: remove stale epoch-level outputs before rebuilding
-        if args.force_recal:
+        # Decide (rebuild vs skip) based on prior-run verdict. A mosaic file
+        # that exists but whose prior QA verdict was FAIL (or absent, meaning
+        # the prior run crashed mid-epoch) is NOT trusted — it gets rebuilt.
+        should_rebuild = _epoch_should_rebuild(
+            mosaic_path, prior_manifest, hour, args.force_recal,
+        )
+
+        # Remove stale epoch-level outputs before rebuilding so the fresh
+        # mosaic / photometry CSV is unambiguous. --force-recal and a FAIL
+        # prior verdict both use the same cleanup path.
+        if should_rebuild and os.path.exists(mosaic_path):
+            prior_v = None if prior_manifest is None else prior_manifest.epoch_verdict(hour)
+            reason = "--force-recal" if args.force_recal else f"prior verdict={prior_v!s}"
             for stale_path in (mosaic_path, phot_csv_path, str(mosaic_fits_dst)):
                 if os.path.exists(stale_path):
                     try:
                         os.remove(stale_path)
-                        log.info("  --force-recal: removed stale output %s", stale_path)
+                        log.info("  %s: removed stale output %s", reason, stale_path)
                     except Exception as e:
-                        log.warning("  --force-recal: could not remove %s: %s", stale_path, e)
+                        log.warning("  %s: could not remove %s: %s", reason, stale_path, e)
 
-        # Skip if mosaic already exists (unless --force-recal)
-        if os.path.exists(mosaic_path) and not args.force_recal:
-            log.info("  Mosaic already exists — skipping epoch %s", label)
-            epoch_results.append({"label": label, "status": "skipped", "n_tiles": len(epoch_tiles), "gaincal_status": _epoch_gaincal_status})
+        if not should_rebuild:
+            prior_v = None if prior_manifest is None else prior_manifest.epoch_verdict(hour)
+            log.info("  Mosaic already exists (prior verdict=%s) — skipping epoch %s",
+                     prior_v or "no-manifest", label)
+            epoch_results.append({
+                "label": label, "status": "skipped", "n_tiles": len(epoch_tiles),
+                "gaincal_status": _epoch_gaincal_status,
+                "qa_result": prior_v,  # carry prior verdict forward
+            })
             continue
 
         # Build mosaic
