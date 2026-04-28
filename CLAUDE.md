@@ -113,6 +113,48 @@ scripts/run_canary.sh          Canary test: end-to-end pipeline on reference dat
 dsa110 convert queries the pipeline SQLite DB, not the filesystem.
 New dates must be indexed first: dsa110 index add --start YYYY-MM-DD --end YYYY-MM-DD --directory /data/incoming
 
+## Batch pipeline operational workflow
+
+Use dry-run before real compute to verify MS discovery, calibration-table resolution,
+checkpoint state, quarantine state, and epoch rebuild/skip decisions without writing
+run products:
+
+    /opt/miniforge/envs/casa6/bin/python scripts/batch_pipeline.py \
+      --date 2026-01-25 \
+      --start-hour 22 --end-hour 23 \
+      --dry-run \
+      --quarantine-after-failures 3
+
+For a narrow real production smoke test, keep default-strict QA active, bound tile
+runtime, retry known failed tiles, and exercise orchestrated parallel photometry:
+
+    /opt/miniforge/envs/casa6/bin/python scripts/batch_pipeline.py \
+      --date 2026-01-25 \
+      --start-hour 22 --end-hour 23 \
+      --quarantine-after-failures 3 \
+      --tile-timeout 1800 \
+      --retry-failed \
+      --photometry-workers 4 \
+      --photometry-chunk-size 0
+
+Operational flags:
+
+- `--dry-run` prints the execution plan and exits before creating run products.
+- `--quarantine-after-failures N` skips MS entries whose checkpoint failure count
+  reaches `N`; `--clear-quarantine` clears checkpoint failure counts before the run.
+- QA gating is strict by default: QA-FAIL epochs do not run forced photometry or
+  archive mosaics. Use `--lenient-qa` only for explicit diagnostic overrides.
+- `--photometry-workers` enables process-based forced-photometry parallelism;
+  `--photometry-chunk-size 0` uses automatic deterministic chunk sizing.
+- Each real run writes `run_<utc>.log`, `{date}_manifest.json`,
+  `{date}_run_summary.json`, and `run_report.md` under the date products directory.
+
+Validated H17 smoke-test result: `2026-01-25` hour 22 rebuilt 11 tiles and wrote
+`/stage/dsa110-contimg/images/mosaic_2026-01-25/2026-01-25T2200_mosaic.fits`.
+The epoch completed but QA failed on catalog completeness, so the manifest verdict
+was `DEGRADED`, photometry was skipped by default-strict gating, and `run_report.md`
+recorded the QA failure, archive block, run log, and artifact paths.
+
 ## Calibration tables
 
 Operational policy for obtaining BP/G tables (in order):
