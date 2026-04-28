@@ -1,0 +1,72 @@
+name: Python tests (cloud-safe subset)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "dsa110_continuum/**"
+      - "scripts/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - ".github/workflows/python-tests.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "dsa110_continuum/**"
+      - "scripts/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - ".github/workflows/python-tests.yml"
+
+# Workflow scope:
+#   Runs the cloud-safe focused-test subset that exercises the operational
+#   A-F arc (resume semantics, default-strict QA, run logging, parallel
+#   photometry, dry-run + quarantine, run report, hygiene fixes) plus the
+#   CASA shape-helper tests added by PR #9.
+#
+# What this CI does NOT cover (and why):
+#   - CASA-gated tests (test_silent_failures.py): skip wholesale on cloud
+#   - CASA-required tests (test_epoch_gaincal, test_simulated_pipeline,
+#     test_integration_e2e, test_simulation_harness): need casatools +
+#     wsclean — defer to local H17 runs
+#   - H17 data-path tests (test_config, test_source_presence): need
+#     /data/incoming + /stage/dsa110-contimg/images
+#   - Source-finder tests (test_source_finding*): need BANE/Aegean binaries
+#
+# Expansion path: add files from the broader cloud-safe-likely bucket to the
+# pytest invocation incrementally; verify each addition stays green across
+# two consecutive runs before promoting to the steady-state list.
+
+jobs:
+  cloud-safe-tests:
+    name: Cloud-safe pytest subset
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install minimal cloud-safe deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy astropy pytest
+
+      - name: Run focused cloud-safe subset
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python -m pytest -q \
+            tests/test_provenance.py \
+            tests/test_resume_semantics.py \
+            tests/test_qa_default_strict.py \
+            tests/test_run_logging.py \
+            tests/test_run_report.py \
+            tests/test_forced_photometry_parallel.py \
+            tests/test_batch_pipeline_dry_run_quarantine.py \
+            tests/test_batch_e1_hygiene.py \
+            tests/test_batch_e2_hygiene.py \
+            tests/test_skymodel_phase_dir.py
