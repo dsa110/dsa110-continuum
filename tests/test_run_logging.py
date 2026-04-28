@@ -61,20 +61,26 @@ def _detach_test_handlers(target_path: str) -> None:
             root.removeHandler(h)
 
 
-def test_attach_run_logfile_path_under_products_date(tmp_path):
-    """Returned path is under {products_dir}/{date}/ with the run_<utc>.log name."""
+def test_attach_run_logfile_path_under_date_dir(tmp_path):
+    """Caller passes the date-nested dir; helper writes directly into it.
+
+    Convention matches RunManifest.save and emit_run_summary — no extra
+    {date}/ subdir is appended (regression guard for the double-nesting bug).
+    """
     import batch_pipeline as bp
 
     started = datetime(2026, 4, 27, 5, 30, 17, tzinfo=timezone.utc)
-    products = tmp_path / "products"
-    log_path = bp._attach_run_logfile(str(products), "2026-04-27", started)
+    date_dir = tmp_path / "products" / "2026-04-27"
+    log_path = bp._attach_run_logfile(str(date_dir), started)
 
     try:
-        assert Path(log_path).parent == (products / "2026-04-27")
+        # Lands directly in date_dir, NOT in date_dir/2026-04-27/
+        assert Path(log_path).parent == date_dir
         assert Path(log_path).name == "run_2026-04-27T05_30_17Z.log"
         assert Path(log_path).is_absolute()
-        # Date dir must have been created
-        assert (products / "2026-04-27").is_dir()
+        assert date_dir.is_dir()
+        # No nested {date}/{date}/ structure
+        assert not (date_dir / "2026-04-27").exists()
     finally:
         _detach_test_handlers(log_path)
 
@@ -84,11 +90,11 @@ def test_attach_run_logfile_is_idempotent(tmp_path):
     import batch_pipeline as bp
 
     started = datetime(2026, 4, 27, 5, 30, 17, tzinfo=timezone.utc)
-    products = tmp_path / "products"
+    date_dir = tmp_path / "products" / "2026-04-27"
 
-    log_path = bp._attach_run_logfile(str(products), "2026-04-27", started)
-    bp._attach_run_logfile(str(products), "2026-04-27", started)
-    bp._attach_run_logfile(str(products), "2026-04-27", started)
+    log_path = bp._attach_run_logfile(str(date_dir), started)
+    bp._attach_run_logfile(str(date_dir), started)
+    bp._attach_run_logfile(str(date_dir), started)
 
     try:
         root = logging.getLogger()
@@ -113,8 +119,8 @@ def test_attach_run_logfile_captures_log_lines(tmp_path):
     import batch_pipeline as bp
 
     started = datetime(2026, 4, 27, 5, 30, 17, tzinfo=timezone.utc)
-    products = tmp_path / "products"
-    log_path = bp._attach_run_logfile(str(products), "2026-04-27", started)
+    date_dir = tmp_path / "products" / "2026-04-27"
+    log_path = bp._attach_run_logfile(str(date_dir), started)
 
     test_logger = logging.getLogger("batch_pipeline")
     prior_level = test_logger.level

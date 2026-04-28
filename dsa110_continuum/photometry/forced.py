@@ -32,7 +32,17 @@ try:
     from dsa110_contimg.common.unified_config import settings
     from dsa110_contimg.common.utils.gpu_utils import get_array_module
 except ImportError:
-    pass  # dsa110_contimg not installed (cloud/test env)
+    # dsa110_contimg not installed (cloud/test env). Keep this module usable
+    # with safe CPU-only defaults so _weighted_convolution doesn't NameError
+    # when the GPU config and helpers are absent.
+    settings = None  # type: ignore[assignment]
+
+    def get_array_module(prefer_gpu: bool | None = None, min_elements: int | None = None):  # type: ignore[no-redef]
+        """CPU-only fallback for environments without dsa110_contimg.gpu_utils.
+
+        Always returns ``(numpy, False)`` so callers know GPU is unavailable.
+        """
+        return np, False
 
 try:
     import scipy.spatial  # type: ignore[reportMissingTypeStubs]
@@ -392,8 +402,14 @@ def _weighted_convolution(
     -------
         None
     """
-    prefer_gpu = settings.gpu.prefer_gpu if prefer_gpu is None else prefer_gpu
-    min_elements = settings.gpu.min_array_size if min_elements is None else min_elements
+    # Resolve GPU defaults from settings when available; fall back to CPU
+    # (prefer_gpu=False, min_elements=large) when dsa110_contimg is absent.
+    if prefer_gpu is None:
+        prefer_gpu = settings.gpu.prefer_gpu if settings is not None else False
+    if min_elements is None:
+        min_elements = (
+            settings.gpu.min_array_size if settings is not None else 1_000_000
+        )
 
     # Try GPU vectorized path when available
     xp, is_gpu = get_array_module(prefer_gpu=prefer_gpu, min_elements=min_elements)

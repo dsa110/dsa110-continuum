@@ -133,8 +133,13 @@ def _run_log_filename(started_at: datetime) -> str:
     return f"run_{stamp}.log"
 
 
-def _attach_run_logfile(products_dir: str, date: str, started_at: datetime) -> str:
+def _attach_run_logfile(date_dir: str, started_at: datetime) -> str:
     """Attach a per-run :class:`logging.FileHandler` to the root logger.
+
+    *date_dir* is the per-date products directory (already date-nested,
+    e.g. ``/data/products/2026-01-25/``); the log file is written
+    directly into it as ``run_<utc-stamp>.log`` — matching the convention
+    used by :meth:`RunManifest.save` and :func:`emit_run_summary`.
 
     Idempotent: if a ``FileHandler`` with the target ``baseFilename`` is
     already attached (e.g. ``main()`` called twice in the same process,
@@ -142,9 +147,8 @@ def _attach_run_logfile(products_dir: str, date: str, started_at: datetime) -> s
     absolute log file path so the caller can record it in the run
     summary.
     """
-    log_dir = os.path.join(products_dir, date)
-    os.makedirs(log_dir, exist_ok=True)
-    log_path = os.path.abspath(os.path.join(log_dir, _run_log_filename(started_at)))
+    os.makedirs(date_dir, exist_ok=True)
+    log_path = os.path.abspath(os.path.join(date_dir, _run_log_filename(started_at)))
 
     root = logging.getLogger()
     for h in root.handlers:
@@ -172,27 +176,34 @@ def _write_tile_checkpoint(
     completed: list[str],
     prior_failures: list[dict],
     current_failures: list[dict],
+    cleared_ms_paths: list[str] | None = None,
 ) -> None:
     """Atomically write the tile checkpoint JSON.
 
     The checkpoint tracks both successes and failures so that chronic-offender
     MS files are visible across re-runs rather than silently re-attempted each
     time. Each failed[] entry carries a ``failure_count`` that increments on
-    every repeat failure, supporting Batch E quarantine policy. Prior and
-    current failures are merged by ms_path; a current failure for an MS that
-    already had a prior failure increments the existing count.
+    every repeat failure, supporting Batch E quarantine policy.
+
+    Consecutive-failure semantics: a successful processing run for an MS
+    drops it from the merged failures (via ``cleared_ms_paths``). That way
+    ``failure_count`` truly counts *consecutive* failures — a fail / fail /
+    succeed / fail sequence resets to count=1 after the success, instead of
+    accumulating to count=3 and tripping the quarantine threshold spuriously.
     """
+    cleared = set(cleared_ms_paths or [])
     failure_by_ms: dict[str, dict] = {}
     for rec in prior_failures:
         ms = rec.get("ms_path")
-        if ms:
-            # Ensure failure_count exists so older checkpoints upgrade in place
-            rec = dict(rec)
-            rec.setdefault("failure_count", 1)
-            failure_by_ms[ms] = rec
+        if not ms or ms in cleared:
+            continue
+        # Ensure failure_count exists so older checkpoints upgrade in place
+        rec = dict(rec)
+        rec.setdefault("failure_count", 1)
+        failure_by_ms[ms] = rec
     for rec in current_failures:
         ms = rec.get("ms_path")
-        if not ms:
+        if not ms or ms in cleared:
             continue
         prior = failure_by_ms.get(ms)
         merged = dict(rec)
@@ -1105,8 +1116,16 @@ def main() -> None:
     # calibrator matches the science strip's beam response.
     from dsa110_continuum.calibration.dec_utils import read_ms_dec as _read_ms_dec
     _obs_dec: float | None = None
+    # Robust to missing/unreadable MS_DIR: dry-run preflight on a fresh
+    # workstation should produce a plan rather than crashing here.
+    try:
+        _ms_dir_listing = os.listdir(MS_DIR)
+    except (FileNotFoundError, NotADirectoryError, PermissionError) as _ms_dir_err:
+        log.warning("MS_DIR %s not accessible (%s) — using --expected-dec",
+                    MS_DIR, _ms_dir_err)
+        _ms_dir_listing = []
     _first_ms_list = sorted(
-        f for f in os.listdir(MS_DIR)
+        f for f in _ms_dir_listing
         if f.endswith(".ms") and f.startswith(date) and "meridian" not in f
     )
     if _first_ms_list:
@@ -1216,7 +1235,7 @@ def main() -> None:
     # (Phase 0/1/2/3) emit through it; the console handler from
     # logging.basicConfig() is preserved unchanged.
     _run_started_at = datetime.now(timezone.utc)
-    _run_log_path = _attach_run_logfile(paths["products_dir"], date, _run_started_at)
+    _run_log_path = _attach_run_logfile(paths["products_dir"], _run_started_at)
     manifest.run_log = _run_log_path
     log.info("Run log: %s", _run_log_path)
 
@@ -1430,6 +1449,10 @@ def main() -> None:
 
     completed_fits = set(tile_fits)
     current_tile_failures: list[dict] = []
+    # MS paths that succeeded in *this* run; passed to _write_tile_checkpoint
+    # so prior failure history is cleared on success and failure_count
+    # measures consecutive failures only (Batch E.2 fix).
+    current_completed_ms_paths: list[str] = []
 
     # ── Quarantine policy (Batch E) ──────────────────────────────────────────
     # --clear-quarantine zeros every failure_count before the threshold check
@@ -1526,6 +1549,7 @@ def main() -> None:
             _write_tile_checkpoint(
                 checkpoint_path, date, cal_date, tile_fits,
                 prior_tile_failures, current_tile_failures,
+                cleared_ms_paths=current_completed_ms_paths,
             )
         else:
             if result.fits_path not in completed_fits:
@@ -1537,10 +1561,15 @@ def main() -> None:
                 log.info("  Done in %.0fs → %s", elapsed, Path(result.fits_path).name)
                 n_imaged += 1
             manifest.record_tile(ms_path, result.fits_path, "ok", elapsed)
+            # Track the MS as cleared so prior failure history (from a previous
+            # run) drops out of the merged failures, resetting the consecutive
+            # count to zero.
+            current_completed_ms_paths.append(ms_path)
 
             _write_tile_checkpoint(
                 checkpoint_path, date, cal_date, tile_fits,
                 prior_tile_failures, current_tile_failures,
+                cleared_ms_paths=current_completed_ms_paths,
             )
 
     log.info(

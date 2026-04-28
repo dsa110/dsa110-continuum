@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 # ─── Public API ─────────────────────────────────────────────────────────────
 
 
-def render_run_report(manifest: RunManifest, products_dir: str) -> str:
+def render_run_report(manifest: RunManifest, date_dir: str) -> str:
     """Return the rendered Markdown report for *manifest*.
 
     Pure function: no I/O, no global state read. The caller decides whether
@@ -41,9 +41,10 @@ def render_run_report(manifest: RunManifest, products_dir: str) -> str:
     ----------
     manifest : RunManifest
         Finalised manifest (post-:meth:`RunManifest.finalize`).
-    products_dir : str
-        Per-date products directory; used only to derive sibling artifact
-        paths (manifest JSON, run summary JSON, photometry CSVs).
+    date_dir : str
+        Per-date products directory (already date-nested, e.g.
+        ``/data/products/2026-01-25/``); used only to derive sibling
+        artifact paths (manifest JSON, run summary JSON, photometry CSVs).
 
     Returns
     -------
@@ -52,32 +53,33 @@ def render_run_report(manifest: RunManifest, products_dir: str) -> str:
     """
     sections: list[str] = []
     sections.append(_render_header(manifest))
-    sections.append(_render_artifacts(manifest, products_dir))
+    sections.append(_render_artifacts(manifest, date_dir))
     sections.append(_render_tile_summary(manifest))
     sections.append(_render_epoch_summary(manifest))
     sections.append(_render_gates(manifest))
     sections.append(_render_qa_fail_photometry_note(manifest))
     sections.append(_render_quarantine(manifest))
     sections.append(_render_failed_tiles(manifest))
-    sections.append(_render_photometry(manifest, products_dir))
+    sections.append(_render_photometry(manifest, date_dir))
     sections.append(_render_diagnostic_plots(manifest))
     return "\n\n".join(sections) + "\n"
 
 
 def write_run_report(
     manifest: RunManifest,
-    products_dir: str,
+    date_dir: str,
     *,
     filename: str = "run_report.md",
 ) -> str:
-    """Render and write the report under ``{products_dir}/{date}/``.
+    """Render and write the report directly into *date_dir*.
 
+    *date_dir* must already be the date-nested products directory (the same
+    path that ``RunManifest.save`` and ``emit_run_summary`` write into).
     Returns the absolute path of the written file.
     """
-    target_dir = os.path.join(products_dir, manifest.date)
-    os.makedirs(target_dir, exist_ok=True)
-    out_path = os.path.abspath(os.path.join(target_dir, filename))
-    text = render_run_report(manifest, products_dir)
+    os.makedirs(date_dir, exist_ok=True)
+    out_path = os.path.abspath(os.path.join(date_dir, filename))
+    text = render_run_report(manifest, date_dir)
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(text)
     logger.info("Wrote run report: %s", out_path)
@@ -112,8 +114,7 @@ def _render_header(manifest: RunManifest) -> str:
     ])
 
 
-def _render_artifacts(manifest: RunManifest, products_dir: str) -> str:
-    date_dir = os.path.join(products_dir, manifest.date)
+def _render_artifacts(manifest: RunManifest, date_dir: str) -> str:
     manifest_path = os.path.join(date_dir, f"{manifest.date}_manifest.json")
     summary_path = os.path.join(date_dir, f"{manifest.date}_run_summary.json")
     run_log = manifest.run_log or "(not recorded)"
@@ -252,10 +253,9 @@ def _render_failed_tiles(manifest: RunManifest) -> str:
     return "\n".join(lines)
 
 
-def _render_photometry(manifest: RunManifest, products_dir: str) -> str:
+def _render_photometry(manifest: RunManifest, date_dir: str) -> str:
     """List per-epoch photometry CSV paths for epochs that actually got measured."""
     rows: list[tuple[int, int | None, str]] = []
-    date_dir = os.path.join(products_dir, manifest.date)
     for ep in manifest.epochs:
         hour = ep.get("hour")
         n_sources = ep.get("n_sources")
