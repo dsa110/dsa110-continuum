@@ -96,6 +96,9 @@ pipeline logic.
   16.1°); pointing declination is carried from HDF5/UVH5 into the MS during
   conversion, and the batch driver reads Dec from the MS (not by reopening
   HDF5).
+- FIELD direction columns may appear as either rows-first `(nfields, 1, 2)` or
+  CASA column-major `(nfields, 2, 1)` arrays; calibration code should normalize
+  both shapes when reading or updating `PHASE_DIR`/`REFERENCE_DIR`.
 
 ## Cursor Cloud specific instructions
 
