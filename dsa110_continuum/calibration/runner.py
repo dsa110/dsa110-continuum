@@ -32,6 +32,41 @@ logger = logging.getLogger(__name__)
 __all__ = ["run_calibrator", "phaseshift_ms", "sync_reference_dir_with_phase_dir"]
 
 
+def _extract_field_ra_dec(phase_dir: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Extract per-field RA/Dec radians from FIELD direction columns.
+
+    CASA table backends may expose direction columns as either rows-first
+    ``(nfields, 1, 2)`` or CASA column-major ``(nfields, 2, 1)`` arrays.
+    Both encode the same two numbers per field: RA and Dec in radians.
+    """
+    arr = np.asarray(phase_dir)
+    if arr.ndim == 3 and arr.shape[1:] == (1, 2):
+        return arr[:, 0, 0], arr[:, 0, 1]
+    if arr.ndim == 3 and arr.shape[1:] == (2, 1):
+        return arr[:, 0, 0], arr[:, 1, 0]
+    if arr.ndim == 2 and arr.shape[1] == 2:
+        return arr[:, 0], arr[:, 1]
+    raise ValueError(f"Unsupported FIELD direction column shape: {arr.shape}")
+
+
+def _set_field_ra_dec(phase_dir: np.ndarray, ra_rad: float, dec_rad: float) -> np.ndarray:
+    """Return ``phase_dir`` with every field set to ``ra_rad``/``dec_rad``."""
+    arr = np.array(phase_dir, copy=True)
+    if arr.ndim == 3 and arr.shape[1:] == (1, 2):
+        arr[:, 0, 0] = ra_rad
+        arr[:, 0, 1] = dec_rad
+        return arr
+    if arr.ndim == 3 and arr.shape[1:] == (2, 1):
+        arr[:, 0, 0] = ra_rad
+        arr[:, 1, 0] = dec_rad
+        return arr
+    if arr.ndim == 2 and arr.shape[1] == 2:
+        arr[:, 0] = ra_rad
+        arr[:, 1] = dec_rad
+        return arr
+    raise ValueError(f"Unsupported FIELD direction column shape: {arr.shape}")
+
+
 def _compute_median_meridian_position(ms_path: str, field: str = "") -> tuple:
     """Compute the median meridian RA/Dec across all fields in the MS.
 
@@ -70,11 +105,10 @@ def _compute_median_meridian_position(ms_path: str, field: str = "") -> tuple:
 
     with ct.table(ms_path + "::FIELD", readonly=True) as field_table:
         # Get phase centers for all fields
-        phase_dir = field_table.getcol("PHASE_DIR")  # Shape: (nfields, 1, 2) in radians
+        phase_dir = field_table.getcol("PHASE_DIR")
 
         # Extract RA/Dec in radians, squeeze out middle dimension
-        ra_rad = phase_dir[:, 0, 0]
-        dec_rad = phase_dir[:, 0, 1]
+        ra_rad, dec_rad = _extract_field_ra_dec(phase_dir)
 
         # Convert to degrees
         ra_deg = np.degrees(ra_rad)
@@ -162,18 +196,14 @@ def update_phase_dir_to_target(ms_path: str, ra_deg: float, dec_deg: float) -> N
     field_table_path = f"{ms_path}::FIELD"
 
     with ct.table(field_table_path, readonly=False) as field_tb:
-        phase_dir = field_tb.getcol("PHASE_DIR")  # Shape: (nfields, 1, 2)
+        phase_dir = field_tb.getcol("PHASE_DIR")
         nfields = len(phase_dir)
 
         # Convert target to radians
         ra_rad = np.radians(ra_deg)
         dec_rad = np.radians(dec_deg)
 
-        # Set all fields to target position
-        phase_dir[:, 0, 0] = ra_rad
-        phase_dir[:, 0, 1] = dec_rad
-
-        field_tb.putcol("PHASE_DIR", phase_dir)
+        field_tb.putcol("PHASE_DIR", _set_field_ra_dec(phase_dir, ra_rad, dec_rad))
 
     logger.info(
         "Updated PHASE_DIR for %d fields to RA=%.6f°, Dec=%.6f° (post-chgcentre fix)",

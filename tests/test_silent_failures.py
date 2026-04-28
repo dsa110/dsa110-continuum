@@ -6,11 +6,14 @@ verifies the fix functions produce the correct metadata state.
 
 Requires: casacore (available in casa6 env).
 """
-import sys
 import numpy as np
 import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from dsa110_continuum.calibration.runner import (
+    _extract_field_ra_dec,
+    _set_field_ra_dec,
+    sync_reference_dir_with_phase_dir,
+    update_phase_dir_to_target,
+)
 
 # ---------------------------------------------------------------------------
 # Skip entire module if casatools is not installed (e.g., CI without CASA env)
@@ -19,8 +22,57 @@ from unittest.mock import patch, MagicMock
 pytest.importorskip("casatools", reason="casatools (modular CASA 6) required for MS table tests")
 import dsa110_continuum.adapters.casa_tables as ct  # noqa: E402
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
+
+class TestFieldDirectionShapeHelpers:
+    """FIELD direction columns can be row-major or CASA column-major."""
+
+    def test_extracts_ra_dec_from_rows_first_shape(self):
+        """Rows-first PHASE_DIR shape (nfields, 1, 2) should extract RA/Dec."""
+        phase_dir = np.array([
+            [[np.radians(10.0), np.radians(20.0)]],
+            [[np.radians(11.0), np.radians(21.0)]],
+        ])
+
+        ra, dec = _extract_field_ra_dec(phase_dir)
+
+        np.testing.assert_allclose(np.degrees(ra), [10.0, 11.0])
+        np.testing.assert_allclose(np.degrees(dec), [20.0, 21.0])
+
+    def test_extracts_ra_dec_from_casa_column_major_shape(self):
+        """CASA-backed PHASE_DIR shape (nfields, 2, 1) should extract RA/Dec."""
+        phase_dir = np.array([
+            [[np.radians(10.0)], [np.radians(20.0)]],
+            [[np.radians(11.0)], [np.radians(21.0)]],
+        ])
+
+        ra, dec = _extract_field_ra_dec(phase_dir)
+
+        np.testing.assert_allclose(np.degrees(ra), [10.0, 11.0])
+        np.testing.assert_allclose(np.degrees(dec), [20.0, 21.0])
+
+    def test_sets_ra_dec_for_rows_first_shape(self):
+        """Rows-first PHASE_DIR shape should preserve shape while setting RA/Dec."""
+        phase_dir = np.zeros((2, 1, 2), dtype=np.float64)
+
+        updated = _set_field_ra_dec(phase_dir, np.radians(12.0), np.radians(34.0))
+
+        assert updated.shape == phase_dir.shape
+        ra, dec = _extract_field_ra_dec(updated)
+        np.testing.assert_allclose(np.degrees(ra), [12.0, 12.0])
+        np.testing.assert_allclose(np.degrees(dec), [34.0, 34.0])
+
+    def test_sets_ra_dec_for_casa_column_major_shape(self):
+        """CASA-backed PHASE_DIR shape should preserve shape while setting RA/Dec."""
+        phase_dir = np.zeros((2, 2, 1), dtype=np.float64)
+
+        updated = _set_field_ra_dec(phase_dir, np.radians(12.0), np.radians(34.0))
+
+        assert updated.shape == phase_dir.shape
+        ra, dec = _extract_field_ra_dec(updated)
+        np.testing.assert_allclose(np.degrees(ra), [12.0, 12.0])
+        np.testing.assert_allclose(np.degrees(dec), [34.0, 34.0])
 
 @pytest.fixture
 def tmp_ms(tmp_path):
@@ -73,8 +125,6 @@ class TestUpdatePhaseDirToTarget:
 
     def test_phase_dir_set_to_target(self, tmp_ms):
         """After update_phase_dir_to_target, all fields should point at the target."""
-        from dsa110_continuum.calibration.runner import update_phase_dir_to_target
-
         target_ra, target_dec = 180.0, 45.0
         update_phase_dir_to_target(tmp_ms, target_ra, target_dec)
 
@@ -92,8 +142,6 @@ class TestUpdatePhaseDirToTarget:
 
     def test_all_fields_uniform_after_update(self, tmp_ms):
         """All fields should have identical PHASE_DIR after update (rephased to single target)."""
-        from dsa110_continuum.calibration.runner import update_phase_dir_to_target
-
         update_phase_dir_to_target(tmp_ms, 90.0, -30.0)
 
         with ct.table(f"{tmp_ms}::FIELD") as tb:
@@ -106,8 +154,6 @@ class TestUpdatePhaseDirToTarget:
 
     def test_reference_dir_unchanged(self, tmp_ms):
         """update_phase_dir_to_target should NOT touch REFERENCE_DIR."""
-        from dsa110_continuum.calibration.runner import update_phase_dir_to_target
-
         with ct.table(f"{tmp_ms}::FIELD") as tb:
             ref_before = tb.getcol("REFERENCE_DIR").copy()
 
@@ -127,8 +173,6 @@ class TestSyncReferenceDirWithPhaseDir:
 
     def test_reference_dir_matches_phase_dir_after_sync(self, tmp_ms):
         """After sync, REFERENCE_DIR should exactly equal PHASE_DIR."""
-        from dsa110_continuum.calibration.runner import sync_reference_dir_with_phase_dir
-
         sync_reference_dir_with_phase_dir(tmp_ms)
 
         with ct.table(f"{tmp_ms}::FIELD") as tb:
@@ -140,11 +184,6 @@ class TestSyncReferenceDirWithPhaseDir:
 
     def test_sync_after_phase_update_propagates(self, tmp_ms):
         """Full workflow: update PHASE_DIR then sync → REFERENCE_DIR should match new target."""
-        from dsa110_continuum.calibration.runner import (
-            update_phase_dir_to_target,
-            sync_reference_dir_with_phase_dir,
-        )
-
         target_ra, target_dec = 270.0, -10.0
         update_phase_dir_to_target(tmp_ms, target_ra, target_dec)
         sync_reference_dir_with_phase_dir(tmp_ms)
