@@ -1431,7 +1431,8 @@ def main() -> None:
     prior_tile_failures: list[dict] = []
     if os.path.exists(checkpoint_path):
         try:
-            ck = json.load(open(checkpoint_path))
+            with open(checkpoint_path) as f:
+                ck = json.load(f)
             tile_fits = [p for p in ck.get("completed", []) if os.path.exists(p)]
             prior_tile_failures = [
                 rec for rec in ck.get("failed", [])
@@ -1525,6 +1526,11 @@ def main() -> None:
                 "elapsed_sec": 0.0,
                 "failed_at": datetime.now(timezone.utc).isoformat(),
             })
+            _write_tile_checkpoint(
+                checkpoint_path, date, cal_date, tile_fits,
+                prior_tile_failures, current_tile_failures,
+                cleared_ms_paths=current_completed_ms_paths,
+            )
             continue
 
         t0 = time.time()

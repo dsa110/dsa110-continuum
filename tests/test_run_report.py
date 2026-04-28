@@ -14,6 +14,7 @@ Behavior under test:
 from __future__ import annotations
 
 import math
+import os
 
 from dsa110_continuum.qa.provenance import RunManifest
 from dsa110_continuum.qa.run_report import (
@@ -222,6 +223,17 @@ def test_photometry_section_lists_csv_paths():
     assert "/data/products/2026-01-25/2026-01-25T0200_forced_phot.csv" in section  # date_dir/{date}T... — no extra date nesting
 
 
+def test_artifact_paths_are_absolute_for_relative_date_dir(tmp_path, monkeypatch):
+    """Artifact paths in rendered reports should be absolute even for relative inputs."""
+    m = _make_clean_manifest()
+    monkeypatch.chdir(tmp_path)
+    text = render_run_report(m, os.path.join("products", "2026-01-25"))
+
+    expected_dir = tmp_path / "products" / "2026-01-25"
+    assert f"Manifest: `{expected_dir / '2026-01-25_manifest.json'}`" in text
+    assert f"Run summary: `{expected_dir / '2026-01-25_run_summary.json'}`" in text
+
+
 def test_diagnostic_plots_derived_from_mosaic_paths():
     m = _make_clean_manifest()
     text = render_run_report(m, "/data/products/2026-01-25")
@@ -268,14 +280,50 @@ def test_nan_peak_or_rms_does_not_crash():
     assert "—" in section
 
 
+def test_epoch_summary_handles_missing_and_malformed_hours():
+    m = RunManifest.start("2026-01-25", "2026-01-25")
+    m.epochs = [
+        {"status": "ok", "qa_result": "PASS", "n_tiles": 1, "mosaic_path": "/missing.fits"},
+        {
+            "hour": "bad", "status": "ok", "qa_result": "FAIL",
+            "n_tiles": 2, "mosaic_path": "/bad.fits",
+        },
+        {
+            "hour": 3, "status": "ok", "qa_result": "PASS",
+            "n_tiles": 3, "mosaic_path": "/good.fits",
+        },
+    ]
+    m.finalize(1.0)
+
+    text = render_run_report(m, "/data/products/2026-01-25")
+
+    epoch_section = text.split("## Epoch summary")[1].split("## QA gates")[0]
+    assert "| 03 | ok | PASS | 3 |" in epoch_section
+    assert "| — | ok | PASS | 1 |" in epoch_section
+    assert "| — | ok | FAIL | 2 |" in epoch_section
+
+
+def test_qa_fail_note_handles_missing_hour():
+    m = RunManifest.start("2026-01-25", "2026-01-25")
+    m.epochs = [{
+        "status": "ok",
+        "qa_result": "FAIL",
+        "mosaic_path": "/missing-hour.fits",
+    }]
+    m.finalize(1.0)
+
+    text = render_run_report(m, "/data/products/2026-01-25")
+    section = text.split("## QA-FAIL")[1].split("## Quarantined")[0]
+
+    assert "Hour —" in section
+    assert "/missing-hour.fits" in section
+
+
 def test_legacy_manifest_without_run_log_field_renders():
     """A manifest loaded from an older save (no run_log attribute) still renders."""
     m = RunManifest.start("2026-01-25", "2026-01-25")
-    # Simulate truly-missing attribute by deleting it (older codepath)
-    # — note: the attribute exists with value None by default, which is the
-    # back-compat path covered in test_batch_e1_hygiene.py. This tests the
-    # render path for that scenario.
-    m.run_log = None
+    # Simulate truly-missing attribute by deleting it (older codepath).
+    delattr(m, "run_log")
     m.finalize(0.5)
     text = render_run_report(m, "/data/products/2026-01-25")
     assert "(not recorded)" in text

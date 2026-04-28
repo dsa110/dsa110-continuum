@@ -115,9 +115,10 @@ def _render_header(manifest: RunManifest) -> str:
 
 
 def _render_artifacts(manifest: RunManifest, date_dir: str) -> str:
+    date_dir = os.path.abspath(date_dir)
     manifest_path = os.path.join(date_dir, f"{manifest.date}_manifest.json")
     summary_path = os.path.join(date_dir, f"{manifest.date}_run_summary.json")
-    run_log = manifest.run_log or "(not recorded)"
+    run_log = getattr(manifest, "run_log", None) or "(not recorded)"
     return "\n".join([
         "## Artifacts",
         "",
@@ -149,14 +150,14 @@ def _render_epoch_summary(manifest: RunManifest) -> str:
         "| Hour | Status | QA | n_tiles | Peak (Jy/beam) | RMS (mJy/beam) | Sources | Mosaic |",
         "|---:|---|---|---:|---:|---:|---:|---|",
     ]
-    for ep in sorted(manifest.epochs, key=lambda e: e.get("hour", -1)):
+    for ep in sorted(manifest.epochs, key=_epoch_sort_key):
         hour = ep.get("hour")
         peak = ep.get("peak")
         rms = ep.get("rms")
         rms_mjy = (rms * 1000.0) if isinstance(rms, (int, float)) else None
         mosaic = ep.get("mosaic_path") or "(none)"
         lines.append(
-            f"| {hour:02d} | {ep.get('status', '?')} | "
+            f"| {_fmt_hour(hour)} | {ep.get('status', '?')} | "
             f"{ep.get('qa_result') or '?'} | "
             f"{_fmt_int(ep.get('n_tiles'))} | "
             f"{_fmt_float(peak, 4)} | "
@@ -207,11 +208,11 @@ def _render_qa_fail_photometry_note(manifest: RunManifest) -> str:
             "despite QA-FAIL verdicts. See gate `lenient_qa` above."
         )
         lines.append("")
-    for ep in sorted(fail_epochs, key=lambda e: e.get("hour", -1)):
+    for ep in sorted(fail_epochs, key=_epoch_sort_key):
         hour = ep.get("hour")
         mosaic = ep.get("mosaic_path") or "(no mosaic path)"
         action = "ran via --lenient-qa" if lenient_used else "skipped (default-strict)"
-        lines.append(f"- **Hour {hour:02d}** — QA verdict FAIL; photometry {action}.")
+        lines.append(f"- **Hour {_fmt_hour(hour)}** — QA verdict FAIL; photometry {action}.")
         lines.append(f"  Mosaic: `{mosaic}`")
     return "\n".join(lines)
 
@@ -259,12 +260,13 @@ def _render_photometry(manifest: RunManifest, date_dir: str) -> str:
     for ep in manifest.epochs:
         hour = ep.get("hour")
         n_sources = ep.get("n_sources")
-        if hour is None or n_sources is None:
+        parsed_hour = _parse_hour(hour)
+        if parsed_hour is None or n_sources is None:
             continue
         csv_path = os.path.join(
-            date_dir, f"{manifest.date}T{int(hour):02d}00_forced_phot.csv",
+            date_dir, f"{manifest.date}T{parsed_hour:02d}00_forced_phot.csv",
         )
-        rows.append((int(hour), int(n_sources), csv_path))
+        rows.append((parsed_hour, int(n_sources), csv_path))
     if not rows:
         return "## Forced photometry\n\n(no photometry results recorded)"
     lines = ["## Forced photometry", ""]
@@ -279,11 +281,12 @@ def _render_diagnostic_plots(manifest: RunManifest) -> str:
     for ep in manifest.epochs:
         mosaic = ep.get("mosaic_path")
         hour = ep.get("hour")
-        if not mosaic or hour is None:
+        parsed_hour = _parse_hour(hour)
+        if not mosaic or parsed_hour is None:
             continue
         # Mirror the orchestrator's derivation (batch_pipeline.py: mosaic_path.replace(".fits", "_qa_diag.png"))
         png = mosaic.replace(".fits", "_qa_diag.png")
-        plots.append((int(hour), png))
+        plots.append((parsed_hour, png))
     if not plots:
         return "## Diagnostic plots\n\n(none)"
     lines = ["## Diagnostic plots", ""]
@@ -302,6 +305,31 @@ def _fmt_int(v: Any) -> str:
         return str(int(v))
     except (TypeError, ValueError):
         return "—"
+
+
+def _fmt_hour(v: Any) -> str:
+    """Render an epoch hour, degrading gracefully for sparse legacy manifests."""
+    parsed = _parse_hour(v)
+    if parsed is None:
+        return "—"
+    return f"{parsed:02d}"
+
+
+def _epoch_sort_key(epoch: dict[str, Any]) -> tuple[int, int | str]:
+    """Sort valid numeric hours first; keep malformed legacy records stable."""
+    hour = epoch.get("hour")
+    parsed = _parse_hour(hour)
+    if parsed is not None:
+        return (0, parsed)
+    return (1, str(hour))
+
+
+def _parse_hour(v: Any) -> int | None:
+    """Return an integer hour for well-formed values, else None."""
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
 
 
 def _fmt_float(v: Any, ndigits: int = 2) -> str:
