@@ -23,11 +23,11 @@ import logging
 import os
 import shutil
 import subprocess
-from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+from dsa110_continuum.calibration.runner import _extract_field_ra_dec
 
 logger = logging.getLogger(__name__)
 
@@ -245,7 +245,6 @@ def make_unified_skymodel(
     import numpy as np
     import pandas as pd
     from astropy.coordinates import SkyCoord
-
     from dsa110_continuum.catalog.query import query_sources
 
     # Helper to standardize DataFrame
@@ -735,7 +734,8 @@ def predict_from_skymodel_wsclean(
     dec0_deg = None
     try:
         with casatables.table(f"{ms_path}::FIELD", readonly=True) as field_tb:
-            phase_dir = field_tb.getcol("PHASE_DIR")  # Shape: (nfields, 1, 2)
+            phase_dir = field_tb.getcol("PHASE_DIR")
+            phase_ra_rad, phase_dec_rad = _extract_field_ra_dec(phase_dir)
             nfields = len(phase_dir)
             if nfields == 0:
                 raise ValueError(
@@ -770,15 +770,15 @@ def predict_from_skymodel_wsclean(
                 )
                 field_idx = 0
 
-            ra0_rad = phase_dir[field_idx, 0, 0]
-            dec0_rad = phase_dir[field_idx, 0, 1]
+            ra0_rad = phase_ra_rad[field_idx]
+            dec0_rad = phase_dec_rad[field_idx]
             ra0_deg = np.degrees(ra0_rad)
             dec0_deg = np.degrees(dec0_rad)
 
             # Error if fields have divergent phase centers (WSClean uses a single image)
             if nfields > 1:
-                all_ra_deg = np.degrees(phase_dir[:, 0, 0])
-                all_dec_deg = np.degrees(phase_dir[:, 0, 1])
+                all_ra_deg = np.degrees(phase_ra_rad)
+                all_dec_deg = np.degrees(phase_dec_rad)
                 ra_spread = np.ptp(all_ra_deg)
                 dec_spread = np.ptp(all_dec_deg)
                 if ra_spread > 0.01 or dec_spread > 0.01:
