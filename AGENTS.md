@@ -65,6 +65,8 @@ pipeline logic.
 - When pipeline or repo state is uncertain, prefer tests, diagnostics, or direct
   filesystem inspection over asking the user to supply answers the tools can
   determine; ground recommendations in concrete repo/runtime evidence.
+- Unless the user asks for more depth or a different style, explain pipeline
+  behavior in short, plain one-sentence answers.
 
 ## Learned Workspace Facts
 
@@ -72,6 +74,13 @@ pipeline logic.
 - Treat calibration-table provenance as a hard requirement: prefer valid same-date
   tables, then generated calibrator tables, then validated borrowed tables; fail
   loudly if no viable option exists.
+- Keep a local ASKAP VAST pipeline checkout at `/data/radio-pipelines/askap-vast`
+  as a primary reference for orchestration and QA parity checks, while documenting
+  intentional DSA-110 divergences.
+- Host-specific monitor roots matter: `h23` correlator data lives at
+  `/dataz/dsa110/operations/correlator/` (ZFS), while `h17`/`dsacamera` use
+  `/data/incoming`; workflows should use per-host paths rather than assuming a
+  single root.
 - If a sibling `dsa110-antpos` checkout is available, `ant_ids*.csv` files are
   useful for cross-checking antenna-selection behavior.
 - Sliding-window mosaic settings (tiles per mosaic product and stride between
@@ -82,6 +91,11 @@ pipeline logic.
   after only a few overlapping drift tiles (about 3), so hour-scale windowed
   mosaics are the default science product and >1 hour/full-day coadds are
   diagnostic rather than default science products.
+- When a same-date MS is present, `scripts/batch_pipeline.py` applies an early
+  declination strip guard (`check_dec_strip` vs `--expected-dec`, default
+  16.1°); pointing declination is carried from HDF5/UVH5 into the MS during
+  conversion, and the batch driver reads Dec from the MS (not by reopening
+  HDF5).
 
 ## Cursor Cloud specific instructions
 

@@ -58,7 +58,7 @@ from astropy.wcs import WCS
 
 from dsa110_continuum.photometry.epoch_qa import EpochQAResult, measure_epoch_qa
 from dsa110_continuum.photometry.epoch_qa_plot import plot_epoch_qa
-from dsa110_continuum.qa.provenance import RunManifest
+from dsa110_continuum.qa.provenance import RunManifest, try_load_prior_manifest
 
 logging.basicConfig(
     level=logging.INFO,
@@ -117,6 +117,453 @@ def timestamp_from_fits(fits_path: str) -> datetime | None:
         return datetime.strptime(ts_str, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
     except ValueError:
         return None
+
+
+# ── Run logging ───────────────────────────────────────────────────────────────
+
+def _run_log_filename(started_at: datetime) -> str:
+    """Return ``run_<UTC-ISO>.log`` with a filename-safe timestamp.
+
+    Colons replaced with underscores so the file is portable across
+    filesystems that disallow ``:`` (Windows shares, some cloud
+    bucket mounts). Always UTC, always second-resolution; sorts
+    correctly under ``ls`` since the year-first ISO form is monotonic.
+    """
+    stamp = started_at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H_%M_%SZ")
+    return f"run_{stamp}.log"
+
+
+def _attach_run_logfile(date_dir: str, started_at: datetime) -> str:
+    """Attach a per-run :class:`logging.FileHandler` to the root logger.
+
+    *date_dir* is the per-date products directory (already date-nested,
+    e.g. ``/data/products/2026-01-25/``); the log file is written
+    directly into it as ``run_<utc-stamp>.log`` — matching the convention
+    used by :meth:`RunManifest.save` and :func:`emit_run_summary`.
+
+    Idempotent: if a ``FileHandler`` with the target ``baseFilename`` is
+    already attached (e.g. ``main()`` called twice in the same process,
+    as happens in some test harnesses) this is a no-op. Returns the
+    absolute log file path so the caller can record it in the run
+    summary.
+    """
+    os.makedirs(date_dir, exist_ok=True)
+    log_path = os.path.abspath(os.path.join(date_dir, _run_log_filename(started_at)))
+
+    root = logging.getLogger()
+    for h in root.handlers:
+        if isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", None) == log_path:
+            return log_path  # already attached for this exact path
+
+    fh = logging.FileHandler(log_path, mode="a", encoding="utf-8")
+    fh.setLevel(logging.INFO)
+    # Use full ISO date+time in the file (the console keeps the short HH:MM:SS
+    # format from basicConfig); a multi-day cron run's log file is unambiguous.
+    fh.setFormatter(logging.Formatter(
+        fmt="%(asctime)s %(levelname)s %(name)s %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S",
+    ))
+    root.addHandler(fh)
+    return log_path
+
+
+# ── Checkpoint helpers ────────────────────────────────────────────────────────
+
+def _write_tile_checkpoint(
+    checkpoint_path: str,
+    date: str,
+    cal_date: str,
+    completed: list[str],
+    prior_failures: list[dict],
+    current_failures: list[dict],
+    cleared_ms_paths: list[str] | None = None,
+) -> None:
+    """Atomically write the tile checkpoint JSON.
+
+    The checkpoint tracks both successes and failures so that chronic-offender
+    MS files are visible across re-runs rather than silently re-attempted each
+    time. Each failed[] entry carries a ``failure_count`` that increments on
+    every repeat failure, supporting Batch E quarantine policy.
+
+    Consecutive-failure semantics: a successful processing run for an MS
+    drops it from the merged failures (via ``cleared_ms_paths``). That way
+    ``failure_count`` truly counts *consecutive* failures — a fail / fail /
+    succeed / fail sequence resets to count=1 after the success, instead of
+    accumulating to count=3 and tripping the quarantine threshold spuriously.
+    """
+    cleared = set(cleared_ms_paths or [])
+    failure_by_ms: dict[str, dict] = {}
+    for rec in prior_failures:
+        ms = rec.get("ms_path")
+        if not ms or ms in cleared:
+            continue
+        # Ensure failure_count exists so older checkpoints upgrade in place
+        rec = dict(rec)
+        rec.setdefault("failure_count", 1)
+        failure_by_ms[ms] = rec
+    for rec in current_failures:
+        ms = rec.get("ms_path")
+        if not ms or ms in cleared:
+            continue
+        prior = failure_by_ms.get(ms)
+        merged = dict(rec)
+        if prior is not None:
+            merged["failure_count"] = int(prior.get("failure_count", 1)) + 1
+            # Preserve the first-failure timestamp for operator forensics
+            merged["first_failed_at"] = prior.get(
+                "first_failed_at", prior.get("failed_at")
+            )
+        else:
+            merged["failure_count"] = 1
+            merged["first_failed_at"] = merged.get("failed_at")
+        failure_by_ms[ms] = merged
+    payload = {
+        "date": date,
+        "cal_date": cal_date,
+        "completed": completed,
+        "failed": list(failure_by_ms.values()),
+    }
+    try:
+        tmp = checkpoint_path + ".tmp"
+        with open(tmp, "w") as ck_f:
+            json.dump(payload, ck_f, indent=2)
+        os.replace(tmp, checkpoint_path)
+    except Exception as e:
+        log.warning("Could not write checkpoint: %s", e)
+
+
+def _should_skip_photometry(
+    qa_verdict: str | None,
+    skip_photometry_flag: bool,
+    lenient_qa: bool,
+) -> tuple[bool, str]:
+    """Return ``(skip, reason)`` for the per-epoch forced-photometry gate.
+
+    Default-strict policy: a QA-FAIL epoch is skipped unless the operator
+    explicitly passes ``--lenient-qa``. This prevents bad-flux measurements
+    from leaking into the master lightcurve table on unattended runs.
+
+    Reasons:
+    - ``"skip-photometry-flag"`` → operator passed ``--skip-photometry``
+    - ``"qa-fail-default-strict"`` → QA-FAIL with no override
+    - ``"lenient-qa-override"``    → QA-FAIL but ``--lenient-qa`` is set;
+      caller should record a gate so verdict reflects the override.
+    - ``""`` (empty)               → run photometry as normal
+    """
+    if skip_photometry_flag:
+        return True, "skip-photometry-flag"
+    if qa_verdict == "FAIL":
+        if lenient_qa:
+            return False, "lenient-qa-override"
+        return True, "qa-fail-default-strict"
+    return False, ""
+
+
+def _epoch_should_rebuild(
+    mosaic_path: str,
+    prior_manifest,
+    hour: int,
+    force_recal: bool,
+) -> bool:
+    """Decide whether to (re)build an epoch mosaic.
+
+    Rules:
+    - ``force_recal``              → rebuild (caller handles stale-file cleanup)
+    - mosaic file missing          → rebuild
+    - no prior manifest            → skip (backward-compat; trust file)
+    - prior verdict was ``PASS``   → skip (trust prior PASS mosaic)
+    - prior verdict was ``FAIL`` /
+      ``None`` (crashed mid-epoch) → rebuild (don't trust stale mosaic)
+    """
+    if force_recal:
+        return True
+    if not os.path.exists(mosaic_path):
+        return True
+    if prior_manifest is None:
+        return False
+    prior = prior_manifest.epoch_verdict(hour)
+    # None = hour not recorded (crash before QA ran). FAIL = previously bad.
+    # Anything else (PASS, WARN etc) is trusted.
+    return prior in (None, "FAIL")
+
+
+# ── Quarantine policy ────────────────────────────────────────────────────────
+
+def _compute_quarantine_set(
+    failures: list[dict],
+    threshold: int,
+) -> set[str]:
+    """Return the set of ms_paths whose ``failure_count`` >= ``threshold``.
+
+    These MS files are skipped by the orchestrator: they have failed at least
+    ``threshold`` times in a row across previous runs, so retrying them is
+    almost certainly a waste of compute and an entry in the failure log.
+    A ``threshold <= 0`` disables quarantine entirely (returns an empty set).
+    Quarantine is purely advisory — nothing is moved or deleted; operators can
+    re-enable an MS by clearing its failure_count via ``--clear-quarantine``
+    or by hand-editing the checkpoint.
+    """
+    if threshold <= 0:
+        return set()
+    return {
+        rec["ms_path"]
+        for rec in failures
+        if isinstance(rec, dict)
+        and rec.get("ms_path")
+        and int(rec.get("failure_count", 0)) >= threshold
+    }
+
+
+def _clear_failure_counts(failures: list[dict]) -> list[dict]:
+    """Return a copy of ``failures`` with every ``failure_count`` reset to 0.
+
+    Used by ``--clear-quarantine``: the failure history is preserved (so
+    operators can still see what happened) but the counts no longer trigger
+    quarantine on the next run.
+    """
+    cleared = []
+    for rec in failures:
+        new_rec = dict(rec)
+        new_rec["failure_count"] = 0
+        cleared.append(new_rec)
+    return cleared
+
+
+# ── Dry-run plan ─────────────────────────────────────────────────────────────
+
+def _collect_dry_run_plan(
+    *,
+    date: str,
+    cal_date: str,
+    obs_dec_deg: float | None,
+    paths: dict,
+    bp_table: str,
+    g_table: str,
+    ms_list_after_filters: list[str],
+    epoch_hours: list[int],
+    epoch_decisions: list[dict],
+    prior_manifest_verdict: str | None,
+    prior_manifest_present: bool,
+    checkpoint_completed: int,
+    checkpoint_failures: list[dict],
+    quarantine_threshold: int,
+    quarantine_set: set[str],
+    skip_epoch_gaincal: bool,
+    skip_photometry: bool,
+    lenient_qa: bool,
+) -> dict:
+    """Build a structured plan dict describing what a normal run would do.
+
+    Pure data; no I/O. The caller decides whether to print it (dry-run) or
+    discard it. A dict (rather than a string) is returned so tests can assert
+    on individual fields without parsing log output.
+    """
+    n_total = len(ms_list_after_filters)
+    n_quarantined = sum(1 for ms in ms_list_after_filters if ms in quarantine_set)
+    n_to_attempt = n_total - n_quarantined
+
+    n_epoch_rebuild = sum(1 for d in epoch_decisions if d.get("action") == "rebuild")
+    n_epoch_skip = sum(1 for d in epoch_decisions if d.get("action") == "skip")
+
+    return {
+        "date": date,
+        "cal_date": cal_date,
+        "obs_dec_deg": obs_dec_deg,
+        "stage_dir": paths.get("stage_dir"),
+        "products_dir": paths.get("products_dir"),
+        "cal_tables": {
+            "bp": bp_table,
+            "g": g_table,
+            "bp_exists": os.path.exists(bp_table) if bp_table else False,
+            "g_exists": os.path.exists(g_table) if g_table else False,
+        },
+        "ms_files_after_filters": n_total,
+        "epoch_hours": list(epoch_hours),
+        "epoch_decisions": list(epoch_decisions),
+        "prior_manifest_present": prior_manifest_present,
+        "prior_manifest_verdict": prior_manifest_verdict,
+        "checkpoint_completed_count": checkpoint_completed,
+        "checkpoint_failed_count": len(checkpoint_failures),
+        "quarantine_threshold": quarantine_threshold,
+        "quarantine_count": n_quarantined,
+        "quarantine_ms_paths": sorted(ms for ms in ms_list_after_filters if ms in quarantine_set),
+        "phase0_gaincal": "skipped (--skip-epoch-gaincal)" if skip_epoch_gaincal else "would run",
+        "phase1_tiles_to_attempt": n_to_attempt,
+        "phase1_tiles_quarantined": n_quarantined,
+        "phase2_epochs_to_rebuild": n_epoch_rebuild,
+        "phase2_epochs_to_skip": n_epoch_skip,
+        "phase3_photometry": (
+            "skipped (--skip-photometry)" if skip_photometry
+            else f"would run; QA gating={'lenient' if lenient_qa else 'strict'}"
+        ),
+    }
+
+
+def _format_dry_run_plan(plan: dict) -> list[str]:
+    """Render a dry-run plan dict as human-readable lines."""
+    bp = plan["cal_tables"]
+    lines: list[str] = [
+        "=== DRY RUN — DSA-110 batch_pipeline ===",
+        f"Date:           {plan['date']}",
+        f"Cal date:       {plan['cal_date']}",
+        f"Obs Dec:        {plan['obs_dec_deg']}°",
+        f"Stage dir:      {plan['stage_dir']}",
+        f"Products dir:   {plan['products_dir']}",
+        f"Cal tables (BP): {bp['bp']}  [{'exists' if bp['bp_exists'] else 'MISSING — would generate'}]",
+        f"Cal tables (G):  {bp['g']}  [{'exists' if bp['g_exists'] else 'MISSING — would generate'}]",
+        f"MS files (post-filter): {plan['ms_files_after_filters']}",
+        f"Epoch hours: {plan['epoch_hours']}",
+        f"Prior manifest: {'present (verdict=' + str(plan['prior_manifest_verdict']) + ')' if plan['prior_manifest_present'] else 'absent'}",
+        f"Checkpoint: completed={plan['checkpoint_completed_count']}  failed={plan['checkpoint_failed_count']}",
+        f"Quarantine: {plan['quarantine_count']} MS (threshold={plan['quarantine_threshold']})",
+    ]
+    for ms in plan["quarantine_ms_paths"]:
+        lines.append(f"  QUARANTINED: {ms}")
+    lines.append("Resume plan:")
+    for d in plan["epoch_decisions"]:
+        lines.append(
+            f"  hour {int(d['hour']):02d}: {d['action']} ({d.get('reason', '')})"
+        )
+    lines.extend([
+        f"Phase 0 (gaincal):    {plan['phase0_gaincal']}",
+        f"Phase 1 (per-tile):   would attempt {plan['phase1_tiles_to_attempt']} tiles "
+        f"({plan['phase1_tiles_quarantined']} quarantined)",
+        f"Phase 2 (mosaic):     {plan['phase2_epochs_to_rebuild']} rebuild, "
+        f"{plan['phase2_epochs_to_skip']} skip",
+        f"Phase 3 (photometry): {plan['phase3_photometry']}",
+        "",
+        "Pipeline NOT executed (--dry-run set). No products written.",
+    ])
+    return lines
+
+
+# ── Dry-run orchestration ────────────────────────────────────────────────────
+
+def _dry_run_main(args, date: str, cal_date: str, obs_dec_deg: float | None) -> None:
+    """Read-only dry-run: build a plan and print it, no side effects.
+
+    Bypasses ``ensure_bandpass`` (which generates cal tables) and uses only
+    the filesystem-glob ``resolve_cal_table_paths`` to discover what cal
+    tables would be used. Does not create products/stage directories or a
+    run log file.
+    """
+    from dsa110_continuum.calibration.ensure import resolve_cal_table_paths
+
+    paths = get_paths(date)
+    bp_table, g_table = resolve_cal_table_paths(MS_DIR, cal_date)
+
+    # Discover MS files using the same find + filter logic as a real run.
+    # Importing here keeps the module-level import light for the regular path.
+    import mosaic_day as _md  # type: ignore  (scripts/ is on sys.path)
+
+    cfg = _md.TileConfig.build(
+        date=date,
+        cal_date=cal_date,
+        image_dir=paths["stage_dir"],
+        products_dir=paths["products_dir"],
+    )
+    try:
+        ms_list = _md.find_valid_ms(cfg)
+    except Exception as exc:
+        log.error("Dry-run: could not enumerate MS files (%s)", exc)
+        ms_list = []
+
+    def _ms_ts(ms_path: str):
+        ts_str = Path(ms_path).stem
+        try:
+            return datetime.strptime(ts_str, "%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            return None
+
+    ms_list = [
+        p for p in ms_list
+        if (t := _ms_ts(p)) is not None and t.strftime("%Y-%m-%d") == date
+    ]
+    if args.start_hour is not None or args.end_hour is not None:
+        ms_list = [
+            p for p in ms_list
+            if (t := _ms_ts(p)) is not None
+            and (args.start_hour is None or t.hour >= args.start_hour)
+            and (args.end_hour is None or t.hour < args.end_hour)
+        ]
+
+    epoch_hours = sorted({_ms_ts(p).hour for p in ms_list if _ms_ts(p) is not None})
+
+    # Prior manifest + checkpoint (read-only)
+    prior_manifest = try_load_prior_manifest(date, products_dir=PRODUCTS_BASE)
+    checkpoint_path = os.path.join(paths["stage_dir"], ".tile_checkpoint.json")
+    checkpoint_completed: list[str] = []
+    checkpoint_failures: list[dict] = []
+    if os.path.exists(checkpoint_path):
+        try:
+            with open(checkpoint_path) as f:
+                ck = json.load(f)
+            checkpoint_completed = list(ck.get("completed", []))
+            checkpoint_failures = [
+                rec for rec in ck.get("failed", [])
+                if isinstance(rec, dict) and rec.get("ms_path")
+            ]
+        except Exception as exc:
+            log.warning("Dry-run: could not read checkpoint (%s)", exc)
+
+    # Apply --clear-quarantine to the in-memory copy so the dry-run plan
+    # reflects what *would* happen with that flag — without writing.
+    effective_failures = (
+        _clear_failure_counts(checkpoint_failures)
+        if args.clear_quarantine else checkpoint_failures
+    )
+    quarantine_set = _compute_quarantine_set(
+        effective_failures, args.quarantine_after_failures,
+    )
+
+    # Per-epoch resume decisions
+    epoch_decisions: list[dict] = []
+    for hour in epoch_hours:
+        mosaic_path = epoch_mosaic_path(paths, date, hour)
+        rebuild = _epoch_should_rebuild(
+            mosaic_path, prior_manifest, hour, args.force_recal,
+        )
+        prior_v = (
+            None if prior_manifest is None else prior_manifest.epoch_verdict(hour)
+        )
+        if not rebuild:
+            reason = f"prior verdict={prior_v}"
+            action = "skip"
+        elif args.force_recal:
+            reason = "--force-recal"
+            action = "rebuild"
+        elif not os.path.exists(mosaic_path):
+            reason = "no mosaic on disk"
+            action = "rebuild"
+        else:
+            reason = f"prior verdict={prior_v}"
+            action = "rebuild"
+        epoch_decisions.append({"hour": hour, "action": action, "reason": reason})
+
+    plan = _collect_dry_run_plan(
+        date=date,
+        cal_date=cal_date,
+        obs_dec_deg=obs_dec_deg,
+        paths=paths,
+        bp_table=bp_table,
+        g_table=g_table,
+        ms_list_after_filters=ms_list,
+        epoch_hours=epoch_hours,
+        epoch_decisions=epoch_decisions,
+        prior_manifest_verdict=(
+            prior_manifest.pipeline_verdict if prior_manifest else None
+        ),
+        prior_manifest_present=prior_manifest is not None,
+        checkpoint_completed=len(checkpoint_completed),
+        checkpoint_failures=effective_failures,
+        quarantine_threshold=args.quarantine_after_failures,
+        quarantine_set=quarantine_set,
+        skip_epoch_gaincal=args.skip_epoch_gaincal,
+        skip_photometry=args.skip_photometry,
+        lenient_qa=args.lenient_qa,
+    )
+    for line in _format_dry_run_plan(plan):
+        log.info("%s", line)
 
 
 # ── Epoch binning ─────────────────────────────────────────────────────────────
@@ -571,7 +1018,22 @@ def main() -> None:
         "--strict-qa",
         action="store_true",
         default=False,
-        help="Abort on cal quality gate failures and skip photometry for QA-FAIL epochs.",
+        help=(
+            "Abort the whole run on cal-quality gate WARN. Independent of the "
+            "default-strict per-epoch photometry skip on QA-FAIL (use "
+            "--lenient-qa to override that)."
+        ),
+    )
+    parser.add_argument(
+        "--lenient-qa",
+        action="store_true",
+        default=False,
+        help=(
+            "Operator override: run forced photometry on QA-FAIL epochs even "
+            "though they failed the three-gate epoch QA. Emits a 'lenient_qa' "
+            "gate so the run finishes with pipeline_verdict=DEGRADED. Use only "
+            "for investigative re-runs; the default is strict (skip)."
+        ),
     )
     parser.add_argument(
         "--archive-all",
@@ -589,6 +1051,61 @@ def main() -> None:
             "Use when you want manual control over calibration."
         ),
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help=(
+            "Do not execute any pipeline stage; instead print a plan summary "
+            "(MS files found, epoch resume decisions, quarantine state, what "
+            "each phase would do) and exit 0. Reads prior manifest and "
+            "checkpoint to inform the plan but writes nothing."
+        ),
+    )
+    parser.add_argument(
+        "--quarantine-after-failures",
+        type=int,
+        default=3,
+        metavar="N",
+        help=(
+            "Quarantine an MS file after N consecutive failures across runs "
+            "(default: 3). Quarantined MS are skipped without retry. Set 0 "
+            "to disable. Quarantine is reversible via --clear-quarantine."
+        ),
+    )
+    parser.add_argument(
+        "--clear-quarantine",
+        action="store_true",
+        default=False,
+        help=(
+            "Reset failure_count to 0 for every MS in the checkpoint, "
+            "releasing all quarantined files. Failure history (timestamps, "
+            "errors) is preserved for diagnostics. Note: combining with "
+            "--force-recal is a no-op for the clear because force-recal "
+            "deletes the checkpoint first."
+        ),
+    )
+    parser.add_argument(
+        "--photometry-workers",
+        type=int,
+        default=1,
+        metavar="N",
+        help=(
+            "Worker processes for the per-epoch forced photometry call "
+            "(default: 1 = serial). Threaded through run_two_stage_parallel; "
+            "see scripts/forced_photometry.py for benchmark numbers."
+        ),
+    )
+    parser.add_argument(
+        "--photometry-chunk-size",
+        type=int,
+        default=0,
+        metavar="N",
+        help=(
+            "Sources per worker chunk when --photometry-workers > 1. "
+            "0 = auto (~4 chunks per worker)."
+        ),
+    )
     args = parser.parse_args()
 
     date = args.date
@@ -599,8 +1116,16 @@ def main() -> None:
     # calibrator matches the science strip's beam response.
     from dsa110_continuum.calibration.dec_utils import read_ms_dec as _read_ms_dec
     _obs_dec: float | None = None
+    # Robust to missing/unreadable MS_DIR: dry-run preflight on a fresh
+    # workstation should produce a plan rather than crashing here.
+    try:
+        _ms_dir_listing = os.listdir(MS_DIR)
+    except (FileNotFoundError, NotADirectoryError, PermissionError) as _ms_dir_err:
+        log.warning("MS_DIR %s not accessible (%s) — using --expected-dec",
+                    MS_DIR, _ms_dir_err)
+        _ms_dir_listing = []
     _first_ms_list = sorted(
-        f for f in os.listdir(MS_DIR)
+        f for f in _ms_dir_listing
         if f.endswith(".ms") and f.startswith(date) and "meridian" not in f
     )
     if _first_ms_list:
@@ -614,6 +1139,15 @@ def main() -> None:
         log.warning("No MS files found for %s yet — using --expected-dec for cal selection", date)
         _obs_dec = args.expected_dec
     log.info("Observation Dec for calibrator selection: %.1f°", _obs_dec)
+
+    # ── Dry-run plan (Batch E) ───────────────────────────────────────────────
+    # Read-only inspection: resolve existing cal tables (glob only — no
+    # generation), find MS, consult prior manifest + checkpoint for resume
+    # and quarantine state, print the plan, exit. No mkdir, no FileHandler,
+    # no Phase 0/1/2/3 dispatch.
+    if args.dry_run:
+        _dry_run_main(args, date, cal_date, _obs_dec)
+        return
 
     # ── Automatic bandpass table generation ────────────────────────────────
     _auto_cal_result = None
@@ -695,6 +1229,16 @@ def main() -> None:
     os.makedirs(paths["stage_dir"], exist_ok=True)
     os.makedirs(paths["products_dir"], exist_ok=True)
 
+    # ── Per-run log file ─────────────────────────────────────────────────────
+    # Attach a FileHandler so the entire pipeline run lands in a single
+    # diagnostic file under the date's products dir. All subsequent stages
+    # (Phase 0/1/2/3) emit through it; the console handler from
+    # logging.basicConfig() is preserved unchanged.
+    _run_started_at = datetime.now(timezone.utc)
+    _run_log_path = _attach_run_logfile(paths["products_dir"], _run_started_at)
+    manifest.run_log = _run_log_path
+    log.info("Run log: %s", _run_log_path)
+
     # ── Migrate stale qa_summary.csv if schema doesn't match ─────────────────
     if os.path.isfile(QA_SUMMARY_CSV):
         try:
@@ -775,7 +1319,10 @@ def main() -> None:
         _cached_ap = _glob.glob(os.path.join(epoch_gaincal_dir, "*.ap.G"))
         for _f in _cached_ap:
             try:
-                import shutil
+                # shutil is imported at module scope (line 32); a redundant
+                # local import here shadowed the name across all of main(),
+                # causing UnboundLocalError at the qa_summary migration site
+                # whenever a stale-schema CSV triggered shutil.copy2.
                 shutil.rmtree(_f) if os.path.isdir(_f) else os.remove(_f)
                 log.info("--force-recal: removed cached ap.G: %s", _f)
             except Exception as _e:
@@ -839,10 +1386,35 @@ def main() -> None:
     manifest.gaincal_status = _epoch_gaincal_status
     manifest.epoch_g_table = _epoch_g_table
 
+    # Gaincal fallback/error is a degradation signal: record it as a gate so the
+    # pipeline verdict reflects that the per-epoch phase solution was not used.
+    # "skipped" is intentional (--skip-epoch-gaincal) and does not degrade.
+    if _epoch_gaincal_status in ("fallback", "error"):
+        manifest.add_gate(
+            gate="gaincal",
+            verdict="FALLBACK" if _epoch_gaincal_status == "fallback" else "ERROR",
+            reason=f"epoch gaincal {_epoch_gaincal_status}; static daily G table used",
+            static_g_table=_ga,
+        )
+
     # ── Phase 1: Calibrate + image all tiles ──────────────────────────────────
     tile_timeout = args.tile_timeout
     retry_failed = args.retry_failed
     checkpoint_path = os.path.join(paths["stage_dir"], ".tile_checkpoint.json")
+
+    # Consult the prior-run manifest (if any). Used for QA-aware epoch skip
+    # (below) and to carry tile-failure history across re-runs.
+    prior_manifest = (
+        None if args.force_recal
+        else try_load_prior_manifest(date, products_dir=PRODUCTS_BASE)
+    )
+    if prior_manifest is not None:
+        log.info(
+            "Prior manifest loaded: verdict=%s, %d epochs, %d tiles recorded",
+            prior_manifest.pipeline_verdict or "?",
+            len(prior_manifest.epochs),
+            len(prior_manifest.tiles),
+        )
 
     # --force-recal means "fresh rerun", so discard any old checkpoint state
     if args.force_recal and os.path.exists(checkpoint_path):
@@ -852,25 +1424,87 @@ def main() -> None:
         except Exception as e:
             log.warning("--force-recal: could not remove checkpoint %s: %s", checkpoint_path, e)
 
-    # Load completed tiles from a previous (crashed) run
+    # Load completed tiles (and prior failure history) from a previous run.
+    # Failures are preserved so operators can see chronic offenders across
+    # re-runs; they do not prevent re-attempting the same MS.
     tile_fits: list[str] = []
+    prior_tile_failures: list[dict] = []
     if os.path.exists(checkpoint_path):
         try:
-            ck = json.load(open(checkpoint_path))
+            with open(checkpoint_path) as f:
+                ck = json.load(f)
             tile_fits = [p for p in ck.get("completed", []) if os.path.exists(p)]
+            prior_tile_failures = [
+                rec for rec in ck.get("failed", [])
+                if isinstance(rec, dict) and rec.get("ms_path")
+            ]
             if tile_fits:
                 log.info("Checkpoint: resuming with %d previously completed tiles", len(tile_fits))
+            if prior_tile_failures:
+                log.info(
+                    "Checkpoint: %d tiles previously failed (will be re-attempted)",
+                    len(prior_tile_failures),
+                )
         except Exception as e:
             log.warning("Could not read checkpoint file: %s", e)
 
     completed_fits = set(tile_fits)
+    current_tile_failures: list[dict] = []
+    # MS paths that succeeded in *this* run; passed to _write_tile_checkpoint
+    # so prior failure history is cleared on success and failure_count
+    # measures consecutive failures only (Batch E.2 fix).
+    current_completed_ms_paths: list[str] = []
+
+    # ── Quarantine policy (Batch E) ──────────────────────────────────────────
+    # --clear-quarantine zeros every failure_count before the threshold check
+    # so the next run is allowed to retry every MS regardless of history.
+    if args.clear_quarantine and prior_tile_failures:
+        log.info("--clear-quarantine: zeroing failure_count for %d MS",
+                 len(prior_tile_failures))
+        prior_tile_failures = _clear_failure_counts(prior_tile_failures)
+        # Persist the cleared counts immediately so even if the run aborts the
+        # release survives.
+        _write_tile_checkpoint(
+            checkpoint_path, date, cal_date, tile_fits,
+            prior_tile_failures, current_tile_failures,
+        )
+    quarantine_set = _compute_quarantine_set(
+        prior_tile_failures, args.quarantine_after_failures,
+    )
+    if quarantine_set:
+        log.warning(
+            "Quarantine: %d MS skipped (>= %d consecutive failures). "
+            "Run --clear-quarantine to re-enable.",
+            len(quarantine_set), args.quarantine_after_failures,
+        )
+        manifest.add_gate(
+            gate="quarantine",
+            verdict="BLOCKED",
+            reason=(
+                f"{len(quarantine_set)} MS file(s) skipped after "
+                f">={args.quarantine_after_failures} failures"
+            ),
+            quarantined_ms_paths=sorted(quarantine_set),
+        )
+
     log.info("=== Phase 1/3: Calibrate + Image all tiles (timeout=%ds, retry=%s) ===",
              tile_timeout, retry_failed)
-    n_imaged = n_skipped_tiles = n_failed_tiles = 0
+    n_imaged = n_skipped_tiles = n_failed_tiles = n_quarantined = 0
 
     for i, ms_path in enumerate(ms_list, 1):
         tag = Path(ms_path).stem
         log.info("[%d/%d] %s", i, len(ms_list), tag)
+
+        # Quarantined MS: skip without retry (it has crossed the failure
+        # threshold). Recorded in manifest so operators see what was skipped.
+        if ms_path in quarantine_set:
+            log.warning("  QUARANTINED — skipping %s", ms_path)
+            n_quarantined += 1
+            manifest.record_tile(
+                ms_path, None, "quarantined",
+                0.0, error="quarantined",
+            )
+            continue
 
         # Guard: skip corrupt or incomplete Measurement Sets before spawning
         # a subprocess.  A corrupt MS (missing MAIN table, incomplete write,
@@ -886,6 +1520,17 @@ def main() -> None:
                 ms_path, None, "failed",
                 0.0, error="corrupt_ms_skipped",
             )
+            current_tile_failures.append({
+                "ms_path": ms_path,
+                "error": "corrupt_ms_skipped",
+                "elapsed_sec": 0.0,
+                "failed_at": datetime.now(timezone.utc).isoformat(),
+            })
+            _write_tile_checkpoint(
+                checkpoint_path, date, cal_date, tile_fits,
+                prior_tile_failures, current_tile_failures,
+                cleared_ms_paths=current_completed_ms_paths,
+            )
             continue
 
         t0 = time.time()
@@ -896,11 +1541,22 @@ def main() -> None:
         elapsed = time.time() - t0
 
         if not result.ok:
+            err_msg = result.error or result.failed_stage
             log.error("  FAILED after %.0fs (%s: %s)", elapsed,
-                       result.failed_stage, result.error or "unknown")
+                       result.failed_stage, err_msg or "unknown")
             n_failed_tiles += 1
-            manifest.record_tile(ms_path, None, "failed", elapsed,
-                                 error=result.error or result.failed_stage)
+            manifest.record_tile(ms_path, None, "failed", elapsed, error=err_msg)
+            current_tile_failures.append({
+                "ms_path": ms_path,
+                "error": err_msg,
+                "elapsed_sec": round(elapsed, 1),
+                "failed_at": datetime.now(timezone.utc).isoformat(),
+            })
+            _write_tile_checkpoint(
+                checkpoint_path, date, cal_date, tile_fits,
+                prior_tile_failures, current_tile_failures,
+                cleared_ms_paths=current_completed_ms_paths,
+            )
         else:
             if result.fits_path not in completed_fits:
                 tile_fits.append(result.fits_path)
@@ -911,17 +1567,20 @@ def main() -> None:
                 log.info("  Done in %.0fs → %s", elapsed, Path(result.fits_path).name)
                 n_imaged += 1
             manifest.record_tile(ms_path, result.fits_path, "ok", elapsed)
+            # Track the MS as cleared so prior failure history (from a previous
+            # run) drops out of the merged failures, resetting the consecutive
+            # count to zero.
+            current_completed_ms_paths.append(ms_path)
 
-            # Write checkpoint after every successful tile
-            try:
-                with open(checkpoint_path, "w") as ck_f:
-                    json.dump({"date": date, "cal_date": cal_date, "completed": tile_fits}, ck_f, indent=2)
-            except Exception as e:
-                log.warning("Could not write checkpoint: %s", e)
+            _write_tile_checkpoint(
+                checkpoint_path, date, cal_date, tile_fits,
+                prior_tile_failures, current_tile_failures,
+                cleared_ms_paths=current_completed_ms_paths,
+            )
 
     log.info(
-        "Tiles: %d imaged, %d already done, %d failed",
-        n_imaged, n_skipped_tiles, n_failed_tiles,
+        "Tiles: %d imaged, %d already done, %d failed, %d quarantined",
+        n_imaged, n_skipped_tiles, n_failed_tiles, n_quarantined,
     )
 
     if len(tile_fits) < 2:
@@ -954,20 +1613,36 @@ def main() -> None:
         phot_csv_path = epoch_phot_path(paths, date, hour)
         mosaic_fits_dst = Path(paths["products_dir"]) / Path(mosaic_path).name
 
-        # --force-recal: remove stale epoch-level outputs before rebuilding
-        if args.force_recal:
+        # Decide (rebuild vs skip) based on prior-run verdict. A mosaic file
+        # that exists but whose prior QA verdict was FAIL (or absent, meaning
+        # the prior run crashed mid-epoch) is NOT trusted — it gets rebuilt.
+        should_rebuild = _epoch_should_rebuild(
+            mosaic_path, prior_manifest, hour, args.force_recal,
+        )
+
+        # Remove stale epoch-level outputs before rebuilding so the fresh
+        # mosaic / photometry CSV is unambiguous. --force-recal and a FAIL
+        # prior verdict both use the same cleanup path.
+        if should_rebuild and os.path.exists(mosaic_path):
+            prior_v = None if prior_manifest is None else prior_manifest.epoch_verdict(hour)
+            reason = "--force-recal" if args.force_recal else f"prior verdict={prior_v!s}"
             for stale_path in (mosaic_path, phot_csv_path, str(mosaic_fits_dst)):
                 if os.path.exists(stale_path):
                     try:
                         os.remove(stale_path)
-                        log.info("  --force-recal: removed stale output %s", stale_path)
+                        log.info("  %s: removed stale output %s", reason, stale_path)
                     except Exception as e:
-                        log.warning("  --force-recal: could not remove %s: %s", stale_path, e)
+                        log.warning("  %s: could not remove %s: %s", reason, stale_path, e)
 
-        # Skip if mosaic already exists (unless --force-recal)
-        if os.path.exists(mosaic_path) and not args.force_recal:
-            log.info("  Mosaic already exists — skipping epoch %s", label)
-            epoch_results.append({"label": label, "status": "skipped", "n_tiles": len(epoch_tiles), "gaincal_status": _epoch_gaincal_status})
+        if not should_rebuild:
+            prior_v = None if prior_manifest is None else prior_manifest.epoch_verdict(hour)
+            log.info("  Mosaic already exists (prior verdict=%s) — skipping epoch %s",
+                     prior_v or "no-manifest", label)
+            epoch_results.append({
+                "label": label, "status": "skipped", "n_tiles": len(epoch_tiles),
+                "gaincal_status": _epoch_gaincal_status,
+                "qa_result": prior_v,  # carry prior verdict forward
+            })
             continue
 
         # Build mosaic
@@ -1014,26 +1689,55 @@ def main() -> None:
             except Exception as e:
                 log.warning("  Could not update FITS header with QA: %s", e)
 
-        # ── Forced photometry — gated on QA result ────────────────────────────
+        # ── Forced photometry — default-strict on QA-FAIL ────────────────────
+        # Default policy: do NOT run photometry on a QA-FAIL epoch (would
+        # leak bad fluxes into the master lightcurve table). --lenient-qa
+        # is the explicit operator override for investigation.
         n_sources: int | None = None
         median_ratio: float | None = None
         qa_verdict = epoch_qa.qa_result if epoch_qa else None
-        skip_phot = args.skip_photometry or (args.strict_qa and qa_verdict == "FAIL")
+        skip_phot, skip_reason = _should_skip_photometry(
+            qa_verdict, args.skip_photometry, args.lenient_qa,
+        )
 
-        if skip_phot and args.strict_qa and qa_verdict == "FAIL":
-            log.warning("  --strict-qa: skipping photometry for QA-FAIL epoch %s", label)
-        elif not skip_phot:
+        if skip_reason == "qa-fail-default-strict":
+            log.warning(
+                "  QA FAIL — skipping photometry for epoch %s (use --lenient-qa to override)",
+                label,
+            )
+        elif skip_reason == "lenient-qa-override":
+            log.warning(
+                "  --lenient-qa: running photometry on QA-FAIL epoch %s "
+                "(verdict will be DEGRADED)",
+                label,
+            )
+            manifest.add_gate(
+                gate="lenient_qa",
+                verdict="OVERRIDE",
+                reason=f"photometry ran on QA-FAIL epoch {label} via --lenient-qa",
+                epoch_label=label,
+            )
+
+        if not skip_phot:
             try:
                 from forced_photometry import run_forced_photometry
                 phot_result = run_forced_photometry(
                     mosaic_path, output_csv=phot_csv_path, min_flux_mjy=10.0,
+                    workers=args.photometry_workers,
+                    chunk_size=(args.photometry_chunk_size or None),
                 )
                 n_sources = phot_result["n_sources"]
                 median_ratio = phot_result["median_ratio"]
                 if np.isfinite(median_ratio):
                     log.info("  Median DSA/Cat ratio: %.3f  (%d sources)", median_ratio, n_sources)
             except Exception as e:
-                log.error("  Forced photometry failed: %s", e)
+                log.error("  Forced photometry failed for epoch %s: %s", label, e)
+                manifest.add_gate(
+                    gate="photometry",
+                    verdict="FAILED",
+                    reason=f"forced photometry crashed for epoch {label}: {e}",
+                    epoch_label=label,
+                )
 
         # ── Diagnostic PNG ────────────────────────────────────────────────────
         if epoch_qa is not None:
@@ -1100,7 +1804,19 @@ def main() -> None:
     manifest.finalize(_wall)
     manifest.save(paths["products_dir"])
 
-    emit_run_summary(date, cal_date, epoch_results, _wall, products_dir=paths["products_dir"])
+    emit_run_summary(
+        date, cal_date, epoch_results, _wall,
+        products_dir=paths["products_dir"],
+        run_log_path=_run_log_path,
+    )
+
+    # Static run report (Batch F). A failure to render must not fail the
+    # actual run — operators still have manifest.json + run_summary.json.
+    try:
+        from dsa110_continuum.qa.run_report import write_run_report
+        write_run_report(manifest, paths["products_dir"])
+    except Exception as _report_err:
+        log.warning("Run report render failed (non-fatal): %s", _report_err)
 
 def emit_run_summary(
     date: str,
@@ -1108,8 +1824,15 @@ def emit_run_summary(
     epoch_results: list,
     wall_time_sec: float,
     products_dir: str | None = None,
+    run_log_path: str | None = None,
 ) -> None:
-    """Write run summary JSON to products dir and symlink at /tmp for backward compat."""
+    """Write run summary JSON to products dir and symlink at /tmp for backward compat.
+
+    ``run_log_path`` is the absolute path of the per-run log file created by
+    :func:`_attach_run_logfile`; if provided it is recorded under the
+    ``run_log`` key so an operator inspecting the summary can locate the
+    diagnostic log without searching.
+    """
     import json as _json
     from datetime import datetime as _dt
 
@@ -1129,6 +1852,7 @@ def emit_run_summary(
         "n_fail": n_exec_fail,
         "n_qa_pass": n_qa_pass,
         "n_qa_fail": n_qa_fail,
+        "run_log": run_log_path,
         "epochs": epochs_list,
     }
 

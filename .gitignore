@@ -46,3 +46,6 @@ docs/quarto/.quarto/
 # Pipeline outputs — all working outputs are regenerable; canonical figures live in docs/images/
 pipeline_outputs/
 pipeline_diagnostic.png
+
+# Forced photometry benchmark JSONs (regenerable via scripts/bench_forced_photometry.py)
+outputs/photometry-bench/
