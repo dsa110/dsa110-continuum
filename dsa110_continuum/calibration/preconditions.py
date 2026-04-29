@@ -167,9 +167,13 @@ def _check_calibrator_transit(
         t_end = Time(t_end_mjd, format="mjd")
 
         # Get phase center RA
+        from dsa110_continuum.calibration.runner import _extract_field_ra_dec
+
         with ct.table(f"{ms_path}::FIELD", readonly=True, ack=False) as tb:
             phase_dir = tb.getcol("PHASE_DIR")
-            phase_ra_rad = phase_dir[0, 0, 0]
+            # Shape-tolerant: handles (nfields, 1, 2) and (nfields, 2, 1).
+            ra_rad_all, _ = _extract_field_ra_dec(phase_dir)
+            phase_ra_rad = ra_rad_all[0]
             phase_ra_deg = float(np.degrees(phase_ra_rad)) % 360.0
             if phase_ra_deg < 0:
                 phase_ra_deg += 360.0
@@ -270,16 +274,19 @@ def _check_coherent_phasing(
         else:
             field_indices = None  # All fields
 
+        from dsa110_continuum.calibration.runner import _extract_field_ra_dec
+
         with ct.table(f"{ms_path}::FIELD", readonly=True, ack=False) as tb:
-            phase_dir = tb.getcol("PHASE_DIR")  # Shape: (nfields, 1, 2)
+            phase_dir = tb.getcol("PHASE_DIR")
             n_fields = tb.nrows()
 
             if field_indices is None:
                 field_indices = list(range(n_fields))
 
-            # Extract RA/Dec for selected fields
-            ra_rad = phase_dir[field_indices, 0, 0]
-            dec_rad = phase_dir[field_indices, 0, 1]
+            # Shape-tolerant extraction; then index by field_indices.
+            ra_all, dec_all = _extract_field_ra_dec(phase_dir)
+            ra_rad = ra_all[field_indices]
+            dec_rad = dec_all[field_indices]
 
         # Compute RA scatter using circular statistics (handles wrap-around)
         ra_complex = np.exp(1j * ra_rad)
