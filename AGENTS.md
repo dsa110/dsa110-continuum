@@ -99,6 +99,10 @@ pipeline logic.
 - FIELD direction columns may appear as either rows-first `(nfields, 1, 2)` or
   CASA column-major `(nfields, 2, 1)` arrays; calibration code should normalize
   both shapes when reading or updating `PHASE_DIR`/`REFERENCE_DIR`.
+- Fresh converted MS FIELD direction columns can appear as `(nfields, 2, 1)`
+  via the CASA table adapter; code touching `PHASE_DIR` or `REFERENCE_DIR`
+  should use calibration runner helpers instead of hard-coded `(nfields, 1, 2)`
+  indexing.
 
 ## Cursor Cloud specific instructions
 
