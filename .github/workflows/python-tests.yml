@@ -51,15 +51,21 @@ jobs:
           python-version: "3.12"
 
       - name: Install minimal cloud-safe deps
+        # scipy is required transitively: dsa110_continuum.calibration.beam_model
+        # imports scipy.special.j1 for the Airy disk PB model; pulled in via
+        # provenance -> calibration.qa -> beam_model on import.
         run: |
           python -m pip install --upgrade pip
-          python -m pip install numpy astropy pytest
+          python -m pip install numpy scipy astropy pytest
 
       - name: Run focused cloud-safe subset
+        # --basetemp overrides the project default in pyproject.toml
+        # (--basetemp=/data/dsa110-continuum/.pytest_tmp), which only exists
+        # on the H17 dev workstation. CI runners need a workspace-local tmp.
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
-          python -m pytest -q \
+          python -m pytest -q --basetemp=${{ runner.temp }}/pytest \
             tests/test_provenance.py \
             tests/test_resume_semantics.py \
             tests/test_qa_default_strict.py \
