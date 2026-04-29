@@ -58,9 +58,12 @@ jobs:
         #   - pandas: dsa110_continuum.catalog.unified imports pandas at
         #     module level (loaded via forced_photometry CLI tests ->
         #     catalog.query -> catalog.unified).
+        #   - uncertainties: dsa110_continuum.catalog.crossmatch imports
+        #     uncertainties.ufloat / AffineScalarFunc at module level
+        #     (loaded via forced_photometry CLI -> catalog.query chain).
         run: |
           python -m pip install --upgrade pip
-          python -m pip install numpy scipy pandas astropy pytest
+          python -m pip install numpy scipy pandas astropy uncertainties pytest
 
       - name: Run focused cloud-safe subset
         # --basetemp overrides the project default in pyproject.toml
