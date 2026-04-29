@@ -25,7 +25,7 @@ from dsa110_continuum.calibration.mosaic_constants import (
     SKYMODEL_MIN_FLUX_MJY,
     SOURCE_QUERY_RADIUS_DEG,
 )
-from dsa110_continuum.calibration.runner import phaseshift_ms
+from dsa110_continuum.calibration.runner import _extract_field_ra_dec, phaseshift_ms
 from dsa110_continuum.calibration.skymodels import (
     make_unified_skymodel,
     predict_from_skymodel_wsclean,
@@ -52,9 +52,12 @@ def _read_ms_phase_center(ms_path: str) -> tuple[float, float]:
     from dsa110_continuum.adapters import casa_tables as ct
 
     with ct.table(f"{ms_path}::FIELD", readonly=True, ack=False) as t:
-        phase_dir = t.getcol("PHASE_DIR")  # shape (nfields, 1, 2) radians
-    ra_rad = phase_dir[:, 0, 0]
-    dec_rad = phase_dir[:, 0, 1]
+        phase_dir = t.getcol("PHASE_DIR")
+    # Shape-tolerant: PHASE_DIR is (nfields, 1, 2) on rows-first table backends
+    # and (nfields, 2, 1) when CASA returns column-major. _extract_field_ra_dec
+    # handles both; raw [:, 0, 1] indexing on the column-major shape raises
+    # IndexError on axis-2 size 1 (the original epoch_gaincal failure mode).
+    ra_rad, dec_rad = _extract_field_ra_dec(phase_dir)
     # Circular mean for RA to handle 0/360 wrap
     median_ra = float(np.degrees(np.angle(np.mean(np.exp(1j * ra_rad)))) % 360)
     median_dec = float(np.degrees(np.median(dec_rad)))

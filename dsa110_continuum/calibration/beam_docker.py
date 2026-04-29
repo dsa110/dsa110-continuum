@@ -98,13 +98,16 @@ def evaluate_beam_docker(
     # Extract pointing center from MS FIELD table
     try:
         from dsa110_continuum.adapters.casa_tables import table
+        from dsa110_continuum.calibration.runner import _extract_field_ra_dec
 
         with table(ms_path + "::FIELD") as tf:
             phase_dir = tf.getcol("PHASE_DIR")
             if field_id >= phase_dir.shape[0]:
                 raise ValueError(f"Field ID {field_id} out of range (max={phase_dir.shape[0] - 1})")
-            pointing_ra_deg = float(np.degrees(phase_dir[field_id, 0, 0]))
-            pointing_dec_deg = float(np.degrees(phase_dir[field_id, 0, 1]))
+            # Shape-tolerant extraction: handles (nfields, 1, 2) and (nfields, 2, 1)
+            ra_all, dec_all = _extract_field_ra_dec(phase_dir)
+            pointing_ra_deg = float(np.degrees(ra_all[field_id]))
+            pointing_dec_deg = float(np.degrees(dec_all[field_id]))
     except Exception as e:
         logger.warning(
             f"Could not extract pointing from MS: {e}. Using source position as pointing."

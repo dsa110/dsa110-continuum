@@ -612,14 +612,20 @@ def _check_beam_response(
         # Get field pointing direction
         field_id = int(field) if field.isdigit() else 0
 
+        from dsa110_continuum.calibration.runner import _extract_field_ra_dec
+
         with tb.table(f"{ms_path}/FIELD", readonly=True) as field_tab:
             if field_id >= field_tab.nrows():
                 logger.warning(f"Field {field_id} not found in MS")
                 return True, 1.0
 
-            phase_dir = field_tab.getcol("PHASE_DIR")[field_id]
-            field_ra = phase_dir[0, 0]  # radians
-            field_dec = phase_dir[0, 1]  # radians
+            # Shape-tolerant: call helper on the full PHASE_DIR array, then
+            # index by field_id. Avoids the (1, 2) vs (2, 1) ambiguity that a
+            # pre-slice would create.
+            phase_dir = field_tab.getcol("PHASE_DIR")
+            ra_all, dec_all = _extract_field_ra_dec(phase_dir)
+            field_ra = ra_all[field_id]   # radians
+            field_dec = dec_all[field_id]  # radians
 
         # Get pointing direction (if available)
         pointing_path = f"{ms_path}/POINTING"

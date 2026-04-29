@@ -86,4 +86,5 @@ jobs:
             tests/test_batch_pipeline_dry_run_quarantine.py \
             tests/test_batch_e1_hygiene.py \
             tests/test_batch_e2_hygiene.py \
-            tests/test_skymodel_phase_dir.py
+            tests/test_skymodel_phase_dir.py \
+            tests/test_epoch_gaincal_field_shape.py

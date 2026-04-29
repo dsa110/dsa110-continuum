@@ -373,11 +373,11 @@ def _calculate_manual_model_data(
         logger.debug(f"Reading MS metadata directly from tables for {ms_path}")
         with casa_table(f"{ms_path}::FIELD", readonly=True) as field_tb:
             if "PHASE_DIR" in field_tb.colnames():
-                phase_dir = field_tb.getcol("PHASE_DIR")  # Shape: (nfields, 1, 2)
+                phase_dir = field_tb.getcol("PHASE_DIR")
                 logger.debug("Using PHASE_DIR for phase centers")
             else:
                 # Fallback to REFERENCE_DIR if PHASE_DIR not available
-                phase_dir = field_tb.getcol("REFERENCE_DIR")  # Shape: (nfields, 1, 2)
+                phase_dir = field_tb.getcol("REFERENCE_DIR")
                 logger.debug("PHASE_DIR not available, using REFERENCE_DIR")
             nfields = len(phase_dir)
 
@@ -385,6 +385,12 @@ def _calculate_manual_model_data(
         with casa_table(f"{ms_path}::SPECTRAL_WINDOW", readonly=True) as spw_tb:
             chan_freq = spw_tb.getcol("CHAN_FREQ")  # Shape: (nspw, nchan)
             nspw = len(chan_freq)
+
+    # Shape-tolerant per-field RA/Dec extraction. Handles cached metadata
+    # (any supported shape) AND direct getcol output, which can be rows-first
+    # (nfields, 1, 2) or CASA column-major (nfields, 2, 1).
+    from dsa110_continuum.calibration.runner import _extract_field_ra_dec
+    phase_ra_rad_all, phase_dec_rad_all = _extract_field_ra_dec(phase_dir)
 
     # Log field selection
     if field_indices is not None:
@@ -520,9 +526,9 @@ def _calculate_manual_model_data(
             chunk_u = selected_u[chunk_start:chunk_end]
             chunk_v = selected_v[chunk_start:chunk_end]
 
-            # Get phase centers for chunk rows
-            phase_centers_ra_rad = phase_dir[chunk_field_id, 0, 0]
-            phase_centers_dec_rad = phase_dir[chunk_field_id, 0, 1]
+            # Get phase centers for chunk rows (using shape-tolerant arrays)
+            phase_centers_ra_rad = phase_ra_rad_all[chunk_field_id]
+            phase_centers_dec_rad = phase_dec_rad_all[chunk_field_id]
 
             # Convert to degrees
             phase_centers_ra_deg = np.degrees(phase_centers_ra_rad)
@@ -1225,20 +1231,23 @@ def populate_model_from_catalog(
                     # Let's assume the phaseshift has put the source at the phase center.
                     # So we can use the phase center of the first field.
                     phase_dir = t.getcol("PHASE_DIR")
-                    # field argument might be "0~23" or "0".
-                    # We'll just take field 0 of the MS (since it's likely phaseshifted)
-                    # Or parse field.
-                    # Let's just use the first field in the MS for center.
-                    ra_rad = phase_dir[0, 0, 0]
-                    dec_rad = phase_dir[0, 0, 1]
+                    from dsa110_continuum.calibration.runner import _extract_field_ra_dec
+                    # Shape-tolerant: handles (nfields, 1, 2) and (nfields, 2, 1).
+                    # field argument might be "0~23" or "0"; use field 0 (assumed phaseshifted).
+                    ra_all, dec_all = _extract_field_ra_dec(phase_dir)
+                    ra_rad = ra_all[0]
+                    dec_rad = dec_all[0]
                     center_ra = np.degrees(ra_rad)
                     center_dec = np.degrees(dec_rad)
         else:
             # No name, no coords -> use MS field center
             with tb.table(f"{ms_path}::FIELD", readonly=True) as t:
                 phase_dir = t.getcol("PHASE_DIR")
-                ra_rad = phase_dir[0, 0, 0]
-                dec_rad = phase_dir[0, 0, 1]
+                from dsa110_continuum.calibration.runner import _extract_field_ra_dec
+                # Shape-tolerant: handles (nfields, 1, 2) and (nfields, 2, 1).
+                ra_all, dec_all = _extract_field_ra_dec(phase_dir)
+                ra_rad = ra_all[0]
+                dec_rad = dec_all[0]
                 center_ra = np.degrees(ra_rad)
                 center_dec = np.degrees(dec_rad)
 

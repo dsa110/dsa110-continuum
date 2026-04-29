@@ -346,10 +346,12 @@ def check_geometric_setup(
         field_indices = list(range(24))  # Default: all fields
 
     # Check field phase centers
+    from dsa110_continuum.calibration.runner import _extract_field_ra_dec
+
     with table(f"{ms_path}::FIELD", readonly=True) as tb:
-        phase_dir = tb.getcol("PHASE_DIR")  # Shape: (nfields, 1, 2)
-        ra_rad = phase_dir[:, 0, 0]
-        dec_rad = phase_dir[:, 0, 1]
+        phase_dir = tb.getcol("PHASE_DIR")
+        # Shape-tolerant: handles both (nfields, 1, 2) and (nfields, 2, 1)
+        ra_rad, dec_rad = _extract_field_ra_dec(phase_dir)
 
         # Filter to selected fields
         field_ra = np.degrees(ra_rad[field_indices])

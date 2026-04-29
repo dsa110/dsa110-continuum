@@ -1624,14 +1624,18 @@ def _check_coherent_phasing(
     field_indices = list(range(int(parts[0]), int(parts[1]) + 1))
 
     # Read PHASE_DIR from FIELD table
+    from dsa110_continuum.calibration.runner import _extract_field_ra_dec
+
     with table(f"{ms}::FIELD", readonly=True, ack=False) as field_tb:
         if "PHASE_DIR" not in field_tb.colnames():
             logger.warning("PHASE_DIR column not found - skipping coherence check")
             return
-        phase_dir = field_tb.getcol("PHASE_DIR")  # Shape: (nfields, 1, 2)
+        phase_dir = field_tb.getcol("PHASE_DIR")
 
-    # Get RA values for selected fields (in radians)
-    ra_values = np.array([phase_dir[i, 0, 0] for i in field_indices if i < len(phase_dir)])
+    # Get RA values for selected fields (in radians); helper handles both
+    # rows-first (nfields, 1, 2) and CASA column-major (nfields, 2, 1) shapes.
+    ra_all, _ = _extract_field_ra_dec(phase_dir)
+    ra_values = np.array([ra_all[i] for i in field_indices if i < len(phase_dir)])
     if len(ra_values) < 2:
         return
 
