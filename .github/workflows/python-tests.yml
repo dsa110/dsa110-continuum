@@ -51,12 +51,16 @@ jobs:
           python-version: "3.12"
 
       - name: Install minimal cloud-safe deps
-        # scipy is required transitively: dsa110_continuum.calibration.beam_model
-        # imports scipy.special.j1 for the Airy disk PB model; pulled in via
-        # provenance -> calibration.qa -> beam_model on import.
+        # Transitive dependencies surfaced during CI bring-up:
+        #   - scipy: dsa110_continuum.calibration.beam_model imports
+        #     scipy.special.j1 for the Airy disk PB model (loaded via
+        #     provenance -> calibration.qa -> beam_model).
+        #   - pandas: dsa110_continuum.catalog.unified imports pandas at
+        #     module level (loaded via forced_photometry CLI tests ->
+        #     catalog.query -> catalog.unified).
         run: |
           python -m pip install --upgrade pip
-          python -m pip install numpy scipy astropy pytest
+          python -m pip install numpy scipy pandas astropy pytest
 
       - name: Run focused cloud-safe subset
         # --basetemp overrides the project default in pyproject.toml
