@@ -1,0 +1,89 @@
+name: Python tests (cloud-safe subset)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "dsa110_continuum/**"
+      - "scripts/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - ".github/workflows/python-tests.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "dsa110_continuum/**"
+      - "scripts/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - ".github/workflows/python-tests.yml"
+
+# Workflow scope:
+#   Runs the cloud-safe focused-test subset that exercises the operational
+#   A-F arc (resume semantics, default-strict QA, run logging, parallel
+#   photometry, dry-run + quarantine, run report, hygiene fixes) plus the
+#   CASA shape-helper tests added by PR #9.
+#
+# What this CI does NOT cover (and why):
+#   - CASA-gated tests (test_silent_failures.py): skip wholesale on cloud
+#   - CASA-required tests (test_epoch_gaincal, test_simulated_pipeline,
+#     test_integration_e2e, test_simulation_harness): need casatools +
+#     wsclean — defer to local H17 runs
+#   - H17 data-path tests (test_config, test_source_presence): need
+#     /data/incoming + /stage/dsa110-contimg/images
+#   - Source-finder tests (test_source_finding*): need BANE/Aegean binaries
+#
+# Expansion path: add files from the broader cloud-safe-likely bucket to the
+# pytest invocation incrementally; verify each addition stays green across
+# two consecutive runs before promoting to the steady-state list.
+
+jobs:
+  cloud-safe-tests:
+    name: Cloud-safe pytest subset
+    runs-on: ubuntu-latest
+    # Bound so a future deadlocked test cannot consume the GitHub Actions
+    # default 360-minute ceiling. Current suite runs in ~2.4s; 5 minutes
+    # leaves headroom for cold-start pip install + future expansion.
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install minimal cloud-safe deps
+        # Transitive dependencies surfaced during CI bring-up:
+        #   - scipy: dsa110_continuum.calibration.beam_model imports
+        #     scipy.special.j1 for the Airy disk PB model (loaded via
+        #     provenance -> calibration.qa -> beam_model).
+        #   - pandas: dsa110_continuum.catalog.unified imports pandas at
+        #     module level (loaded via forced_photometry CLI tests ->
+        #     catalog.query -> catalog.unified).
+        #   - uncertainties: dsa110_continuum.catalog.crossmatch imports
+        #     uncertainties.ufloat / AffineScalarFunc at module level
+        #     (loaded via forced_photometry CLI -> catalog.query chain).
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy scipy pandas astropy uncertainties pytest
+
+      - name: Run focused cloud-safe subset
+        # --basetemp overrides the project default in pyproject.toml
+        # (--basetemp=/data/dsa110-continuum/.pytest_tmp), which only exists
+        # on the H17 dev workstation. CI runners need a workspace-local tmp.
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python -m pytest -q --basetemp=${{ runner.temp }}/pytest \
+            tests/test_provenance.py \
+            tests/test_resume_semantics.py \
+            tests/test_qa_default_strict.py \
+            tests/test_run_logging.py \
+            tests/test_run_report.py \
+            tests/test_forced_photometry_parallel.py \
+            tests/test_batch_pipeline_dry_run_quarantine.py \
+            tests/test_batch_e1_hygiene.py \
+            tests/test_batch_e2_hygiene.py \
+            tests/test_skymodel_phase_dir.py
