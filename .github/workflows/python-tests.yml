@@ -41,6 +41,10 @@ jobs:
   cloud-safe-tests:
     name: Cloud-safe pytest subset
     runs-on: ubuntu-latest
+    # Bound so a future deadlocked test cannot consume the GitHub Actions
+    # default 360-minute ceiling. Current suite runs in ~2.4s; 5 minutes
+    # leaves headroom for cold-start pip install + future expansion.
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
