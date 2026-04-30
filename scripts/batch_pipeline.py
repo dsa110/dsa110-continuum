@@ -24,16 +24,18 @@ Output layout (after mosaic move to products/):
         {date}T{HH}00_forced_phot.csv
         ...
 """
+
 import argparse
 import csv
 import json
 import logging
 import os
 import shutil
-import sys
 import subprocess
+import sys
 import time
-from concurrent.futures import ProcessPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -43,7 +45,7 @@ if _ENV_FILE.exists():
     for _line in _ENV_FILE.read_text().splitlines():
         _line = _line.strip()
         if _line.startswith("export "):
-            _line = _line[len("export "):]
+            _line = _line[len("export ") :]
         if "=" in _line and not _line.startswith("#"):
             _key, _, _val = _line.partition("=")
             os.environ.setdefault(_key.strip(), _val.strip())
@@ -55,7 +57,6 @@ sys.path.insert(0, str(Path(__file__).parent))  # enables `import mosaic_day`
 import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
-
 from dsa110_continuum.photometry.epoch_qa import EpochQAResult, measure_epoch_qa
 from dsa110_continuum.photometry.epoch_qa_plot import plot_epoch_qa
 from dsa110_continuum.qa.provenance import RunManifest, try_load_prior_manifest
@@ -83,15 +84,24 @@ QA_SUMMARY_CSV = os.environ.get(
     "/data/dsa110-proc/products/qa_summary.csv",
 )
 QA_CSV_FIELDS = [
-    "date", "epoch_utc", "mosaic_path",
-    "n_catalog", "n_recovered", "completeness_frac",
-    "median_ratio", "ratio_gate", "completeness_gate",
-    "rms_gate", "mosaic_rms_mjy",
-    "qa_result", "gaincal_used",
+    "date",
+    "epoch_utc",
+    "mosaic_path",
+    "n_catalog",
+    "n_recovered",
+    "completeness_frac",
+    "median_ratio",
+    "ratio_gate",
+    "completeness_gate",
+    "rms_gate",
+    "mosaic_rms_mjy",
+    "qa_result",
+    "gaincal_used",
 ]
 
 
 def get_paths(date: str) -> dict:
+    """Return the stage and products paths for one observation date."""
     return {
         "ms_dir": MS_DIR,
         "stage_dir": f"{STAGE_IMAGE_BASE}/mosaic_{date}",
@@ -100,14 +110,17 @@ def get_paths(date: str) -> dict:
 
 
 def epoch_mosaic_path(paths: dict, date: str, hour: int) -> str:
+    """Return the stage mosaic FITS path for one epoch hour."""
     return f"{paths['stage_dir']}/{date}T{hour:02d}00_mosaic.fits"
 
 
 def epoch_phot_path(paths: dict, date: str, hour: int) -> str:
+    """Return the products forced-photometry CSV path for one epoch hour."""
     return f"{paths['products_dir']}/{date}T{hour:02d}00_forced_phot.csv"
 
 
 # ── Timestamp parsing ─────────────────────────────────────────────────────────
+
 
 def timestamp_from_fits(fits_path: str) -> datetime | None:
     """Extract UTC datetime from a tile FITS path like .../2026-01-25T21:17:33-image-pb.fits."""
@@ -120,6 +133,7 @@ def timestamp_from_fits(fits_path: str) -> datetime | None:
 
 
 # ── Run logging ───────────────────────────────────────────────────────────────
+
 
 def _run_log_filename(started_at: datetime) -> str:
     """Return ``run_<UTC-ISO>.log`` with a filename-safe timestamp.
@@ -159,15 +173,18 @@ def _attach_run_logfile(date_dir: str, started_at: datetime) -> str:
     fh.setLevel(logging.INFO)
     # Use full ISO date+time in the file (the console keeps the short HH:MM:SS
     # format from basicConfig); a multi-day cron run's log file is unambiguous.
-    fh.setFormatter(logging.Formatter(
-        fmt="%(asctime)s %(levelname)s %(name)s %(message)s",
-        datefmt="%Y-%m-%dT%H:%M:%S",
-    ))
+    fh.setFormatter(
+        logging.Formatter(
+            fmt="%(asctime)s %(levelname)s %(name)s %(message)s",
+            datefmt="%Y-%m-%dT%H:%M:%S",
+        )
+    )
     root.addHandler(fh)
     return log_path
 
 
 # ── Checkpoint helpers ────────────────────────────────────────────────────────
+
 
 def _write_tile_checkpoint(
     checkpoint_path: str,
@@ -210,9 +227,7 @@ def _write_tile_checkpoint(
         if prior is not None:
             merged["failure_count"] = int(prior.get("failure_count", 1)) + 1
             # Preserve the first-failure timestamp for operator forensics
-            merged["first_failed_at"] = prior.get(
-                "first_failed_at", prior.get("failed_at")
-            )
+            merged["first_failed_at"] = prior.get("first_failed_at", prior.get("failed_at"))
         else:
             merged["failure_count"] = 1
             merged["first_failed_at"] = merged.get("failed_at")
@@ -289,6 +304,7 @@ def _epoch_should_rebuild(
 
 # ── Quarantine policy ────────────────────────────────────────────────────────
 
+
 def _compute_quarantine_set(
     failures: list[dict],
     threshold: int,
@@ -330,6 +346,7 @@ def _clear_failure_counts(failures: list[dict]) -> list[dict]:
 
 
 # ── Dry-run plan ─────────────────────────────────────────────────────────────
+
 
 def _collect_dry_run_plan(
     *,
@@ -393,7 +410,8 @@ def _collect_dry_run_plan(
         "phase2_epochs_to_rebuild": n_epoch_rebuild,
         "phase2_epochs_to_skip": n_epoch_skip,
         "phase3_photometry": (
-            "skipped (--skip-photometry)" if skip_photometry
+            "skipped (--skip-photometry)"
+            if skip_photometry
             else f"would run; QA gating={'lenient' if lenient_qa else 'strict'}"
         ),
     }
@@ -421,23 +439,24 @@ def _format_dry_run_plan(plan: dict) -> list[str]:
         lines.append(f"  QUARANTINED: {ms}")
     lines.append("Resume plan:")
     for d in plan["epoch_decisions"]:
-        lines.append(
-            f"  hour {int(d['hour']):02d}: {d['action']} ({d.get('reason', '')})"
-        )
-    lines.extend([
-        f"Phase 0 (gaincal):    {plan['phase0_gaincal']}",
-        f"Phase 1 (per-tile):   would attempt {plan['phase1_tiles_to_attempt']} tiles "
-        f"({plan['phase1_tiles_quarantined']} quarantined)",
-        f"Phase 2 (mosaic):     {plan['phase2_epochs_to_rebuild']} rebuild, "
-        f"{plan['phase2_epochs_to_skip']} skip",
-        f"Phase 3 (photometry): {plan['phase3_photometry']}",
-        "",
-        "Pipeline NOT executed (--dry-run set). No products written.",
-    ])
+        lines.append(f"  hour {int(d['hour']):02d}: {d['action']} ({d.get('reason', '')})")
+    lines.extend(
+        [
+            f"Phase 0 (gaincal):    {plan['phase0_gaincal']}",
+            f"Phase 1 (per-tile):   would attempt {plan['phase1_tiles_to_attempt']} tiles "
+            f"({plan['phase1_tiles_quarantined']} quarantined)",
+            f"Phase 2 (mosaic):     {plan['phase2_epochs_to_rebuild']} rebuild, "
+            f"{plan['phase2_epochs_to_skip']} skip",
+            f"Phase 3 (photometry): {plan['phase3_photometry']}",
+            "",
+            "Pipeline NOT executed (--dry-run set). No products written.",
+        ]
+    )
     return lines
 
 
 # ── Dry-run orchestration ────────────────────────────────────────────────────
+
 
 def _dry_run_main(args, date: str, cal_date: str, obs_dec_deg: float | None) -> None:
     """Read-only dry-run: build a plan and print it, no side effects.
@@ -476,12 +495,12 @@ def _dry_run_main(args, date: str, cal_date: str, obs_dec_deg: float | None) -> 
             return None
 
     ms_list = [
-        p for p in ms_list
-        if (t := _ms_ts(p)) is not None and t.strftime("%Y-%m-%d") == date
+        p for p in ms_list if (t := _ms_ts(p)) is not None and t.strftime("%Y-%m-%d") == date
     ]
     if args.start_hour is not None or args.end_hour is not None:
         ms_list = [
-            p for p in ms_list
+            p
+            for p in ms_list
             if (t := _ms_ts(p)) is not None
             and (args.start_hour is None or t.hour >= args.start_hour)
             and (args.end_hour is None or t.hour < args.end_hour)
@@ -500,8 +519,7 @@ def _dry_run_main(args, date: str, cal_date: str, obs_dec_deg: float | None) -> 
                 ck = json.load(f)
             checkpoint_completed = list(ck.get("completed", []))
             checkpoint_failures = [
-                rec for rec in ck.get("failed", [])
-                if isinstance(rec, dict) and rec.get("ms_path")
+                rec for rec in ck.get("failed", []) if isinstance(rec, dict) and rec.get("ms_path")
             ]
         except Exception as exc:
             log.warning("Dry-run: could not read checkpoint (%s)", exc)
@@ -509,11 +527,11 @@ def _dry_run_main(args, date: str, cal_date: str, obs_dec_deg: float | None) -> 
     # Apply --clear-quarantine to the in-memory copy so the dry-run plan
     # reflects what *would* happen with that flag — without writing.
     effective_failures = (
-        _clear_failure_counts(checkpoint_failures)
-        if args.clear_quarantine else checkpoint_failures
+        _clear_failure_counts(checkpoint_failures) if args.clear_quarantine else checkpoint_failures
     )
     quarantine_set = _compute_quarantine_set(
-        effective_failures, args.quarantine_after_failures,
+        effective_failures,
+        args.quarantine_after_failures,
     )
 
     # Per-epoch resume decisions
@@ -521,11 +539,12 @@ def _dry_run_main(args, date: str, cal_date: str, obs_dec_deg: float | None) -> 
     for hour in epoch_hours:
         mosaic_path = epoch_mosaic_path(paths, date, hour)
         rebuild = _epoch_should_rebuild(
-            mosaic_path, prior_manifest, hour, args.force_recal,
+            mosaic_path,
+            prior_manifest,
+            hour,
+            args.force_recal,
         )
-        prior_v = (
-            None if prior_manifest is None else prior_manifest.epoch_verdict(hour)
-        )
+        prior_v = None if prior_manifest is None else prior_manifest.epoch_verdict(hour)
         if not rebuild:
             reason = f"prior verdict={prior_v}"
             action = "skip"
@@ -550,9 +569,7 @@ def _dry_run_main(args, date: str, cal_date: str, obs_dec_deg: float | None) -> 
         ms_list_after_filters=ms_list,
         epoch_hours=epoch_hours,
         epoch_decisions=epoch_decisions,
-        prior_manifest_verdict=(
-            prior_manifest.pipeline_verdict if prior_manifest else None
-        ),
+        prior_manifest_verdict=(prior_manifest.pipeline_verdict if prior_manifest else None),
         prior_manifest_present=prior_manifest is not None,
         checkpoint_completed=len(checkpoint_completed),
         checkpoint_failures=effective_failures,
@@ -567,6 +584,7 @@ def _dry_run_main(args, date: str, cal_date: str, obs_dec_deg: float | None) -> 
 
 
 # ── Epoch binning ─────────────────────────────────────────────────────────────
+
 
 def bin_tiles_by_hour(tile_fits: list[str]) -> dict[int, list[str]]:
     """Group tile FITS paths by the UTC hour of their observation timestamp.
@@ -619,6 +637,7 @@ def build_epoch_tile_sets(epochs: dict[int, list[str]]) -> list[tuple[int, list[
 
 # ── Per-epoch mosaic writer (path-explicit version of mosaic_day.write_mosaic) ─
 
+
 def write_epoch_mosaic(
     mosaic: np.ndarray,
     out_wcs: WCS,
@@ -632,6 +651,7 @@ def write_epoch_mosaic(
     git_sha: str | None = None,
     cal_selection: dict | None = None,
 ) -> None:
+    """Write one epoch mosaic FITS file with calibration and QA metadata."""
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with fits.open(ref_fits_paths[0]) as ref:
         ref_hdr = ref[0].header.copy()
@@ -686,6 +706,7 @@ def write_epoch_mosaic(
 
 # ── Mosaic stats helper ───────────────────────────────────────────────────────
 
+
 def mosaic_stats(mosaic_path: str) -> tuple[float, float]:
     """Return (peak_jyb, rms_jyb) for a FITS mosaic."""
     with fits.open(mosaic_path) as hdul:
@@ -697,6 +718,7 @@ def mosaic_stats(mosaic_path: str) -> tuple[float, float]:
 
 
 # ── QA summary CSV ────────────────────────────────────────────────────────────
+
 
 def write_qa_summary_row(
     date: str,
@@ -732,6 +754,7 @@ def write_qa_summary_row(
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 
+
 def print_summary(date: str, epoch_results: list[dict]) -> None:
     """Print a per-epoch table plus overall totals."""
     print("\n" + "=" * 88)
@@ -755,10 +778,10 @@ def print_summary(date: str, epoch_results: list[dict]) -> None:
             print(f"  {r['label']:12s}  {r['n_tiles']:>5}  {gcal_str:>8}  {'FAILED':>10}")
             continue
 
-        peak_str = f"{r['peak']:.4f}" if r['peak'] is not None else "n/a"
-        rms_str = f"{r['rms']*1000:.2f}" if r['rms'] is not None else "n/a"
-        src_str = str(r['n_sources']) if r['n_sources'] is not None else "n/a"
-        ratio = r.get('median_ratio')
+        peak_str = f"{r['peak']:.4f}" if r["peak"] is not None else "n/a"
+        rms_str = f"{r['rms'] * 1000:.2f}" if r["rms"] is not None else "n/a"
+        src_str = str(r["n_sources"]) if r["n_sources"] is not None else "n/a"
+        ratio = r.get("median_ratio")
         ratio_str = f"{ratio:.3f}" if ratio is not None else "n/a"
         if ratio is not None:
             all_ratios.append(ratio)
@@ -774,7 +797,6 @@ def print_summary(date: str, epoch_results: list[dict]) -> None:
         overall = float(np.median(all_ratios))
         flag = "  OK" if 0.8 <= overall <= 1.2 else "  WARNING: outside 0.8–1.2 target"
         print(f"  Median DSA/Cat ratio across all epochs: {overall:.3f}{flag}")
-    total_tiles = sum(r.get("n_tiles", 0) for r in epoch_results if r.get("status") != "skipped")
     n_epochs = len(epoch_results)
     n_skipped = sum(1 for r in epoch_results if r.get("status") == "skipped")
     n_failed = sum(1 for r in epoch_results if r.get("status") == "failed")
@@ -790,8 +812,8 @@ def print_summary(date: str, epoch_results: list[dict]) -> None:
     print("=" * 78 + "\n")
 
 
-
 # ── Tile execution: timeout + retry ──────────────────────────────────────────
+
 
 def _run_process_ms(
     ms_path: str,
@@ -807,6 +829,7 @@ def _run_process_ms(
     safe transport across the ProcessPoolExecutor boundary.
     """
     import mosaic_day as _md
+
     cfg = _md.TileConfig.from_dict(cfg_dict)
     result = _md.process_ms(ms_path, cfg, keep_intermediates=keep, force_recal=force_recal)
     return result.to_dict()
@@ -821,6 +844,7 @@ def _ms_is_valid(path: str) -> bool:
     CASA applycal/wsclean subprocess pool on a broken input.
     """
     import glob as _g
+
     return (
         os.path.isdir(path)
         and os.path.exists(os.path.join(path, "table.dat"))
@@ -843,6 +867,7 @@ def process_tile_safe(
     a second attempt is made after a 60-second cool-down.
     """
     import mosaic_day as _md
+
     tag = Path(ms_path).stem
 
     def _attempt() -> _md.TileResult:
@@ -855,8 +880,9 @@ def process_tile_safe(
                 log.error("[%s] TIMEOUT after %ds — killing CASA/WSClean", tag, timeout_sec)
                 for pattern in ["applycal", "wsclean", "mpicasa"]:
                     subprocess.run(["pkill", "-9", "-f", pattern], capture_output=True)
-                return _md.TileResult("failed", failed_stage="timeout",
-                                      error=f"exceeded {timeout_sec}s")
+                return _md.TileResult(
+                    "failed", failed_stage="timeout", error=f"exceeded {timeout_sec}s"
+                )
 
     result = _attempt()
     if not result.ok and retry:
@@ -869,6 +895,7 @@ def process_tile_safe(
 
 
 # ── Dec-strip guard ───────────────────────────────────────────────────────────
+
 
 def check_dec_strip(
     observed_dec: float,
@@ -888,17 +915,25 @@ def check_dec_strip(
             "(threshold %.1f°). Cal tables were derived at Dec≈%.1f° — "
             "applying them at Dec≈%.1f° will produce invalid flux scale. "
             "Re-run with --expected-dec %.1f once cal tables for that strip exist.",
-            observed_dec, expected_dec, delta, threshold_deg,
-            expected_dec, observed_dec, observed_dec,
+            observed_dec,
+            expected_dec,
+            delta,
+            threshold_deg,
+            expected_dec,
+            observed_dec,
+            observed_dec,
         )
         sys.exit(1)
     log.info(
         "Dec-strip check passed: observed %.1f° vs expected %.1f° (Δ=%.1f°)",
-        observed_dec, expected_dec, delta,
+        observed_dec,
+        expected_dec,
+        delta,
     )
 
 
 # ── Cal quality gate ──────────────────────────────────────────────────────────
+
 
 def check_cal_gate(manifest: RunManifest, cal_date: str, date: str, strict: bool) -> None:
     """Check calibration quality and fire gate if thresholds are exceeded."""
@@ -925,7 +960,9 @@ def check_cal_gate(manifest: RunManifest, cal_date: str, date: str, strict: bool
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
+    """Run the batch pipeline CLI."""
     _main_start = time.time()
     parser = argparse.ArgumentParser(
         description="Hourly-epoch mosaic pipeline for DSA-110 drift observations."
@@ -995,14 +1032,14 @@ def main() -> None:
         default=TILE_TIMEOUT_SEC,
         metavar="SECONDS",
         help=f"Hard timeout per tile (applycal + WSClean). Default: {TILE_TIMEOUT_SEC}s (30 min). "
-             "If a tile exceeds this, CASA/WSClean are killed and the tile is skipped (or retried).",
+        "If a tile exceeds this, CASA/WSClean are killed and the tile is skipped (or retried).",
     )
     parser.add_argument(
         "--retry-failed",
         action="store_true",
         default=False,
         help="Retry each failed tile once (60s cool-down between attempts). "
-             "Useful for transient CASA crashes or memory pressure.",
+        "Useful for transient CASA crashes or memory pressure.",
     )
     parser.add_argument(
         "--force-recal",
@@ -1115,17 +1152,18 @@ def main() -> None:
     # The Dec must be known before calibrator selection so that the bandpass
     # calibrator matches the science strip's beam response.
     from dsa110_continuum.calibration.dec_utils import read_ms_dec as _read_ms_dec
+
     _obs_dec: float | None = None
     # Robust to missing/unreadable MS_DIR: dry-run preflight on a fresh
     # workstation should produce a plan rather than crashing here.
     try:
         _ms_dir_listing = os.listdir(MS_DIR)
     except (FileNotFoundError, NotADirectoryError, PermissionError) as _ms_dir_err:
-        log.warning("MS_DIR %s not accessible (%s) — using --expected-dec",
-                    MS_DIR, _ms_dir_err)
+        log.warning("MS_DIR %s not accessible (%s) — using --expected-dec", MS_DIR, _ms_dir_err)
         _ms_dir_listing = []
     _first_ms_list = sorted(
-        f for f in _ms_dir_listing
+        f
+        for f in _ms_dir_listing
         if f.endswith(".ms") and f.startswith(date) and "meridian" not in f
     )
     if _first_ms_list:
@@ -1154,13 +1192,19 @@ def main() -> None:
     if not args.skip_auto_cal:
         try:
             from dsa110_continuum.calibration.ensure import ensure_bandpass
+
             _auto_cal_result = ensure_bandpass(
-                cal_date, ms_dir=MS_DIR, refant="103", obs_dec_deg=_obs_dec,
+                cal_date,
+                ms_dir=MS_DIR,
+                refant="103",
+                obs_dec_deg=_obs_dec,
             )
             log.info(
                 "Auto-cal: %s tables from %s (calibrator=%s, source=%s)",
-                cal_date, _auto_cal_result.cal_date,
-                _auto_cal_result.calibrator_name, _auto_cal_result.source,
+                cal_date,
+                _auto_cal_result.cal_date,
+                _auto_cal_result.calibrator_name,
+                _auto_cal_result.source,
             )
         except Exception as _acal_err:
             log.warning("Auto-cal failed (%s) — falling back to manual table lookup", _acal_err)
@@ -1174,6 +1218,7 @@ def main() -> None:
             resolve_cal_table_paths,
             validate_table_strip_compatibility,
         )
+
         _bp, _ga = resolve_cal_table_paths(MS_DIR, cal_date)
         # Apply the same strip compatibility policy as the auto-cal path
         try:
@@ -1204,6 +1249,7 @@ def main() -> None:
         # Overlay runtime source so the manifest reflects actual table origin,
         # not the original generation source recorded in the sidecar.
         from dsa110_continuum.calibration.ensure import load_provenance_sidecar
+
         _loaded_prov = load_provenance_sidecar(_bp)
         if _loaded_prov is not None:
             _runtime_source = "borrowed" if os.path.islink(_bp) else "existing"
@@ -1282,7 +1328,9 @@ def main() -> None:
             return None
 
     before = len(ms_list)
-    ms_list = [p for p in ms_list if (t := _ms_ts(p)) is not None and t.strftime("%Y-%m-%d") == date]
+    ms_list = [
+        p for p in ms_list if (t := _ms_ts(p)) is not None and t.strftime("%Y-%m-%d") == date
+    ]
     log.info("Date filter (%s): %d → %d MS files", date, before, len(ms_list))
     if not ms_list:
         log.error("No MS files for date %s — aborting", date)
@@ -1293,7 +1341,8 @@ def main() -> None:
     if start_hour is not None or end_hour is not None:
         before = len(ms_list)
         ms_list = [
-            p for p in ms_list
+            p
+            for p in ms_list
             if (t := _ms_ts(p)) is not None
             and (start_hour is None or t.hour >= start_hour)
             and (end_hour is None or t.hour < end_hour)
@@ -1316,6 +1365,7 @@ def main() -> None:
     # --force-recal: purge cached gaincal products so the solve runs fresh
     if args.force_recal:
         import glob as _glob
+
         _cached_ap = _glob.glob(os.path.join(epoch_gaincal_dir, "*.ap.G"))
         for _f in _cached_ap:
             try:
@@ -1348,52 +1398,82 @@ def main() -> None:
                 log.warning("--force-recal: could not remove sentinel %s: %s", _s, _e)
 
     _epoch_g_table: str | None = None
+    _epoch_gaincal_reason: str | None = None
     if not args.skip_epoch_gaincal:
         log.info("=== Phase 0/3: Per-epoch gain calibration ===")
         try:
-            from dsa110_continuum.calibration.epoch_gaincal import calibrate_epoch
+            from dsa110_continuum.calibration.epoch_gaincal import (
+                EpochGaincalStatus,
+                calibrate_epoch,
+            )
             from dsa110_continuum.calibration.mosaic_constants import MOSAIC_TILE_COUNT
-            _epoch_ms = ms_list[:MOSAIC_TILE_COUNT] if len(ms_list) >= MOSAIC_TILE_COUNT else ms_list
+
+            _epoch_ms = (
+                ms_list[:MOSAIC_TILE_COUNT] if len(ms_list) >= MOSAIC_TILE_COUNT else ms_list
+            )
             if len(_epoch_ms) >= 2:
-                _epoch_g_table = calibrate_epoch(
+                _eg_result = calibrate_epoch(
                     epoch_ms_paths=_epoch_ms,
                     bp_table=_bp,
                     work_dir=epoch_gaincal_dir,
                     refant="103",
                 )
-                if _epoch_g_table is not None:
+                _epoch_g_table = _eg_result.g_table
+                _epoch_gaincal_reason = _eg_result.reason
+                if _eg_result.status == EpochGaincalStatus.SOLVED:
                     log.info("Epoch gaincal SUCCESS: %s", _epoch_g_table)
                     cfg = cfg.replace(g_table=_epoch_g_table)
                     _epoch_gaincal_status = "ok"
+                elif _eg_result.status in (
+                    EpochGaincalStatus.LOW_SNR,
+                    EpochGaincalStatus.SOLVER_NO_TABLE,
+                ):
+                    log.warning(
+                        "Epoch gaincal low-SNR fall-back (%s) — applying static daily G (%s)",
+                        _eg_result.reason or _eg_result.status.value,
+                        _ga,
+                    )
+                    _epoch_gaincal_status = "low_snr"
                 else:
                     log.warning(
-                        "Epoch gaincal failed — falling back to static daily G table (%s)", _ga
+                        "Epoch gaincal code-path fall-back (%s) — applying static daily G (%s)",
+                        _eg_result.reason or _eg_result.status.value,
+                        _ga,
                     )
                     _epoch_gaincal_status = "fallback"
             else:
+                _epoch_gaincal_reason = f"need at least 2 MS files, found {len(_epoch_ms)}"
                 log.warning(
-                    "Epoch gaincal skipped: need at least 2 MS files, found %d", len(_epoch_ms)
+                    "Epoch gaincal skipped: %s",
+                    _epoch_gaincal_reason,
                 )
                 _epoch_gaincal_status = "skipped"
         except Exception as _eg_exc:
             log.error("Epoch gaincal error: %s — using static table", _eg_exc)
             _epoch_gaincal_status = "error"
+            _epoch_gaincal_reason = str(_eg_exc)
     else:
         log.info("--skip-epoch-gaincal set: using static daily G table (%s)", _ga)
         _epoch_gaincal_status = "skipped"
+        _epoch_gaincal_reason = "operator passed --skip-epoch-gaincal"
     # ──────────────────────────────────────────────────────────────────────────
 
     manifest.gaincal_status = _epoch_gaincal_status
     manifest.epoch_g_table = _epoch_g_table
 
-    # Gaincal fallback/error is a degradation signal: record it as a gate so the
-    # pipeline verdict reflects that the per-epoch phase solution was not used.
-    # "skipped" is intentional (--skip-epoch-gaincal) and does not degrade.
-    if _epoch_gaincal_status in ("fallback", "error"):
+    # Gaincal fall-back/error is a degradation signal: record it as a gate so
+    # the pipeline verdict reflects that the per-epoch phase solution was not
+    # used. low_snr is operational (data limit, not bug); fallback is reserved
+    # for true exceptions. "skipped" is intentional and does not degrade.
+    if _epoch_gaincal_status in ("low_snr", "fallback", "error"):
+        _verdict_map = {"low_snr": "LOW_SNR", "fallback": "FALLBACK", "error": "ERROR"}
         manifest.add_gate(
             gate="gaincal",
-            verdict="FALLBACK" if _epoch_gaincal_status == "fallback" else "ERROR",
-            reason=f"epoch gaincal {_epoch_gaincal_status}; static daily G table used",
+            verdict=_verdict_map[_epoch_gaincal_status],
+            reason=(
+                _epoch_gaincal_reason
+                or f"epoch gaincal {_epoch_gaincal_status}; static daily G table used"
+            ),
             static_g_table=_ga,
         )
 
@@ -1405,8 +1485,7 @@ def main() -> None:
     # Consult the prior-run manifest (if any). Used for QA-aware epoch skip
     # (below) and to carry tile-failure history across re-runs.
     prior_manifest = (
-        None if args.force_recal
-        else try_load_prior_manifest(date, products_dir=PRODUCTS_BASE)
+        None if args.force_recal else try_load_prior_manifest(date, products_dir=PRODUCTS_BASE)
     )
     if prior_manifest is not None:
         log.info(
@@ -1435,8 +1514,7 @@ def main() -> None:
                 ck = json.load(f)
             tile_fits = [p for p in ck.get("completed", []) if os.path.exists(p)]
             prior_tile_failures = [
-                rec for rec in ck.get("failed", [])
-                if isinstance(rec, dict) and rec.get("ms_path")
+                rec for rec in ck.get("failed", []) if isinstance(rec, dict) and rec.get("ms_path")
             ]
             if tile_fits:
                 log.info("Checkpoint: resuming with %d previously completed tiles", len(tile_fits))
@@ -1459,23 +1537,28 @@ def main() -> None:
     # --clear-quarantine zeros every failure_count before the threshold check
     # so the next run is allowed to retry every MS regardless of history.
     if args.clear_quarantine and prior_tile_failures:
-        log.info("--clear-quarantine: zeroing failure_count for %d MS",
-                 len(prior_tile_failures))
+        log.info("--clear-quarantine: zeroing failure_count for %d MS", len(prior_tile_failures))
         prior_tile_failures = _clear_failure_counts(prior_tile_failures)
         # Persist the cleared counts immediately so even if the run aborts the
         # release survives.
         _write_tile_checkpoint(
-            checkpoint_path, date, cal_date, tile_fits,
-            prior_tile_failures, current_tile_failures,
+            checkpoint_path,
+            date,
+            cal_date,
+            tile_fits,
+            prior_tile_failures,
+            current_tile_failures,
         )
     quarantine_set = _compute_quarantine_set(
-        prior_tile_failures, args.quarantine_after_failures,
+        prior_tile_failures,
+        args.quarantine_after_failures,
     )
     if quarantine_set:
         log.warning(
             "Quarantine: %d MS skipped (>= %d consecutive failures). "
             "Run --clear-quarantine to re-enable.",
-            len(quarantine_set), args.quarantine_after_failures,
+            len(quarantine_set),
+            args.quarantine_after_failures,
         )
         manifest.add_gate(
             gate="quarantine",
@@ -1487,8 +1570,11 @@ def main() -> None:
             quarantined_ms_paths=sorted(quarantine_set),
         )
 
-    log.info("=== Phase 1/3: Calibrate + Image all tiles (timeout=%ds, retry=%s) ===",
-             tile_timeout, retry_failed)
+    log.info(
+        "=== Phase 1/3: Calibrate + Image all tiles (timeout=%ds, retry=%s) ===",
+        tile_timeout,
+        retry_failed,
+    )
     n_imaged = n_skipped_tiles = n_failed_tiles = n_quarantined = 0
 
     for i, ms_path in enumerate(ms_list, 1):
@@ -1501,8 +1587,11 @@ def main() -> None:
             log.warning("  QUARANTINED — skipping %s", ms_path)
             n_quarantined += 1
             manifest.record_tile(
-                ms_path, None, "quarantined",
-                0.0, error="quarantined",
+                ms_path,
+                None,
+                "quarantined",
+                0.0,
+                error="quarantined",
             )
             continue
 
@@ -1517,44 +1606,64 @@ def main() -> None:
             )
             n_failed_tiles += 1
             manifest.record_tile(
-                ms_path, None, "failed",
-                0.0, error="corrupt_ms_skipped",
+                ms_path,
+                None,
+                "failed",
+                0.0,
+                error="corrupt_ms_skipped",
             )
-            current_tile_failures.append({
-                "ms_path": ms_path,
-                "error": "corrupt_ms_skipped",
-                "elapsed_sec": 0.0,
-                "failed_at": datetime.now(timezone.utc).isoformat(),
-            })
+            current_tile_failures.append(
+                {
+                    "ms_path": ms_path,
+                    "error": "corrupt_ms_skipped",
+                    "elapsed_sec": 0.0,
+                    "failed_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
             _write_tile_checkpoint(
-                checkpoint_path, date, cal_date, tile_fits,
-                prior_tile_failures, current_tile_failures,
+                checkpoint_path,
+                date,
+                cal_date,
+                tile_fits,
+                prior_tile_failures,
+                current_tile_failures,
                 cleared_ms_paths=current_completed_ms_paths,
             )
             continue
 
         t0 = time.time()
         result = process_tile_safe(
-            cfg.to_dict(), ms_path, keep, tile_timeout, retry_failed,
+            cfg.to_dict(),
+            ms_path,
+            keep,
+            tile_timeout,
+            retry_failed,
             force_recal=(args.force_recal or _epoch_gaincal_status == "ok"),
         )
         elapsed = time.time() - t0
 
         if not result.ok:
             err_msg = result.error or result.failed_stage
-            log.error("  FAILED after %.0fs (%s: %s)", elapsed,
-                       result.failed_stage, err_msg or "unknown")
+            log.error(
+                "  FAILED after %.0fs (%s: %s)", elapsed, result.failed_stage, err_msg or "unknown"
+            )
             n_failed_tiles += 1
             manifest.record_tile(ms_path, None, "failed", elapsed, error=err_msg)
-            current_tile_failures.append({
-                "ms_path": ms_path,
-                "error": err_msg,
-                "elapsed_sec": round(elapsed, 1),
-                "failed_at": datetime.now(timezone.utc).isoformat(),
-            })
+            current_tile_failures.append(
+                {
+                    "ms_path": ms_path,
+                    "error": err_msg,
+                    "elapsed_sec": round(elapsed, 1),
+                    "failed_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
             _write_tile_checkpoint(
-                checkpoint_path, date, cal_date, tile_fits,
-                prior_tile_failures, current_tile_failures,
+                checkpoint_path,
+                date,
+                cal_date,
+                tile_fits,
+                prior_tile_failures,
+                current_tile_failures,
                 cleared_ms_paths=current_completed_ms_paths,
             )
         else:
@@ -1573,14 +1682,21 @@ def main() -> None:
             current_completed_ms_paths.append(ms_path)
 
             _write_tile_checkpoint(
-                checkpoint_path, date, cal_date, tile_fits,
-                prior_tile_failures, current_tile_failures,
+                checkpoint_path,
+                date,
+                cal_date,
+                tile_fits,
+                prior_tile_failures,
+                current_tile_failures,
                 cleared_ms_paths=current_completed_ms_paths,
             )
 
     log.info(
         "Tiles: %d imaged, %d already done, %d failed, %d quarantined",
-        n_imaged, n_skipped_tiles, n_failed_tiles, n_quarantined,
+        n_imaged,
+        n_skipped_tiles,
+        n_failed_tiles,
+        n_quarantined,
     )
 
     if len(tile_fits) < 2:
@@ -1606,7 +1722,10 @@ def main() -> None:
         n_overlap = len(epoch_tiles) - n_core
         log.info(
             "--- Epoch %s: %d core + %d overlap = %d tiles ---",
-            label, n_core, n_overlap, len(epoch_tiles),
+            label,
+            n_core,
+            n_overlap,
+            len(epoch_tiles),
         )
 
         mosaic_path = epoch_mosaic_path(paths, date, hour)
@@ -1617,7 +1736,10 @@ def main() -> None:
         # that exists but whose prior QA verdict was FAIL (or absent, meaning
         # the prior run crashed mid-epoch) is NOT trusted — it gets rebuilt.
         should_rebuild = _epoch_should_rebuild(
-            mosaic_path, prior_manifest, hour, args.force_recal,
+            mosaic_path,
+            prior_manifest,
+            hour,
+            args.force_recal,
         )
 
         # Remove stale epoch-level outputs before rebuilding so the fresh
@@ -1636,13 +1758,20 @@ def main() -> None:
 
         if not should_rebuild:
             prior_v = None if prior_manifest is None else prior_manifest.epoch_verdict(hour)
-            log.info("  Mosaic already exists (prior verdict=%s) — skipping epoch %s",
-                     prior_v or "no-manifest", label)
-            epoch_results.append({
-                "label": label, "status": "skipped", "n_tiles": len(epoch_tiles),
-                "gaincal_status": _epoch_gaincal_status,
-                "qa_result": prior_v,  # carry prior verdict forward
-            })
+            log.info(
+                "  Mosaic already exists (prior verdict=%s) — skipping epoch %s",
+                prior_v or "no-manifest",
+                label,
+            )
+            epoch_results.append(
+                {
+                    "label": label,
+                    "status": "skipped",
+                    "n_tiles": len(epoch_tiles),
+                    "gaincal_status": _epoch_gaincal_status,
+                    "qa_result": prior_v,  # carry prior verdict forward
+                }
+            )
             continue
 
         # Build mosaic
@@ -1650,19 +1779,39 @@ def main() -> None:
             out_wcs, ny, nx = _md.build_common_wcs(epoch_tiles)
             mosaic_arr = _md.coadd_tiles(epoch_tiles, out_wcs, ny, nx)
             write_epoch_mosaic(
-                mosaic_arr, out_wcs, epoch_tiles, mosaic_path, date, hour, len(epoch_tiles),
-                cal_date=cal_date, cal_quality=manifest.cal_quality, git_sha=manifest.git_sha,
+                mosaic_arr,
+                out_wcs,
+                epoch_tiles,
+                mosaic_path,
+                date,
+                hour,
+                len(epoch_tiles),
+                cal_date=cal_date,
+                cal_quality=manifest.cal_quality,
+                git_sha=manifest.git_sha,
                 cal_selection=manifest.cal_selection or None,
             )
         except Exception as e:
             log.error("  Mosaic failed for epoch %s: %s", label, e)
-            epoch_results.append({"label": label, "status": "failed", "n_tiles": len(epoch_tiles), "gaincal_status": _epoch_gaincal_status})
+            epoch_results.append(
+                {
+                    "label": label,
+                    "status": "failed",
+                    "n_tiles": len(epoch_tiles),
+                    "gaincal_status": _epoch_gaincal_status,
+                }
+            )
             continue
 
         # QA
         _md.check_mosaic_quality(mosaic_path)
         peak, rms = mosaic_stats(mosaic_path)
-        log.info("  Peak: %.4f Jy/beam  RMS: %.2f mJy/beam  DR: %.0f", peak, rms * 1000, peak / rms if rms else 0)
+        log.info(
+            "  Peak: %.4f Jy/beam  RMS: %.2f mJy/beam  DR: %.0f",
+            peak,
+            rms * 1000,
+            peak / rms if rms else 0,
+        )
 
         # ── Epoch QA (three-gate) — run BEFORE photometry ─────────────────────
         epoch_qa: EpochQAResult | None = None
@@ -1670,9 +1819,12 @@ def main() -> None:
             epoch_qa = measure_epoch_qa(mosaic_path)
             log.info(
                 "  Epoch QA: ratio=%.3f [%s] | compl=%.1f%% [%s] | rms=%.1f mJy [%s] → %s",
-                epoch_qa.median_ratio, epoch_qa.ratio_gate,
-                epoch_qa.completeness_frac * 100, epoch_qa.completeness_gate,
-                epoch_qa.mosaic_rms_mjy, epoch_qa.rms_gate,
+                epoch_qa.median_ratio,
+                epoch_qa.ratio_gate,
+                epoch_qa.completeness_frac * 100,
+                epoch_qa.completeness_gate,
+                epoch_qa.mosaic_rms_mjy,
+                epoch_qa.rms_gate,
                 epoch_qa.qa_result,
             )
         except Exception as e:
@@ -1685,7 +1837,10 @@ def main() -> None:
                     hdr = hdul[0].header
                     hdr["QARESULT"] = (epoch_qa.qa_result, "Epoch QA verdict")
                     hdr["QARMS"] = (round(epoch_qa.mosaic_rms_mjy, 2), "Mosaic RMS [mJy/beam]")
-                    hdr["QARAT"] = (round(epoch_qa.median_ratio, 4), "Median DSA/catalog flux ratio")
+                    hdr["QARAT"] = (
+                        round(epoch_qa.median_ratio, 4),
+                        "Median DSA/catalog flux ratio",
+                    )
             except Exception as e:
                 log.warning("  Could not update FITS header with QA: %s", e)
 
@@ -1697,7 +1852,9 @@ def main() -> None:
         median_ratio: float | None = None
         qa_verdict = epoch_qa.qa_result if epoch_qa else None
         skip_phot, skip_reason = _should_skip_photometry(
-            qa_verdict, args.skip_photometry, args.lenient_qa,
+            qa_verdict,
+            args.skip_photometry,
+            args.lenient_qa,
         )
 
         if skip_reason == "qa-fail-default-strict":
@@ -1707,8 +1864,7 @@ def main() -> None:
             )
         elif skip_reason == "lenient-qa-override":
             log.warning(
-                "  --lenient-qa: running photometry on QA-FAIL epoch %s "
-                "(verdict will be DEGRADED)",
+                "  --lenient-qa: running photometry on QA-FAIL epoch %s (verdict will be DEGRADED)",
                 label,
             )
             manifest.add_gate(
@@ -1721,8 +1877,11 @@ def main() -> None:
         if not skip_phot:
             try:
                 from forced_photometry import run_forced_photometry
+
                 phot_result = run_forced_photometry(
-                    mosaic_path, output_csv=phot_csv_path, min_flux_mjy=10.0,
+                    mosaic_path,
+                    output_csv=phot_csv_path,
+                    min_flux_mjy=10.0,
                     workers=args.photometry_workers,
                     chunk_size=(args.photometry_chunk_size or None),
                 )
@@ -1770,25 +1929,29 @@ def main() -> None:
         should_archive = qa_verdict != "FAIL" or args.archive_all
         if not should_archive:
             log.warning("  QA FAIL — mosaic NOT archived to products: %s", label)
-            manifest.gates.append({"gate": "archive", "verdict": "BLOCKED", "reason": f"epoch {label} QA FAIL"})
+            manifest.gates.append(
+                {"gate": "archive", "verdict": "BLOCKED", "reason": f"epoch {label} QA FAIL"}
+            )
         elif mosaic_fits_src.exists() and (not mosaic_fits_dst.exists() or args.force_recal):
             shutil.copy2(str(mosaic_fits_src), str(mosaic_fits_dst))
             log.info("Archived mosaic FITS: %s", mosaic_fits_dst)
 
-        epoch_results.append({
-            "label": label,
-            "status": "ok",
-            "n_tiles": len(epoch_tiles),
-            "n_core": n_core,
-            "n_overlap": n_overlap,
-            "peak": peak,
-            "rms": rms,
-            "n_sources": n_sources,
-            "median_ratio": median_ratio,
-            "mosaic_path": mosaic_path,
-            "gaincal_status": _epoch_gaincal_status,
-            "qa_result": epoch_qa.qa_result if epoch_qa else None,
-        })
+        epoch_results.append(
+            {
+                "label": label,
+                "status": "ok",
+                "n_tiles": len(epoch_tiles),
+                "n_core": n_core,
+                "n_overlap": n_overlap,
+                "peak": peak,
+                "rms": rms,
+                "n_sources": n_sources,
+                "median_ratio": median_ratio,
+                "mosaic_path": mosaic_path,
+                "gaincal_status": _epoch_gaincal_status,
+                "qa_result": epoch_qa.qa_result if epoch_qa else None,
+            }
+        )
 
     # ── Record epochs in manifest ────────────────────────────────────────────
     for er in epoch_results:
@@ -1805,7 +1968,10 @@ def main() -> None:
     manifest.save(paths["products_dir"])
 
     emit_run_summary(
-        date, cal_date, epoch_results, _wall,
+        date,
+        cal_date,
+        epoch_results,
+        _wall,
         products_dir=paths["products_dir"],
         run_log_path=_run_log_path,
     )
@@ -1814,9 +1980,29 @@ def main() -> None:
     # actual run — operators still have manifest.json + run_summary.json.
     try:
         from dsa110_continuum.qa.run_report import write_run_report
+
         write_run_report(manifest, paths["products_dir"])
     except Exception as _report_err:
         log.warning("Run report render failed (non-fatal): %s", _report_err)
+
+    # Promotion auto-emit is non-fatal: a sidecar/ledger failure must not fail
+    # an otherwise completed pipeline run.
+    try:
+        from dsa110_continuum.qa.promotion import emit_for_run
+
+        _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        _products_root = os.path.dirname(os.path.dirname(paths["products_dir"]))
+        emit_for_run(
+            manifest,
+            paths["products_dir"],
+            _repo_root,
+            cli_invocation=list(sys.argv),
+            skip_epoch_gaincal=bool(args.skip_epoch_gaincal),
+            products_root=_products_root,
+        )
+    except Exception as _promo_err:
+        log.warning("Promotion auto-emit failed (non-fatal): %s", _promo_err)
+
 
 def emit_run_summary(
     date: str,
@@ -1879,14 +2065,22 @@ def emit_run_summary(
     log.info(
         "Run complete — date=%s cal=%s  epochs=%d  exec_ok=%d exec_fail=%d"
         "  qa_pass=%d qa_fail=%d  wall=%.0fm  → %s",
-        date, cal_date, len(epoch_results), n_exec_ok, n_exec_fail,
-        n_qa_pass, n_qa_fail, wall_time_sec / 60, summary_path,
+        date,
+        cal_date,
+        len(epoch_results),
+        n_exec_ok,
+        n_exec_fail,
+        n_qa_pass,
+        n_qa_fail,
+        wall_time_sec / 60,
+        summary_path,
     )
 
     notify_url = os.environ.get("DSA_NOTIFY_URL")
     if notify_url:
         try:
             import requests as _req
+
             _req.post(notify_url, json=payload, timeout=10)
         except Exception:
             pass  # notification is best-effort
