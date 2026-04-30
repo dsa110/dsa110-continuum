@@ -5,23 +5,28 @@ Public API
 select_calibration_tile_from_ms(epoch_ms_paths) -> str
     Return the MS path (from the two central tiles) with the most catalog sources.
 
-calibrate_epoch(epoch_ms_paths, bp_table, work_dir, ...) -> str | None
-    Full 5-step catalog-bootstrap + self-cal gain solve. Returns ap.G table path.
+calibrate_epoch(epoch_ms_paths, bp_table, work_dir, ...) -> EpochGaincalResult
+    Full 5-step catalog-bootstrap + self-cal gain solve. Returns a structured
+    result carrying the ap.G table path (or None) plus the status enum and a
+    human-readable reason. The result distinguishes "low SNR" (operational
+    limit) from "exception / no table" (code-path / data fault) so downstream
+    manifests and promotion records can classify the outcome honestly.
 """
+
 from __future__ import annotations
 
 import logging
 import os
 import shutil
 import subprocess
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 import numpy as np
-
 from dsa110_continuum.calibration.applycal import apply_to_target
 from dsa110_continuum.calibration.model import count_bright_sources_in_tile
 from dsa110_continuum.calibration.mosaic_constants import (
-    MOSAIC_TILE_COUNT,
     SKYMODEL_MIN_FLUX_MJY,
     SOURCE_QUERY_RADIUS_DEG,
 )
@@ -34,8 +39,48 @@ from dsa110_continuum.calibration.skymodels import (
 log = logging.getLogger(__name__)
 
 
+class EpochGaincalStatus(str, Enum):
+    """Spec-aligned status for one calibrate_epoch invocation.
+
+    LOW_SNR is the operational case where the data could not support a
+    reliable gain solution — empty sky model, p.G flag fraction over the
+    GAINCAL_FLAG_FRACTION_LIMIT, or solver wrote no table because every
+    solution was flagged. SOLVER_NO_TABLE is reserved for the case where
+    CASA reported success but the table file is absent (rare; usually a
+    code/data fault). EXCEPTION captures any uncaught Python exception in
+    the calibrate_epoch try/except — the legacy "code-path fallback".
+
+    Mapping to the spec's epoch_gaincal_state enum (see
+    dsa110_continuum.qa.promotion.derive_epoch_gaincal_state_from_status):
+      SOLVED          -> "solved"
+      LOW_SNR         -> "skipped_or_failed_low_snr"
+      SOLVER_NO_TABLE -> "skipped_or_failed_low_snr"  (no table = all flagged)
+      EXCEPTION       -> "fell_back_to_static_with_reason"
+    """
+
+    SOLVED = "solved"
+    LOW_SNR = "low_snr"
+    SOLVER_NO_TABLE = "solver_no_table"
+    EXCEPTION = "exception"
+
+
+@dataclass(frozen=True)
+class EpochGaincalResult:
+    """Structured outcome of a calibrate_epoch invocation.
+
+    g_table is the path to the solved ap.G table when status == SOLVED;
+    otherwise None and the caller should fall back to the static daily G.
+    reason is a short human-readable string suitable for the manifest gate's
+    reason field (e.g. "p.G flagged 44.4% of solutions (limit 30%)").
+    """
+
+    g_table: str | None
+    status: EpochGaincalStatus
+    reason: str | None = None
+
+
 _WSCLEAN_FLAG_FRACTION_LIMIT = 0.60  # skip WSClean self-cal if MS is more flagged than this
-GAINCAL_FLAG_FRACTION_LIMIT  = 0.30  # abort epoch gaincal if p.G table is more flagged than this
+GAINCAL_FLAG_FRACTION_LIMIT = 0.30  # abort epoch gaincal if p.G table is more flagged than this
 
 
 def _ms_flag_fraction(ms_path: str) -> float:
@@ -154,7 +199,7 @@ def calibrate_epoch(
     source_radius_deg: float = SOURCE_QUERY_RADIUS_DEG,
     wsclean_niter: int = 1000,
     wsclean_threshold_sigma: float = 3.0,
-) -> str | None:
+) -> EpochGaincalResult:
     """Derive per-epoch gain solutions using catalog bootstrap + one self-cal round.
 
     Workflow
@@ -199,8 +244,12 @@ def calibrate_epoch(
 
     Returns
     -------
-    str or None
-        Path to the solved ap.G table, or None if any step failed.
+    EpochGaincalResult
+        ``g_table`` is the ap.G table path when ``status == SOLVED``, else
+        ``None`` and the caller should fall back to the static daily G.
+        ``reason`` is a short human-readable string suitable for the manifest
+        gate's reason field. Status distinguishes operational SNR-floor
+        failures from code-path exceptions.
     """
     from dsa110_continuum.calibration.casa_service import CASAService
 
@@ -215,16 +264,16 @@ def calibrate_epoch(
             source_radius_deg=source_radius_deg,
         )
         stem = Path(central_raw_ms).stem
-        meridian_ms   = str(work / f"{stem}_meridian.ms")
+        meridian_ms = str(work / f"{stem}_meridian.ms")
         precond_table = str(work / f"{stem}.precond.G")
-        p_table       = str(work / f"{stem}.p.G")
-        ap_table      = str(work / f"{stem}.ap.G")
+        p_table = str(work / f"{stem}.p.G")
+        ap_table = str(work / f"{stem}.ap.G")
         wsclean_prefix = str(work / f"{stem}_model")
 
         # Return cached result if the ap.G table already exists
         if os.path.exists(ap_table):
             log.info("Epoch gaincal [%s]: cached ap.G found — reusing %s", stem, ap_table)
-            return ap_table
+            return EpochGaincalResult(ap_table, EpochGaincalStatus.SOLVED, "cached ap.G reused")
 
         # ── 1. Phaseshift to median meridian ──────────────────────────────────
         if not os.path.exists(meridian_ms):
@@ -248,6 +297,7 @@ def calibrate_epoch(
             _svc.flagdata(vis=meridian_ms, autocorr=True, flagbackup=False)
             try:
                 from dsa110_continuum.calibration.flagging import flag_rfi as _flag_rfi
+
                 log.info("Epoch gaincal [%s]: AOFlagger RFI flagging", stem)
                 _flag_rfi(meridian_ms, backend="aoflagger")
                 log.info("Epoch gaincal [%s]: AOFlagger complete", stem)
@@ -255,23 +305,33 @@ def calibrate_epoch(
                 log.warning(
                     "Epoch gaincal [%s]: AOFlagger unavailable (%s) — "
                     "falling back to CASA tfcrop+rflag",
-                    stem, _aof_err,
+                    stem,
+                    _aof_err,
                 )
                 _svc.flagdata(
-                    vis=meridian_ms, mode="tfcrop", datacolumn="data",
-                    timecutoff=4.0, freqcutoff=4.0,
-                    extendflags=False, flagbackup=False,
+                    vis=meridian_ms,
+                    mode="tfcrop",
+                    datacolumn="data",
+                    timecutoff=4.0,
+                    freqcutoff=4.0,
+                    extendflags=False,
+                    flagbackup=False,
                 )
                 _svc.flagdata(
-                    vis=meridian_ms, mode="rflag", datacolumn="data",
-                    timedevscale=4.0, freqdevscale=4.0,
-                    extendflags=False, flagbackup=False,
+                    vis=meridian_ms,
+                    mode="rflag",
+                    datacolumn="data",
+                    timedevscale=4.0,
+                    freqdevscale=4.0,
+                    extendflags=False,
+                    flagbackup=False,
                 )
                 log.info("Epoch gaincal [%s]: CASA tfcrop+rflag complete", stem)
         except Exception as _flag_err:
             log.warning(
                 "Epoch gaincal [%s]: pre-calibration flagging failed (%s) — continuing",
-                stem, _flag_err,
+                stem,
+                _flag_err,
             )
 
         # ── 2. Initialise MODEL_DATA column before any applycal ──────────────
@@ -281,10 +341,12 @@ def calibrate_epoch(
         log.info("Epoch gaincal [%s]: initialising MODEL_DATA column", stem)
         try:
             from dsa110_continuum.adapters import casa_tables as _ct
+
             with _ct.table(meridian_ms, readonly=True, ack=False) as _t:
                 _has_model = "MODEL_DATA" in _t.colnames()
             if not _has_model:
                 from dsa110_continuum.calibration.casa_service import CASAService as _CS
+
                 _CS().clearcal(vis=meridian_ms, addmodel=True)
         except Exception as _e:
             log.warning("Epoch gaincal [%s]: MODEL_DATA init failed (%s) — continuing", stem, _e)
@@ -307,7 +369,11 @@ def calibrate_epoch(
                 "Epoch gaincal [%s]: catalog sky model is empty — cannot calibrate",
                 stem,
             )
-            return None
+            return EpochGaincalResult(
+                None,
+                EpochGaincalStatus.LOW_SNR,
+                "catalog sky model is empty (no bright sources within search radius)",
+            )
         log.info("Epoch gaincal [%s]: sky model has %d components", stem, sky.Ncomponents)
         predict_from_skymodel_wsclean(meridian_ms, sky)
 
@@ -346,7 +412,8 @@ def calibrate_epoch(
             if os.path.exists(precond_table):
                 log.info(
                     "Epoch gaincal [%s]: pre-conditioner solve SUCCESS → %s",
-                    stem, Path(precond_table).name,
+                    stem,
+                    Path(precond_table).name,
                 )
             else:
                 log.warning(
@@ -357,7 +424,8 @@ def calibrate_epoch(
         except Exception as _precond_err:
             log.warning(
                 "Epoch gaincal [%s]: pre-conditioner solve failed (%s) — continuing",
-                stem, _precond_err,
+                stem,
+                _precond_err,
             )
 
         # Build the optional precond chain used in all downstream gaintable lists.
@@ -374,15 +442,18 @@ def calibrate_epoch(
         if _precond:
             try:
                 from dsa110_continuum.adapters import casa_tables as _ct2
-                with _ct2.table(f"{meridian_ms}::SPECTRAL_WINDOW",
-                                readonly=True, ack=False) as _tspw:
+
+                with _ct2.table(
+                    f"{meridian_ms}::SPECTRAL_WINDOW", readonly=True, ack=False
+                ) as _tspw:
                     _n_spw = _tspw.nrows()
                 _precond_spwmap: list[list[int]] = [[0] * _n_spw]
             except Exception as _spw_err:
                 log.warning(
                     "Epoch gaincal [%s]: could not determine SPW count for precond "
                     "spwmap (%s) — SPWs 1+ may be flagged in downstream solves",
-                    stem, _spw_err,
+                    stem,
+                    _spw_err,
                 )
                 _precond_spwmap = []
         else:
@@ -401,11 +472,15 @@ def calibrate_epoch(
             gaintype="G",
             gaintable=[bp_table, *_precond],
             interp=["nearest", *_precond_interp],
-            **( {"spwmap": [[], *_precond_spwmap]} if _precond_spwmap else {} ),
+            **({"spwmap": [[], *_precond_spwmap]} if _precond_spwmap else {}),
         )
         if not os.path.exists(p_table):
             log.error("Epoch gaincal [%s]: phase-only solve produced no table", stem)
-            return None
+            return EpochGaincalResult(
+                None,
+                EpochGaincalStatus.SOLVER_NO_TABLE,
+                "phase-only gaincal produced no table (likely all solutions flagged at minsnr=3.0)",
+            )
 
         # ── 6b. Flag-fraction monitor on p.G table ────────────────────────────
         # Read the CASA FLAG column from the cal table directly.  CASA often
@@ -417,28 +492,35 @@ def calibrate_epoch(
         # BP-only, which is the correct survey-pipeline behaviour for faint fields.
         try:
             import casatools as _cto
+
             _tb = _cto.table()
             _tb.open(p_table)
-            _p_flags = _tb.getcol("FLAG")   # shape: (n_pol, n_spw, n_rows) — booleans
+            _p_flags = _tb.getcol("FLAG")  # shape: (n_pol, n_spw, n_rows) — booleans
             _tb.close()
             _p_flag_frac = float(_p_flags.sum()) / float(_p_flags.size)
             log.info(
                 "Epoch gaincal [%s]: p.G flagged fraction = %.1f%%",
-                stem, _p_flag_frac * 100,
+                stem,
+                _p_flag_frac * 100,
             )
             if _p_flag_frac > GAINCAL_FLAG_FRACTION_LIMIT:
-                log.warning(
-                    "Epoch gaincal [%s]: p.G flagged %.1f%% of solutions "
-                    "(limit %.0f%%) — SNR too low for reliable gain cal. "
-                    "Returning None; pipeline will apply bandpass-only.",
-                    stem, _p_flag_frac * 100, GAINCAL_FLAG_FRACTION_LIMIT * 100,
+                _reason = (
+                    f"p.G flagged {_p_flag_frac * 100:.1f}% of solutions "
+                    f"(limit {GAINCAL_FLAG_FRACTION_LIMIT * 100:.0f}%) — "
+                    f"SNR too low for reliable gain cal"
                 )
-                return None
+                log.warning(
+                    "Epoch gaincal [%s]: %s. Returning None; pipeline will apply bandpass-only.",
+                    stem,
+                    _reason,
+                )
+                return EpochGaincalResult(None, EpochGaincalStatus.LOW_SNR, _reason)
         except Exception as _frac_err:
             log.warning(
                 "Epoch gaincal [%s]: could not read p.G flag fraction (%s) — "
                 "proceeding with ap solve",
-                stem, _frac_err,
+                stem,
+                _frac_err,
             )
 
         # Apply BP + precond (if present) + p.G before WSClean imaging
@@ -457,14 +539,17 @@ def calibrate_epoch(
         _flag_frac = _ms_flag_fraction(meridian_ms)
         log.info(
             "Epoch gaincal [%s]: MS flag fraction before WSClean = %.1f%%",
-            stem, 100 * _flag_frac,
+            stem,
+            100 * _flag_frac,
         )
         wsclean_exec = shutil.which("wsclean")
         if _flag_frac >= _WSCLEAN_FLAG_FRACTION_LIMIT:
             log.warning(
                 "Epoch gaincal [%s]: %.1f%% of data flagged (≥%.0f%% limit) — "
                 "skipping WSClean self-cal, re-predicting catalog model for ap solve",
-                stem, 100 * _flag_frac, 100 * _WSCLEAN_FLAG_FRACTION_LIMIT,
+                stem,
+                100 * _flag_frac,
+                100 * _WSCLEAN_FLAG_FRACTION_LIMIT,
             )
             predict_from_skymodel_wsclean(meridian_ms, sky)
         elif not wsclean_exec:
@@ -477,13 +562,22 @@ def calibrate_epoch(
         else:
             cmd = [
                 wsclean_exec,
-                "-niter", str(wsclean_niter),
-                "-auto-threshold", str(wsclean_threshold_sigma),
-                "-save-model-column", "MODEL_DATA",
-                "-name", wsclean_prefix,
-                "-size", "1024", "1024",
-                "-scale", "6arcsec",
-                "-weight", "briggs", "0.5",
+                "-niter",
+                str(wsclean_niter),
+                "-auto-threshold",
+                str(wsclean_threshold_sigma),
+                "-save-model-column",
+                "MODEL_DATA",
+                "-name",
+                wsclean_prefix,
+                "-size",
+                "1024",
+                "1024",
+                "-scale",
+                "6arcsec",
+                "-weight",
+                "briggs",
+                "0.5",
                 "-no-update-model-required",
                 meridian_ms,
             ]
@@ -512,18 +606,22 @@ def calibrate_epoch(
             gaintype="G",
             gaintable=[bp_table, *_precond, p_table],
             interp=["nearest", *_precond_interp, "linear"],
-            **( {"spwmap": [[], *_precond_spwmap, []]} if _precond_spwmap else {} ),
+            **({"spwmap": [[], *_precond_spwmap, []]} if _precond_spwmap else {}),
         )
         if not os.path.exists(ap_table):
             log.error("Epoch gaincal [%s]: ap solve produced no table", stem)
-            return None
+            return EpochGaincalResult(
+                None,
+                EpochGaincalStatus.SOLVER_NO_TABLE,
+                "amplitude+phase gaincal produced no table (likely all solutions flagged at minsnr=3.0)",
+            )
 
         log.info("Epoch gaincal [%s]: SUCCESS → %s", stem, ap_table)
-        return ap_table
+        return EpochGaincalResult(ap_table, EpochGaincalStatus.SOLVED, None)
 
     except Exception as exc:
         log.error(
             "Epoch gaincal: FAILED (%s) — caller should fall back to static daily G table",
             exc,
         )
-        return None
+        return EpochGaincalResult(None, EpochGaincalStatus.EXCEPTION, str(exc))
