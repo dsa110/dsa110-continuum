@@ -104,10 +104,13 @@ def _make_exists_fn(meridian_ms: str, *, ap_table: str | None = None) -> object:
     return _exists
 
 
-def test_calibrate_epoch_returns_none_on_predict_failure():
-    """calibrate_epoch() should return None (not raise) if catalog predict fails."""
+def test_calibrate_epoch_returns_exception_status_on_predict_failure():
+    """calibrate_epoch() should return EXCEPTION status (not raise) when catalog predict fails."""
     import tempfile
-    from dsa110_continuum.calibration.epoch_gaincal import calibrate_epoch
+    from dsa110_continuum.calibration.epoch_gaincal import (
+        EpochGaincalStatus,
+        calibrate_epoch,
+    )
 
     fake_paths = [f"/fake/tile_{i:02d}.ms" for i in range(12)]
     mock_svc = MagicMock()
@@ -118,6 +121,9 @@ def test_calibrate_epoch_returns_none_on_predict_failure():
         with patch(
             "dsa110_continuum.calibration.epoch_gaincal.select_calibration_tile_from_ms",
             return_value="/fake/tile_05.ms",
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal._read_ms_phase_center",
+            return_value=(10.0, 37.0),
         ), patch(
             "dsa110_continuum.calibration.epoch_gaincal.phaseshift_ms",
         ), patch(
@@ -136,13 +142,23 @@ def test_calibrate_epoch_returns_none_on_predict_failure():
         ):
             result = calibrate_epoch(fake_paths, "/fake/bp.b", work_dir)
 
-    assert result is None
+    assert result.g_table is None
+    assert result.status == EpochGaincalStatus.EXCEPTION
+    assert "wsclean not found" in (result.reason or "")
 
 
-def test_calibrate_epoch_returns_none_on_empty_sky_model():
-    """calibrate_epoch() should return None when the catalog sky model is empty."""
+def test_calibrate_epoch_returns_low_snr_on_empty_sky_model():
+    """calibrate_epoch() returns LOW_SNR status when the catalog sky model is empty.
+
+    Empty sky model is an operational/data limit (no bright sources within
+    the search radius), not a code-path fault — maps to the spec's
+    skipped_or_failed_low_snr promotion state.
+    """
     import tempfile
-    from dsa110_continuum.calibration.epoch_gaincal import calibrate_epoch
+    from dsa110_continuum.calibration.epoch_gaincal import (
+        EpochGaincalStatus,
+        calibrate_epoch,
+    )
 
     fake_paths = [f"/fake/tile_{i:02d}.ms" for i in range(12)]
     empty_sky = MagicMock()
@@ -174,7 +190,9 @@ def test_calibrate_epoch_returns_none_on_empty_sky_model():
         ):
             result = calibrate_epoch(fake_paths, "/fake/bp.b", work_dir)
 
-    assert result is None
+    assert result.g_table is None
+    assert result.status == EpochGaincalStatus.LOW_SNR
+    assert "empty" in (result.reason or "").lower()
 
 
 def test_process_ms_force_recal_calls_applycal_even_when_data_exists():
@@ -506,17 +524,21 @@ def test_rfi_flagging_falls_back_to_casa_when_aoflagger_unavailable():
         "rflag must be called as AOFlagger fallback"
 
 
-def test_gaincal_returns_none_when_p_table_heavily_flagged():
-    """calibrate_epoch() must return None when p.G has > 30% flagged solutions.
+def test_gaincal_returns_low_snr_when_p_table_heavily_flagged():
+    """calibrate_epoch() must return LOW_SNR status when p.G has > 30% flagged solutions.
 
     When the phase-only gain table has too many flagged solutions, the sky model
     SNR was insufficient; proceeding to the ap.G solve would corrupt the bandpass
-    calibration rather than improve it.  The function should return None so the
-    batch pipeline applies bandpass-only calibration.
+    calibration rather than improve it.  The function returns g_table=None with
+    status=LOW_SNR so the batch pipeline applies bandpass-only calibration and
+    the manifest records the operational reason (not a code-path fall-back).
     """
     import tempfile
     import numpy as np
-    from dsa110_continuum.calibration.epoch_gaincal import calibrate_epoch
+    from dsa110_continuum.calibration.epoch_gaincal import (
+        EpochGaincalStatus,
+        calibrate_epoch,
+    )
 
     fake_paths = [f"/fake/tile_{i:02d}.ms" for i in range(6)]
     mock_sky = MagicMock()
@@ -568,6 +590,12 @@ def test_gaincal_returns_none_when_p_table_heavily_flagged():
             with patch.dict(_sys.modules, {"casatools": mock_casatools}):
                 result = calibrate_epoch(fake_paths, "/fake/bp.b", work_dir)
 
-    assert result is None, (
-        "calibrate_epoch() must return None when p.G flagged fraction > 30%"
+    assert result.g_table is None, (
+        "calibrate_epoch() must return g_table=None when p.G flagged fraction > 30%"
+    )
+    assert result.status == EpochGaincalStatus.LOW_SNR, (
+        "calibrate_epoch() must mark p.G overflow as LOW_SNR (operational), not EXCEPTION"
+    )
+    assert "30%" in (result.reason or ""), (
+        "result.reason must include the threshold so the manifest gate can quote it"
     )

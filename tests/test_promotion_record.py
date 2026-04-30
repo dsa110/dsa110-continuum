@@ -44,6 +44,7 @@ def test_derive_daily_cal_tier(cal_selection, expected):
     "legacy_status, skip_intentionally, expected",
     [
         ("ok", False, "solved"),
+        ("low_snr", False, "skipped_or_failed_low_snr"),
         ("fallback", False, "fell_back_to_static_with_reason"),
         ("error", False, "fell_back_to_static_with_reason"),
         ("skipped", True, "skipped_intentionally"),

@@ -76,15 +76,36 @@ def derive_epoch_gaincal_state(
 ) -> str:
     """Map ``RunManifest.gaincal_status`` to the spec's four-state enum.
 
-    The legacy field overloads ``"skipped"`` for two genuinely different
-    cases (operator passed ``--skip-epoch-gaincal`` vs. auto-skip because
-    the epoch slice had fewer than two MS). The caller passes
-    ``skip_intentionally`` to disambiguate.
+    Recognized legacy values (set by ``scripts/batch_pipeline.py``):
+      - ``"ok"``      — solver returned a usable ap.G table.
+      - ``"low_snr"`` — solver returned None due to operational SNR limits
+                        (sky model empty, p.G flag fraction over the 30%
+                        gate, or solve produced no table because all
+                        solutions were flagged at minsnr=3.0). Spec maps
+                        this to ``skipped_or_failed_low_snr``.
+      - ``"fallback"``— legacy code-path catch-all; under the post-Candidate-5
+                        contract reserved for genuine exceptions inside
+                        ``calibrate_epoch``. Spec maps to
+                        ``fell_back_to_static_with_reason``.
+      - ``"error"``   — exception caught in the batch_pipeline wrapper.
+                        Same spec mapping as ``"fallback"``.
+      - ``"skipped"`` — overloaded; ``skip_intentionally`` disambiguates
+                        ``--skip-epoch-gaincal`` (intentional) from auto-skip
+                        when the epoch slice has fewer than two MS
+                        (operational limit).
+
+    The ``"low_snr"`` and ``"fallback"`` distinction was introduced by the
+    structured ``EpochGaincalResult`` return from
+    ``dsa110_continuum.calibration.epoch_gaincal.calibrate_epoch``. Pre-
+    refactor manifests that conflate the two as ``"fallback"`` will still
+    map to ``fell_back_to_static_with_reason`` for backward compatibility.
     """
     if not legacy_status:
         return "unknown"
     if legacy_status == "ok":
         return "solved"
+    if legacy_status == "low_snr":
+        return "skipped_or_failed_low_snr"
     if legacy_status in ("fallback", "error"):
         return "fell_back_to_static_with_reason"
     if legacy_status == "skipped":

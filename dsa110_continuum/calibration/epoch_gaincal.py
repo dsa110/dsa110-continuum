@@ -5,8 +5,13 @@ Public API
 select_calibration_tile_from_ms(epoch_ms_paths) -> str
     Return the MS path (from the two central tiles) with the most catalog sources.
 
-calibrate_epoch(epoch_ms_paths, bp_table, work_dir, ...) -> str | None
-    Full 5-step catalog-bootstrap + self-cal gain solve. Returns ap.G table path.
+calibrate_epoch(epoch_ms_paths, bp_table, work_dir, ...) -> EpochGaincalResult
+    Full 5-step catalog-bootstrap + self-cal gain solve. Returns a structured
+    result carrying the ap.G table path (or None) plus the status enum and a
+    human-readable reason. The result distinguishes "low SNR" (operational
+    limit) from "exception / no table" (code-path / data fault) so downstream
+    manifests and promotion records can classify the outcome honestly per
+    docs/validation/pipeline-validation-from-scratch.md.
 """
 from __future__ import annotations
 
@@ -14,14 +19,14 @@ import logging
 import os
 import shutil
 import subprocess
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 import numpy as np
-
 from dsa110_continuum.calibration.applycal import apply_to_target
 from dsa110_continuum.calibration.model import count_bright_sources_in_tile
 from dsa110_continuum.calibration.mosaic_constants import (
-    MOSAIC_TILE_COUNT,
     SKYMODEL_MIN_FLUX_MJY,
     SOURCE_QUERY_RADIUS_DEG,
 )
@@ -32,6 +37,46 @@ from dsa110_continuum.calibration.skymodels import (
 )
 
 log = logging.getLogger(__name__)
+
+
+class EpochGaincalStatus(str, Enum):
+    """Spec-aligned status for one calibrate_epoch invocation.
+
+    LOW_SNR is the operational case where the data could not support a
+    reliable gain solution — empty sky model, p.G flag fraction over the
+    GAINCAL_FLAG_FRACTION_LIMIT, or solver wrote no table because every
+    solution was flagged. SOLVER_NO_TABLE is reserved for the case where
+    CASA reported success but the table file is absent (rare; usually a
+    code/data fault). EXCEPTION captures any uncaught Python exception in
+    the calibrate_epoch try/except — the legacy "code-path fallback".
+
+    Mapping to the spec's epoch_gaincal_state enum (see
+    dsa110_continuum.qa.promotion.derive_epoch_gaincal_state_from_status):
+      SOLVED          -> "solved"
+      LOW_SNR         -> "skipped_or_failed_low_snr"
+      SOLVER_NO_TABLE -> "skipped_or_failed_low_snr"  (no table = all flagged)
+      EXCEPTION       -> "fell_back_to_static_with_reason"
+    """
+
+    SOLVED = "solved"
+    LOW_SNR = "low_snr"
+    SOLVER_NO_TABLE = "solver_no_table"
+    EXCEPTION = "exception"
+
+
+@dataclass(frozen=True)
+class EpochGaincalResult:
+    """Structured outcome of a calibrate_epoch invocation.
+
+    g_table is the path to the solved ap.G table when status == SOLVED;
+    otherwise None and the caller should fall back to the static daily G.
+    reason is a short human-readable string suitable for the manifest gate's
+    reason field (e.g. "p.G flagged 44.4% of solutions (limit 30%)").
+    """
+
+    g_table: str | None
+    status: EpochGaincalStatus
+    reason: str | None = None
 
 
 _WSCLEAN_FLAG_FRACTION_LIMIT = 0.60  # skip WSClean self-cal if MS is more flagged than this
@@ -154,7 +199,7 @@ def calibrate_epoch(
     source_radius_deg: float = SOURCE_QUERY_RADIUS_DEG,
     wsclean_niter: int = 1000,
     wsclean_threshold_sigma: float = 3.0,
-) -> str | None:
+) -> EpochGaincalResult:
     """Derive per-epoch gain solutions using catalog bootstrap + one self-cal round.
 
     Workflow
@@ -199,8 +244,13 @@ def calibrate_epoch(
 
     Returns
     -------
-    str or None
-        Path to the solved ap.G table, or None if any step failed.
+    EpochGaincalResult
+        ``g_table`` is the ap.G table path when ``status == SOLVED``, else
+        ``None`` and the caller should fall back to the static daily G.
+        ``reason`` is a short human-readable string suitable for the manifest
+        gate's reason field. Status distinguishes operational SNR-floor
+        failures from code-path exceptions per the validation spec at
+        ``docs/validation/pipeline-validation-from-scratch.md``.
     """
     from dsa110_continuum.calibration.casa_service import CASAService
 
@@ -224,7 +274,7 @@ def calibrate_epoch(
         # Return cached result if the ap.G table already exists
         if os.path.exists(ap_table):
             log.info("Epoch gaincal [%s]: cached ap.G found — reusing %s", stem, ap_table)
-            return ap_table
+            return EpochGaincalResult(ap_table, EpochGaincalStatus.SOLVED, "cached ap.G reused")
 
         # ── 1. Phaseshift to median meridian ──────────────────────────────────
         if not os.path.exists(meridian_ms):
@@ -307,7 +357,11 @@ def calibrate_epoch(
                 "Epoch gaincal [%s]: catalog sky model is empty — cannot calibrate",
                 stem,
             )
-            return None
+            return EpochGaincalResult(
+                None,
+                EpochGaincalStatus.LOW_SNR,
+                "catalog sky model is empty (no bright sources within search radius)",
+            )
         log.info("Epoch gaincal [%s]: sky model has %d components", stem, sky.Ncomponents)
         predict_from_skymodel_wsclean(meridian_ms, sky)
 
@@ -405,7 +459,11 @@ def calibrate_epoch(
         )
         if not os.path.exists(p_table):
             log.error("Epoch gaincal [%s]: phase-only solve produced no table", stem)
-            return None
+            return EpochGaincalResult(
+                None,
+                EpochGaincalStatus.SOLVER_NO_TABLE,
+                "phase-only gaincal produced no table (likely all solutions flagged at minsnr=3.0)",
+            )
 
         # ── 6b. Flag-fraction monitor on p.G table ────────────────────────────
         # Read the CASA FLAG column from the cal table directly.  CASA often
@@ -427,13 +485,16 @@ def calibrate_epoch(
                 stem, _p_flag_frac * 100,
             )
             if _p_flag_frac > GAINCAL_FLAG_FRACTION_LIMIT:
-                log.warning(
-                    "Epoch gaincal [%s]: p.G flagged %.1f%% of solutions "
-                    "(limit %.0f%%) — SNR too low for reliable gain cal. "
-                    "Returning None; pipeline will apply bandpass-only.",
-                    stem, _p_flag_frac * 100, GAINCAL_FLAG_FRACTION_LIMIT * 100,
+                _reason = (
+                    f"p.G flagged {_p_flag_frac * 100:.1f}% of solutions "
+                    f"(limit {GAINCAL_FLAG_FRACTION_LIMIT * 100:.0f}%) — "
+                    f"SNR too low for reliable gain cal"
                 )
-                return None
+                log.warning(
+                    "Epoch gaincal [%s]: %s. Returning None; pipeline will apply bandpass-only.",
+                    stem, _reason,
+                )
+                return EpochGaincalResult(None, EpochGaincalStatus.LOW_SNR, _reason)
         except Exception as _frac_err:
             log.warning(
                 "Epoch gaincal [%s]: could not read p.G flag fraction (%s) — "
@@ -516,14 +577,18 @@ def calibrate_epoch(
         )
         if not os.path.exists(ap_table):
             log.error("Epoch gaincal [%s]: ap solve produced no table", stem)
-            return None
+            return EpochGaincalResult(
+                None,
+                EpochGaincalStatus.SOLVER_NO_TABLE,
+                "amplitude+phase gaincal produced no table (likely all solutions flagged at minsnr=3.0)",
+            )
 
         log.info("Epoch gaincal [%s]: SUCCESS → %s", stem, ap_table)
-        return ap_table
+        return EpochGaincalResult(ap_table, EpochGaincalStatus.SOLVED, None)
 
     except Exception as exc:
         log.error(
             "Epoch gaincal: FAILED (%s) — caller should fall back to static daily G table",
             exc,
         )
-        return None
+        return EpochGaincalResult(None, EpochGaincalStatus.EXCEPTION, str(exc))
