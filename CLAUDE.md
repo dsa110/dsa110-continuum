@@ -54,7 +54,7 @@ always use `dsa110_continuum.*` imports; do not add new `dsa110_contimg` referen
 ## Verified working state
 
 run_pipeline.py produces a calibrated image of 3C454.3 at 12.5 Jy/beam.
-Test data: 2026-01-25 HDF5 files at /data/incoming/ on H17.
+Test data: HDF5 files in date-keyed subdirectories under /data/incoming/ on H17.
 
 ## Data flow
 
@@ -100,7 +100,7 @@ scripts/stack_lightcurves.py   Stack per-epoch CSVs into combined multi-epoch li
 scripts/variability_metrics.py Compute Mooley eta/Vs/m variability metrics
 scripts/verify_sources.py      Verify source fluxes against expected values
 scripts/validate_date.py       Run validation checks on a single date's pipeline outputs
-scripts/run_canary.sh          Canary test: end-to-end pipeline on reference date (2026-01-25)
+scripts/run_canary.sh          QA smoke test against a pre-existing reference FITS tile
 
 ## Key paths (H17)
 
