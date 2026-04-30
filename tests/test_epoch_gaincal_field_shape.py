@@ -23,6 +23,7 @@ def _make_fake_table(phase_dir: np.ndarray):
     Mirrors the mock pattern in tests/test_skymodel_phase_dir.py — cloud-safe,
     no real CASA needed.
     """
+
     class FakeTable:
         def __init__(self, path, *_, **__):
             self.path = path
@@ -48,15 +49,18 @@ def test_read_ms_phase_center_rows_first_shape(monkeypatch):
     from dsa110_continuum.adapters import casa_tables
     from dsa110_continuum.calibration import epoch_gaincal
 
-    phase_dir = np.array([
-        [[np.radians(180.0), np.radians(22.0)]],
-        [[np.radians(181.0), np.radians(22.5)]],
-    ])  # shape (2, 1, 2)
+    phase_dir = np.array(
+        [
+            [[np.radians(180.0), np.radians(22.0)]],
+            [[np.radians(181.0), np.radians(22.5)]],
+        ]
+    )  # shape (2, 1, 2)
     monkeypatch.setattr(casa_tables, "table", _make_fake_table(phase_dir))
 
     ra_deg, dec_deg = epoch_gaincal._read_ms_phase_center("/fake/ms")
 
-    assert ra_deg == np.degrees(np.angle(np.mean(np.exp(1j * np.radians([180.0, 181.0]))))) % 360
+    expected_ra = np.degrees(np.angle(np.mean(np.exp(1j * np.radians([180.0, 181.0]))))) % 360
+    np.testing.assert_allclose(ra_deg, expected_ra)
     np.testing.assert_allclose(dec_deg, np.degrees(np.median([np.radians(22.0), np.radians(22.5)])))
 
 
@@ -70,18 +74,18 @@ def test_read_ms_phase_center_casa_column_major_shape(monkeypatch):
     from dsa110_continuum.adapters import casa_tables
     from dsa110_continuum.calibration import epoch_gaincal
 
-    phase_dir = np.array([
-        [[np.radians(180.0)], [np.radians(22.0)]],
-        [[np.radians(181.0)], [np.radians(22.5)]],
-    ])  # shape (2, 2, 1)
+    phase_dir = np.array(
+        [
+            [[np.radians(180.0)], [np.radians(22.0)]],
+            [[np.radians(181.0)], [np.radians(22.5)]],
+        ]
+    )  # shape (2, 2, 1)
     monkeypatch.setattr(casa_tables, "table", _make_fake_table(phase_dir))
 
     # Pre-fix this raised IndexError. Post-fix it returns plausible values.
     ra_deg, dec_deg = epoch_gaincal._read_ms_phase_center("/fake/ms")
 
-    expected_ra = np.degrees(
-        np.angle(np.mean(np.exp(1j * np.radians([180.0, 181.0]))))
-    ) % 360
+    expected_ra = np.degrees(np.angle(np.mean(np.exp(1j * np.radians([180.0, 181.0]))))) % 360
     np.testing.assert_allclose(ra_deg, expected_ra)
     np.testing.assert_allclose(dec_deg, np.degrees(np.median([np.radians(22.0), np.radians(22.5)])))
 
@@ -91,17 +95,17 @@ def test_read_ms_phase_center_2d_fallback_shape(monkeypatch):
     from dsa110_continuum.adapters import casa_tables
     from dsa110_continuum.calibration import epoch_gaincal
 
-    phase_dir = np.array([
-        [np.radians(180.0), np.radians(22.0)],
-        [np.radians(181.0), np.radians(22.5)],
-    ])  # shape (2, 2)
+    phase_dir = np.array(
+        [
+            [np.radians(180.0), np.radians(22.0)],
+            [np.radians(181.0), np.radians(22.5)],
+        ]
+    )  # shape (2, 2)
     monkeypatch.setattr(casa_tables, "table", _make_fake_table(phase_dir))
 
     ra_deg, dec_deg = epoch_gaincal._read_ms_phase_center("/fake/ms")
 
-    expected_ra = np.degrees(
-        np.angle(np.mean(np.exp(1j * np.radians([180.0, 181.0]))))
-    ) % 360
+    expected_ra = np.degrees(np.angle(np.mean(np.exp(1j * np.radians([180.0, 181.0]))))) % 360
     np.testing.assert_allclose(ra_deg, expected_ra)
     np.testing.assert_allclose(dec_deg, np.degrees(np.median([np.radians(22.0), np.radians(22.5)])))
 
