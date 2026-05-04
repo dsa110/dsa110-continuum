@@ -504,8 +504,6 @@ def _check_flag_fraction(
             return 0.0
 
         flags = tb.getcol("FLAG")
-        # casacore returns shape (nrow, nchan, npol) for bandpass tables
-        # where nrow = number of antennas
 
         # Calculate raw flag fraction
         total = flags.size
