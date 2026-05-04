@@ -1,0 +1,46 @@
+
+==============================================================================
+Real bandpass table: /stage/dsa110-contimg/ms/2026-01-25T22:26:05_0~23.b
+==============================================================================
+FLAG shape           : (1872, 2, 48)
+ANTENNA1 row count   : 1872
+Unique antennas      : 117
+Raw flagged cells    : 49,752 / 179,712 = 27.6843%
+
+OLD (buggy) result : 'dead antennas' = 448  (would falsely fail strict QA if >>117)
+
+NEW (receptor-aware) result:
+  effective_flag_fraction : 0.0104166667 = 1.0417%
+  dead_receptor_count     : 63
+  dead_antenna_count      : 35
+  working_receptor_count  : 171
+  working_flagged         : 1,368
+  working_total           : 131,328
+
+QA gate (5% threshold): PASS
+
+Replay of OLD buggy 'effective_flag_fraction': 0.049333 = 4.9333%
+  Would have PASSED 5% gate
+
+==============================================================================
+Real bandpass table: /stage/dsa110-contimg/ms/2026-02-15T22:26:05_0~23.b
+==============================================================================
+FLAG shape           : (1872, 2, 48)
+ANTENNA1 row count   : 1872
+Unique antennas      : 117
+Raw flagged cells    : 49,752 / 179,712 = 27.6843%
+
+OLD (buggy) result : 'dead antennas' = 448  (would falsely fail strict QA if >>117)
+
+NEW (receptor-aware) result:
+  effective_flag_fraction : 0.0104166667 = 1.0417%
+  dead_receptor_count     : 63
+  dead_antenna_count      : 35
+  working_receptor_count  : 171
+  working_flagged         : 1,368
+  working_total           : 131,328
+
+QA gate (5% threshold): PASS
+
+Replay of OLD buggy 'effective_flag_fraction': 0.049333 = 4.9333%
+  Would have PASSED 5% gate

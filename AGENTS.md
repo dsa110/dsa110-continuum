@@ -103,6 +103,10 @@ pipeline logic.
   via the CASA table adapter; code touching `PHASE_DIR` or `REFERENCE_DIR`
   should use calibration runner helpers instead of hard-coded `(nfields, 1, 2)`
   indexing.
+- Many modules still import `dsa110_contimg` or rely on defaults rooted at
+  `/data/dsa110-contimg` and `/stage/dsa110-contimg`; `scripts/check_import_migration.py`
+  lists stale imports under `dsa110_continuum/`. Full detachment from the legacy
+  tree is a deliberate migration—avoid drive-by import churn in unrelated edits.
 
 ## Cursor Cloud specific instructions
 
