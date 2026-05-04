@@ -145,6 +145,46 @@ def initialize_gpu_safety() -> None:
     """No-op stub."""
 
 
+def is_gpu_available() -> bool:
+    """Return False when ``dsa110_contimg`` / a CUDA runtime is unavailable.
+
+    Mirrors ``dsa110_contimg.common.utils.gpu_safety.is_gpu_available``.
+    """
+    return False
+
+
+def check_gpu_memory_available(
+    required_gb: float,
+    gpu_id: int = 0,
+    config: Any = None,
+) -> tuple[bool, str]:
+    """Stub for ``dsa110_contimg.common.utils.gpu_safety.check_gpu_memory_available``.
+
+    The real helper returns ``(ok, reason)`` so callers can both gate on the
+    bool *and* surface the reason in logs / manifests. This stub preserves the
+    tuple shape so call sites that do ``ok, reason = check_gpu_memory_available(2.0)``
+    keep working when ``dsa110_contimg`` is absent.
+
+    Always reports the GPU as unavailable here — the cloud/CI environment that
+    falls back to this shim has no GPU runtime to poll.
+    """
+    del required_gb, gpu_id, config
+    return False, "dsa110_contimg gpu_safety unavailable; running in cloud/CI fallback"
+
+
+def check_system_memory_available(
+    required_gb: float,
+    config: Any = None,
+) -> tuple[bool, str]:
+    """Stub for ``dsa110_contimg`` ``check_system_memory_available``.
+
+    Same tuple-return contract as ``check_gpu_memory_available`` — call sites
+    treat both the same way (gate + reason).
+    """
+    del required_gb, config
+    return False, "dsa110_contimg memory_safety unavailable; running in cloud/CI fallback"
+
+
 # ── Path/env utilities ────────────────────────────────────────────────────────
 
 

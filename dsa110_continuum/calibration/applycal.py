@@ -36,16 +36,12 @@ try:
     from dsa110_contimg.common.utils.ms_permissions import ensure_ms_writable
 except ImportError:
     from dsa110_continuum._compat import (
-        timed,
+        check_gpu_memory_available,
         gpu_safe,
+        is_gpu_available,
         memory_safe,
+        timed,
     )
-
-    def check_gpu_memory_available(*_a: object, **_kw: object) -> bool:
-        return False
-
-    def is_gpu_available() -> bool:
-        return False
 
     def ensure_ms_writable(path: object) -> None:  # type: ignore[misc]
         pass
