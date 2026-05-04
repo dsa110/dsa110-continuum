@@ -513,29 +513,20 @@ def _check_flag_fraction(
         flagged = int(np.sum(flags))
         raw_flag_fraction = flagged / total if total > 0 else 0.0
 
-        # Calculate flag fraction excluding fully-dead antennas
-        # Dead antennas have 100% of their solutions flagged
-        # For bandpass tables: shape is (nant, nchan, npol)
-        if flags.ndim == 3:
-            nant, nchan, npol = flags.shape
-            # Sum over channels and polarizations to get per-antenna flag count
-            per_ant_flags = np.sum(flags, axis=(1, 2))
-            max_flags_per_ant = nchan * npol
+        # Calculate flag fraction excluding fully-dead antenna receptors.
+        # A CASA calibration table stores one row per antenna/SPW, while the
+        # FLAG cell stores receptor/polarization and channel axes. Treating the
+        # first array axis as "antenna" incorrectly counts rows or channels as
+        # dead antennas after the casa_tables row-axis normalization.
+        antenna_ids = None
+        if "ANTENNA1" in tb.colnames():
+            antenna_ids = tb.getcol("ANTENNA1")
 
-            # Count dead antennas (>=99% flagged)
-            # Using a threshold handles cases where an antenna is effectively dead
-            # but has a few unflagged solutions (e.g. due to edge effects or gaps)
-            dead_ant_mask = per_ant_flags >= 0.99 * max_flags_per_ant
-            n_dead = int(np.sum(dead_ant_mask))
-            n_working = nant - n_dead
-
-            if n_working > 0:
-                # Calculate flag fraction for working antennas only
-                working_flags = np.sum(flags[~dead_ant_mask, :, :])
-                working_total = n_working * nchan * npol
-                effective_flag_fraction = working_flags / working_total
-            else:
-                effective_flag_fraction = raw_flag_fraction
+        if flags.ndim == 3 and antenna_ids is not None and len(antenna_ids) == flags.shape[0]:
+            flag_stats = _flag_fraction_excluding_dead_receptors(flags, antenna_ids)
+            effective_flag_fraction = flag_stats["effective_flag_fraction"]
+            n_dead = flag_stats["dead_receptor_count"]
+            n_dead_antennas = flag_stats["dead_antenna_count"]
 
             logger.info(
                 f"Flag fraction in {cal_type} table: {raw_flag_fraction * 100:.1f}% raw "
@@ -543,21 +534,27 @@ def _check_flag_fraction(
             )
             if n_dead > 0:
                 logger.info(
-                    f"  Excluding {n_dead} fully-flagged (dead) antennas: "
+                    f"  Excluding {n_dead} fully-flagged (dead) antenna receptors "
+                    f"across {n_dead_antennas} antennas: "
                     f"effective flag fraction = {effective_flag_fraction * 100:.1f}% "
-                    f"({n_working} working antennas)"
+                    f"({flag_stats['working_receptor_count']} working receptors)"
                 )
         else:
             # Fallback for other table shapes
             effective_flag_fraction = raw_flag_fraction
             n_dead = 0
+            n_dead_antennas = 0
             logger.info(
                 f"Flag fraction in {cal_type} table: {raw_flag_fraction * 100:.1f}% "
                 f"({flagged:,}/{total:,} solutions flagged)"
             )
 
     if effective_flag_fraction > max_flag_fraction:
-        dead_info = f" (excluding {n_dead} dead antennas)" if n_dead > 0 else ""
+        dead_info = (
+            f" (excluding {n_dead} dead antenna receptors across {n_dead_antennas} antennas)"
+            if n_dead > 0
+            else ""
+        )
         raise ValueError(
             f"{cal_type.upper()} SOLVE FAILED: Excessive flagging detected{dead_info}.\n"
             f"  Effective flag fraction: {effective_flag_fraction * 100:.1f}% (threshold: {max_flag_fraction * 100:.0f}%)\n"
@@ -571,6 +568,67 @@ def _check_flag_fraction(
         )
 
     return effective_flag_fraction
+
+
+def _flag_fraction_excluding_dead_receptors(
+    flags: Any,
+    antenna_ids: Any,
+    *,
+    dead_threshold: float = 0.99,
+) -> dict[str, Any]:
+    """Compute caltable flag fraction after removing dead antenna receptors."""
+    import numpy as np
+
+    flags = np.asarray(flags, dtype=bool)
+    antenna_ids = np.asarray(antenna_ids)
+    if flags.ndim != 3:
+        raise ValueError(f"Expected row-major 3D FLAG array, found shape {flags.shape}")
+    if flags.shape[0] != antenna_ids.shape[0]:
+        raise ValueError(
+            f"Expected one ANTENNA1 value per FLAG row, found {antenna_ids.shape[0]} "
+            f"antenna IDs for {flags.shape[0]} rows"
+        )
+
+    cell_axes = flags.shape[1:]
+    receptor_axis_in_cell = min(
+        range(len(cell_axes)),
+        key=lambda idx: (cell_axes[idx] > 4, cell_axes[idx]),
+    )
+    receptor_axis = receptor_axis_in_cell + 1
+    receptor_count = flags.shape[receptor_axis]
+
+    dead_receptors: list[tuple[int, int]] = []
+    working_flagged = 0
+    working_total = 0
+
+    for antenna_id in sorted(set(antenna_ids.tolist())):
+        antenna_mask = antenna_ids == antenna_id
+        antenna_flags = flags[antenna_mask]
+        for receptor_idx in range(receptor_count):
+            receptor_flags = np.take(antenna_flags, receptor_idx, axis=receptor_axis)
+            receptor_total = int(receptor_flags.size)
+            receptor_flagged = int(np.sum(receptor_flags))
+            receptor_fraction = receptor_flagged / receptor_total if receptor_total else 0.0
+            if receptor_fraction >= dead_threshold:
+                dead_receptors.append((int(antenna_id), receptor_idx))
+            else:
+                working_flagged += receptor_flagged
+                working_total += receptor_total
+
+    effective_flag_fraction = (
+        working_flagged / working_total if working_total else float(np.mean(flags))
+    )
+    dead_antennas = {antenna_id for antenna_id, _ in dead_receptors}
+    return {
+        "effective_flag_fraction": float(effective_flag_fraction),
+        "dead_receptor_count": len(dead_receptors),
+        "dead_antenna_count": len(dead_antennas),
+        "working_receptor_count": int(
+            len(set(antenna_ids.tolist())) * receptor_count - len(dead_receptors)
+        ),
+        "working_flagged": int(working_flagged),
+        "working_total": int(working_total),
+    }
 
 
 def _print_bandpass_solution_summary(
