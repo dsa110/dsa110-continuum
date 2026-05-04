@@ -160,7 +160,7 @@ where = ["."]
 # pipeline runs under a different user.
 addopts = "--basetemp=/data/dsa110-continuum/.pytest_tmp"
 testpaths = ["tests"]
-norecursedirs = [".codacy", ".git", ".hypothesis", ".venv", "venv", "__pycache__", ".pytest_cache", ".mypy_cache", "node_modules", ".idea", ".vscode", "dist", "build", ".tox", ".eggs", "*.egg", ".archive", ".stale", "manual"]
+norecursedirs = [".git", ".hypothesis", ".venv", "venv", "__pycache__", ".pytest_cache", ".mypy_cache", "node_modules", ".idea", ".vscode", "dist", "build", ".tox", ".eggs", "*.egg", ".archive", ".stale", "manual"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
