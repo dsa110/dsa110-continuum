@@ -61,6 +61,7 @@ class TestFlagFractionExcludingDeadReceptors:
         assert result["dead_receptor_count"] == 2
         assert result["dead_antenna_count"] == 1
         assert result["working_receptor_count"] == N_ANTENNAS * N_RECEPTORS - 2
+        assert result["effective_flag_fraction"] == pytest.approx(0.0)
 
     def test_does_not_misread_axis_0_as_antennas(self):
         flags = _empty_flags()

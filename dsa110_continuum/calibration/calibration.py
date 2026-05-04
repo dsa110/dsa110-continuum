@@ -474,9 +474,8 @@ def _check_flag_fraction(
 ) -> float:
     """Check if flag fraction in calibration table exceeds threshold.
 
-    This function excludes fully-flagged antennas (dead antennas) from the
-    calculation, since they don't indicate calibration problems - just
-    non-working hardware.
+    Excludes fully-flagged (antenna, receptor) pairs from the calculation,
+    since those indicate dead hardware rather than calibration problems.
 
     Parameters
     ----------
@@ -489,7 +488,7 @@ def _check_flag_fraction(
 
     Returns
     -------
-        Actual flag fraction (0.0 to 1.0) for working antennas only
+        Actual flag fraction (0.0 to 1.0) for working receptors only
 
     Raises
     ------
@@ -589,6 +588,8 @@ def _flag_fraction_excluding_dead_receptors(
             f"antenna IDs for {flags.shape[0]} rows"
         )
 
+    # CASA polarization/receptor axes are always small (≤4); channel axes are
+    # always >4. Pick the cell axis whose size is ≤4 as the receptor axis.
     cell_axes = flags.shape[1:]
     receptor_axis_in_cell = min(
         range(len(cell_axes)),
@@ -597,11 +598,12 @@ def _flag_fraction_excluding_dead_receptors(
     receptor_axis = receptor_axis_in_cell + 1
     receptor_count = flags.shape[receptor_axis]
 
+    unique_antennas = sorted(set(antenna_ids.tolist()))
     dead_receptors: list[tuple[int, int]] = []
     working_flagged = 0
     working_total = 0
 
-    for antenna_id in sorted(set(antenna_ids.tolist())):
+    for antenna_id in unique_antennas:
         antenna_mask = antenna_ids == antenna_id
         antenna_flags = flags[antenna_mask]
         for receptor_idx in range(receptor_count):
@@ -623,9 +625,7 @@ def _flag_fraction_excluding_dead_receptors(
         "effective_flag_fraction": float(effective_flag_fraction),
         "dead_receptor_count": len(dead_receptors),
         "dead_antenna_count": len(dead_antennas),
-        "working_receptor_count": int(
-            len(set(antenna_ids.tolist())) * receptor_count - len(dead_receptors)
-        ),
+        "working_receptor_count": len(unique_antennas) * receptor_count - len(dead_receptors),
         "working_flagged": int(working_flagged),
         "working_total": int(working_total),
     }
