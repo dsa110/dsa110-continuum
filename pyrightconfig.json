@@ -1,0 +1,22 @@
+{
+    "include": [
+        "dsa110_continuum",
+        "scripts",
+        "tests"
+    ],
+    "exclude": [
+        ".cache",
+        ".git",
+        ".pytest_cache",
+        ".pytest_tmp",
+        ".pytest_tmp_*",
+        ".ruff_cache",
+        "__pycache__",
+        "docs",
+        "node_modules",
+        "outputs",
+        "tools"
+    ],
+    "reportMissingModuleSource": false,
+    "reportMissingTypeStubs": false
+}
