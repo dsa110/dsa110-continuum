@@ -1348,52 +1348,75 @@ def main() -> None:
                 log.warning("--force-recal: could not remove sentinel %s: %s", _s, _e)
 
     _epoch_g_table: str | None = None
+    _epoch_gaincal_reason: str | None = None
     if not args.skip_epoch_gaincal:
         log.info("=== Phase 0/3: Per-epoch gain calibration ===")
         try:
-            from dsa110_continuum.calibration.epoch_gaincal import calibrate_epoch
+            from dsa110_continuum.calibration.epoch_gaincal import (
+                EpochGaincalStatus,
+                calibrate_epoch,
+            )
             from dsa110_continuum.calibration.mosaic_constants import MOSAIC_TILE_COUNT
             _epoch_ms = ms_list[:MOSAIC_TILE_COUNT] if len(ms_list) >= MOSAIC_TILE_COUNT else ms_list
             if len(_epoch_ms) >= 2:
-                _epoch_g_table = calibrate_epoch(
+                _eg_result = calibrate_epoch(
                     epoch_ms_paths=_epoch_ms,
                     bp_table=_bp,
                     work_dir=epoch_gaincal_dir,
                     refant="103",
                 )
-                if _epoch_g_table is not None:
+                _epoch_g_table = _eg_result.g_table
+                _epoch_gaincal_reason = _eg_result.reason
+                if _eg_result.status == EpochGaincalStatus.SOLVED:
                     log.info("Epoch gaincal SUCCESS: %s", _epoch_g_table)
                     cfg = cfg.replace(g_table=_epoch_g_table)
                     _epoch_gaincal_status = "ok"
+                elif _eg_result.status in (
+                    EpochGaincalStatus.LOW_SNR,
+                    EpochGaincalStatus.SOLVER_NO_TABLE,
+                ):
+                    log.warning(
+                        "Epoch gaincal low-SNR fall-back (%s) — applying static daily G (%s)",
+                        _eg_result.reason or _eg_result.status.value, _ga,
+                    )
+                    _epoch_gaincal_status = "low_snr"
                 else:
                     log.warning(
-                        "Epoch gaincal failed — falling back to static daily G table (%s)", _ga
+                        "Epoch gaincal code-path fall-back (%s) — applying static daily G (%s)",
+                        _eg_result.reason or _eg_result.status.value, _ga,
                     )
                     _epoch_gaincal_status = "fallback"
             else:
-                log.warning(
-                    "Epoch gaincal skipped: need at least 2 MS files, found %d", len(_epoch_ms)
-                )
+                _epoch_gaincal_reason = f"need at least 2 MS files, found {len(_epoch_ms)}"
+                log.warning("Epoch gaincal skipped: %s", _epoch_gaincal_reason)
                 _epoch_gaincal_status = "skipped"
         except Exception as _eg_exc:
             log.error("Epoch gaincal error: %s — using static table", _eg_exc)
             _epoch_gaincal_status = "error"
+            _epoch_gaincal_reason = str(_eg_exc)
     else:
         log.info("--skip-epoch-gaincal set: using static daily G table (%s)", _ga)
         _epoch_gaincal_status = "skipped"
+        _epoch_gaincal_reason = "operator passed --skip-epoch-gaincal"
     # ──────────────────────────────────────────────────────────────────────────
 
     manifest.gaincal_status = _epoch_gaincal_status
     manifest.epoch_g_table = _epoch_g_table
 
-    # Gaincal fallback/error is a degradation signal: record it as a gate so the
-    # pipeline verdict reflects that the per-epoch phase solution was not used.
-    # "skipped" is intentional (--skip-epoch-gaincal) and does not degrade.
-    if _epoch_gaincal_status in ("fallback", "error"):
+    # Gaincal fall-back/error is a degradation signal: record it as a gate so
+    # the pipeline verdict reflects that the per-epoch phase solution was not
+    # used. low_snr is operational (data limit, not bug); fallback is the
+    # legacy code-path catch-all (now reserved for true exceptions). "skipped"
+    # is intentional (--skip-epoch-gaincal or len<2) and does not degrade.
+    if _epoch_gaincal_status in ("low_snr", "fallback", "error"):
+        _verdict_map = {"low_snr": "LOW_SNR", "fallback": "FALLBACK", "error": "ERROR"}
         manifest.add_gate(
             gate="gaincal",
-            verdict="FALLBACK" if _epoch_gaincal_status == "fallback" else "ERROR",
-            reason=f"epoch gaincal {_epoch_gaincal_status}; static daily G table used",
+            verdict=_verdict_map[_epoch_gaincal_status],
+            reason=(
+                _epoch_gaincal_reason
+                or f"epoch gaincal {_epoch_gaincal_status}; static daily G table used"
+            ),
             static_g_table=_ga,
         )
 
