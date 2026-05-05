@@ -9,6 +9,7 @@ Status vocabulary:
 - `repo_verified`: directly supported by current checked-in code or config.
 - `computed`: recomputed from current checked-in code or data files.
 - `test_asserted`: asserted by current checked-in tests.
+- `external_verified`: confirmed against an external DSA-specific source (real H17 HDF5/MS metadata or sibling `dsa110-antpos` checkout) on the date below.
 - `external_pending`: plausible or cited externally, but not verified in this pass.
 - `stale_rejected`: present in older docs but contradicted by current evidence.
 
@@ -45,10 +46,10 @@ station positions, or active-array composition.
 | `scripts/plot_tile_image.py` uses `AMP_SCATTER = 0.05` and `PHASE_SCATTER = 5.0`. | repo_verified | `scripts/plot_tile_image.py` constants. | 2026-05-05 |
 | The QA noise model default uses `num_antennas=96`. | repo_verified | `dsa110_continuum/qa/noise_model.py` `calculate_theoretical_rms()` signature. | 2026-05-05 |
 | Noise-model behavior around 96 versus 117 antennas is asserted by tests. | test_asserted | `tests/test_noise_model_fix.py`. | 2026-05-05 |
-| The operational active-antenna total is commonly cited as 96. | external_pending | Repo docs cite Connor et al. 2025, and code uses 96 for noise QA, but this pass did not verify Connor et al. 2025 or H17 antenna metadata directly. | 2026-05-05 |
-| The per-arm active breakdown of the 96 active antennas is unresolved in repo-local evidence. | external_pending | Repo references previously disagreed between 47 and 51 active E-W antennas; must be reconciled against Connor et al. 2025, H17 HDF5/MS metadata, or DSA-specific `dsa110-antpos`. | 2026-05-05 |
-| The exact active station-number list for the 96 active antennas is not established by this repository. | external_pending | No active-96 station list was found in this repo audit; validate against real HDF5/MS metadata or a sibling DSA-specific `dsa110-antpos` checkout. | 2026-05-05 |
-| Commissioning configuration counts from `ant_ids.csv` and `ant_ids_mid.csv` are not repo-ground-truth until checked against a DSA-specific `dsa110-antpos` checkout. | external_pending | Those files are not present in this repository. | 2026-05-05 |
+| The operational active-antenna total is 96 (`Nants_data=96`, `Nants_telescope=117`). | external_verified | Read from real H17 HDF5 `/data/incoming/2026-01-25T00:00:10_sb00.hdf5` `Header/Nants_data`; cross-checked by counting unique IDs in `ant_1_array ∪ ant_2_array`. | 2026-05-05 |
+| The active per-arm breakdown is **47 E-W + 35 N-S + 14 outriggers**. | external_verified | Active station-number list extracted from real H17 HDF5 metadata; intersected with slot pools DSA001-051 (E-W), DSA052-102 (N-S), DSA103-117 (outriggers). See `outputs/ground_truth_audit_2026-05-04/active_antennas_2026-01-25.md`. | 2026-05-05 |
+| The exact active station-number list for the 96 active antennas is enumerated. | external_verified | Full list in `outputs/ground_truth_audit_2026-05-04/active_antennas_2026-01-25.md`. Inactive stations are DSA-{10, 21, 22, 23, 52-67, 117}. Source: real H17 HDF5 `/data/incoming/2026-01-25T00:00:10_sb00.hdf5`. | 2026-05-05 |
+| Commissioning configuration counts: `ant_ids.csv` = 24 (20 E-W + 3 N-S + 1 outrigger), `ant_ids_case1.csv` = 24 (same composition), `ant_ids_case2.csv` = 25 (20 E-W + 3 N-S + 2 outriggers), `ant_ids_mid.csv` = 66 (48 E-W + 3 N-S + 15 outriggers). | external_verified | Read from sibling `/data/dsa110-antpos/antpos/data/ant_ids*.csv`. | 2026-05-05 |
 | Reference figure metrics such as PSF HPBW, peak sidelobe, and UV fill are not ground truth until regenerated or checked from their source scripts. | external_pending | `docs/images/*` exists, but this pass did not regenerate or validate figure numerical content. | 2026-05-05 |
 
 ## Rejected Old Claims
@@ -61,7 +62,7 @@ station positions, or active-array composition.
 | DSA-110 operational declination is fixed at `16.15 deg`. | stale_rejected | `16.15 deg` is a simulation default; operational docs say declination is read from observation metadata. | 2026-05-05 |
 | The YAML still contains a stale `325.520833 kHz` channel-width value to ignore. | stale_rejected | Current YAML records `244.140625 kHz` and a correction note. | 2026-05-05 |
 | Inactive station slots produce zero-weighted baselines in the simulation harness. | stale_rejected | Current harness creates baselines across the selected antenna rows; no zero-weighting of inactive slots was found. | 2026-05-05 |
-| The active per-arm breakdown is repo-verified as either `47 EW + 35 NS + 14 outriggers` or `51 EW + 35 NS + 14 outriggers`. | stale_rejected | Repo-local references have disagreed; the breakdown is `external_pending`. | 2026-05-05 |
+| The active per-arm breakdown is `51 EW + 35 NS + 14 outriggers`. | stale_rejected | Real H17 HDF5 metadata gives **47 E-W + 35 N-S + 14 outriggers**. The 51 number reflects E-W *slot* count, not active-antenna count. | 2026-05-05 |
 
 ## Working Audit
 
@@ -69,6 +70,7 @@ The claim matrix that led to this rewrite is preserved at:
 
 - `outputs/ground_truth_audit_2026-05-04/README.md`
 - `outputs/ground_truth_audit_2026-05-04/ground_truth_claims_audit.csv`
+- `outputs/ground_truth_audit_2026-05-04/active_antennas_2026-01-25.md` (real H17 HDF5 active-antenna resolution, 2026-05-05)
 
 These audit artifacts are part of this docs change set and should be committed
 with `docs/GROUND_TRUTH.md`; otherwise this pointer will intentionally be
