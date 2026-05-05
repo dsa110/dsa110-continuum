@@ -4,12 +4,39 @@ pytest conftest for dsa110-continuum cloud/CI test environment.
 Installs minimal mock stubs for packages that are only available on H17
 (casacore, casa6, etc.) so that tests can import and mock them without the
 real binary dependencies.
+
+Also gates ``@pytest.mark.slow`` tests behind a ``--run-slow`` CLI flag
+so the default ``pytest tests/`` run finishes in seconds, not minutes.
 """
 from __future__ import annotations
 
 import sys
 import types
 from unittest.mock import MagicMock
+
+import pytest
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Register ``--run-slow`` to opt into ``@pytest.mark.slow`` tests."""
+    parser.addoption(
+        "--run-slow",
+        action="store_true",
+        default=False,
+        help="Include tests marked @pytest.mark.slow (skipped by default).",
+    )
+
+
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
+    """Skip ``slow``-marked tests unless ``--run-slow`` was passed."""
+    if config.getoption("--run-slow"):
+        return
+    skip_slow = pytest.mark.skip(reason="slow test (use --run-slow to enable)")
+    for item in items:
+        if "slow" in item.keywords:
+            item.add_marker(skip_slow)
 
 
 def _install_casacore_mock() -> None:
