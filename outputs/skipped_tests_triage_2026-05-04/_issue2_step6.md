@@ -4,9 +4,26 @@ Default `pytest tests/` run currently reports `1037 passed, 11 skipped`. Six of 
 
 Three are redundant with existing synthetic-FITS coverage and should be **deleted**. Three are still in scope but need to lose the artifact dependency in favour of `tmp_path`-generated FITS — so they should be **fixed**.
 
-Companion issue tracks the other 5 skips (slow-marker gated): see "Skipped tests triage Group 1 — `@pytest.mark.slow`".
+Companion issue (the other 5 skips, slow-marker gated): #64.
 
-Triage doc: `outputs/skipped_tests_triage_2026-05-04/skipped_tests_issue.md` (committed locally; not pushed).
+Source-of-truth triage doc: [`outputs/skipped_tests_triage_2026-05-04/skipped_tests_issue.md`](https://github.com/dsa110/dsa110-continuum/blob/main/outputs/skipped_tests_triage_2026-05-04/skipped_tests_issue.md). The original analysis and codex prompt are in the same directory.
+
+## Reproduction
+
+On H17 (CASA6 env required):
+
+```bash
+/opt/miniforge/envs/casa6/bin/python -m pytest \
+    tests/test_two_stage_photometry.py -v -rs --no-header \
+    --timeout=60 --timeout-method=thread 2>&1 \
+  | grep "SKIPPED"
+```
+
+The skip reason is `Step 6 mosaic not on disk`. The path the tests check is hardcoded near the top of `tests/test_two_stage_photometry.py`:
+
+```python
+MOSAIC = Path("pipeline_outputs/step6/step6_mosaic.fits")
+```
 
 ## Tests in scope
 

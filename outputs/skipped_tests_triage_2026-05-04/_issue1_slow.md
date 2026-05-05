@@ -1,10 +1,28 @@
 ## Context
 
-Default `pytest tests/` run currently reports `1037 passed, 11 skipped`. Five of those 11 skips come from `@pytest.mark.slow` gating (gate added in `tests/conftest.py`, commit `ed9e303`/`7445f0b`). All five are in scope for the project, so they should be **fixed** — not deleted — by either tightening the fixtures, splitting the assertions, or removing the marker once runtime is measured.
+Default `pytest tests/` run currently reports `1037 passed, 11 skipped`. Five of those 11 skips come from `@pytest.mark.slow` gating (gate added in `tests/conftest.py`, commit `7445f0b`). All five are in scope for the project, so they should be **fixed** — not deleted — by either tightening the fixtures, splitting the assertions, or removing the marker once runtime is measured.
 
-Companion issue tracks the other 6 skips: see "Skipped tests triage Group 2 — missing Step 6 mosaic artifact".
+Companion issue (the other 6 skips): #65.
 
-Triage doc: `outputs/skipped_tests_triage_2026-05-04/skipped_tests_issue.md` (committed locally; not pushed).
+Source-of-truth triage doc: [`outputs/skipped_tests_triage_2026-05-04/skipped_tests_issue.md`](https://github.com/dsa110/dsa110-continuum/blob/main/outputs/skipped_tests_triage_2026-05-04/skipped_tests_issue.md). The original analysis and codex prompt are in the same directory.
+
+## Reproduction
+
+On H17 (CASA6 env required):
+
+```bash
+/opt/miniforge/envs/casa6/bin/python -m pytest tests/ \
+    --ignore=tests/test_mosaic_ra_wrap.py -v -rs --no-header \
+    --timeout=60 --timeout-method=thread 2>&1 \
+  | grep "SKIPPED"
+```
+
+To run any single slow test instead of skipping it:
+
+```bash
+/opt/miniforge/envs/casa6/bin/python -m pytest --run-slow \
+    tests/test_integration_e2e.py::TestSlow::test_full_96_antenna_subband -v
+```
 
 ## Tests in scope
 
