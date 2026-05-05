@@ -450,20 +450,44 @@ class TestEndToEnd:
         assert result.n_recovered >= 1, \
             f"Expected >=1 recovered source; got {result.n_recovered}/{len(result.source_results)}"
 
-    def test_full_pipeline_result_is_serializable(self, tmp_path):
-        import dataclasses
-        from dsa110_continuum.simulation.harness import SimulationHarness
-        from dsa110_continuum.simulation.pipeline import SimulatedPipeline
-        h = SimulationHarness(
-            n_antennas=8, n_sky_sources=1, seed=1, use_real_positions=False
-        )
-        p = SimulatedPipeline(
-            work_dir=tmp_path, niter=50, cell_arcsec=30.0, image_size=128
-        )
-        result = p.run(
-            harness=h, n_tiles=2, n_subbands=1,
-            amp_scatter=0.03, phase_scatter_deg=2.0,
-        )
-        d = dataclasses.asdict(result)
-        assert "source_results" in d
-        assert "errors" in d
+
+def test_simulated_pipeline_result_is_serializable(tmp_path):
+    """SimulatedPipelineResult and SourceFluxResult must be ``asdict``-safe.
+
+    Constructed directly (no WSClean / no harness run) so this stays in the
+    fast default suite. The contract is the dataclass shape, not the pipeline.
+    """
+    import dataclasses
+    from dsa110_continuum.simulation.pipeline import (
+        SimulatedPipelineResult,
+        SourceFluxResult,
+    )
+
+    source = SourceFluxResult(
+        source_id="S0",
+        ra_deg=180.0,
+        dec_deg=37.0,
+        injected_flux_jy=1.0,
+        recovered_flux_jy=0.95,
+        snr=12.5,
+        passed=True,
+    )
+    result = SimulatedPipelineResult(
+        work_dir=tmp_path,
+        n_tiles=2,
+        calibration_passed=True,
+        imaging_passed=True,
+        mosaic_path=tmp_path / "mosaic.fits",
+        source_results=[source],
+        errors=["example"],
+    )
+
+    d = dataclasses.asdict(result)
+
+    assert isinstance(d, dict)
+    assert "source_results" in d
+    assert "errors" in d
+    assert d["n_tiles"] == 2
+    assert isinstance(d["source_results"], list)
+    assert d["source_results"][0]["source_id"] == "S0"
+    assert d["errors"] == ["example"]
