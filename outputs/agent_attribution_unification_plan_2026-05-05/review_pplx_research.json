@@ -1,0 +1,204 @@
+{
+  "answer": "Overall, the plan is directionally right (git-filter-repo + mailmap + message-callback is the correct class of tool), but there are several concrete problems: the `--message-callback` body as written will not even compile, the history rewrite scope is too broad and under-specified, the backup / safety story is incomplete, and the branch/tag strategy will likely leave inconsistent remote state. I\u2019ll walk through issues by area and then answer your numbered questions explicitly.\n\n***\n\n## git-filter-repo + `--mailmap`: what\u2019s right and what\u2019s missing\n\n- Using `git filter-repo --mailmap` is a good choice: git-filter-repo explicitly supports a `--mailmap` option that rewrites **author, committer, and tagger** names and emails according to a `.mailmap` file, using the same syntax as `gitmailmap(5)`. That directly answers your Q5: both author and committer will be rewritten; you don\u2019t need a separate committer callback just for bots.[1][2][3]\n\n- However, git-filter-repo is designed to be run on a **fresh clone** and will refuse to run on a repo that doesn\u2019t \u201clook like a fresh clone\u201d unless you pass `--force`. Your plan assumes running it in an existing working clone but does not mention this constraint or `--force`; in practice you\u2019ll either:[4][5]\n  - Clone a new working directory just for the rewrite (recommended), or\n  - Add `--force` and accept the extra risk explicitly.[5][4]\n\n- By default, git-filter-repo rewrites **all refs** (all branches and tags) unless constrained by `--refs` or similar. Your invocation omits `--refs`, so the rewrite will:[6][7]\n  - Rewrite `main` as intended.\n  - Also rewrite every local branch and every tag reachable from any ref.\n  - Leave remote branches and tags untouched until you force-push them.\n  \n  That\u2019s behaviorally important and not reflected in your safety/branch-plan.\n\n**Recommendation:**  \nRun git-filter-repo in a fresh clone and either:\n\n- Restrict scope explicitly (e.g. `--refs main`) if you truly only want to rewrite `main`.[7]\n- Or decide up-front that you are rewriting *all* active branches and tags and plan to push all of them with `--force-with-lease` after backups.\n\n***\n\n## `.mailmap` content and interaction with filter-repo\n\n### Format and semantics\n\nGit\u2019s mailmap syntax supports four forms, including the one you\u2019re using:  \n\n`Proper Name <proper@email> Commit Name <commit@email>`  \nwhich maps any commit whose name+email matches `Commit Name <commit@email>` to the canonical `Proper Name <proper@email>`.[2][8][9]\n\nYour proposed lines:\n\n```text\nJakob Faber <jfaber@caltech.edu> Cursor Agent <cursoragent@cursor.com>\nJakob Faber <jfaber@caltech.edu> copilot-swe-agent[bot] <198982749+Copilot@users.noreply.github.com>\n```\n\nare syntactically valid mailmap entries of that 4-field form.[8][9]\n\nWhen used with `git filter-repo --mailmap .mailmap`, git-filter-repo will rewrite **author, committer, and tagger** names/emails wherever those bot identities appear.[3][10][1]\n\n### Issues and improvements\n\n- You already have an existing mapping for Cursor Agent pointing to `37250147+jakobtfaber@users.noreply.github.com`. Adding a *different* canonical address for the same bot in the same `.mailmap` risks ambiguity for future non-filter-repo usage of the mailmap (e.g. shortlog, blame) and makes it harder to reason about what the \u201ccanonical identity\u201d actually is. If your goal is to normalize on `jfaber@caltech.edu`, update or remove the old mapping rather than having two competing canonical emails.[9][8]\n\n- Since this rewrite is meant to change *actual history*, not just reporting, you might consider also mapping any legacy personal addresses you want consolidated (e.g. the `nanograv.org` ghost) at the same time, or explicitly documenting why you\u2019re leaving them for a later run.[8][9]\n\n- After the filter-repo run, no commits will reference the bot emails, so these bot mailmap entries become effectively dead weight for history, though they can still help if you accidentally create a new bot-authored commit in the future. That\u2019s fine, but worth noting.\n\n***\n\n## `--message-callback` implementation problems\n\nYour core idea (strip only specific `Co-Authored-By` lines using a message callback) is sound and aligns with documented usage of `--message-callback`. The implementation as written has several concrete issues:[11][6][7]\n\n### 1. Indentation: as written, it will raise a syntax error\n\ngit-filter-repo constructs the callback function roughly as:\n\n```python\ndef message_callback(message):\n    BODY\n```\n\nwhere `BODY` is the exact text you pass in the `--message-callback` argument. In the manpage example, they pass either a single line (`'return name.replace(...)'`) or a multi-line body where every line is indented.[6]\n\nYour body:\n\n```bash\n--message-callback '\nimport re\npatterns = [\n    rb\"^Co-authored-by:\\s*Claude.*?<noreply@anthropic\\.com>\\s*$\",\n    ...\n]\n...\nreturn b\"\\n\".join(kept)\n'\n```\n\nstarts at column 0. That would be spliced directly after the function header, producing invalid Python like:\n\n```python\ndef message_callback(message):\nimport re\npatterns = [...]\n```\n\nwhich will fail with an `IndentationError` or `SyntaxError` before any commits are processed.[6]\n\n**Fix:** indent the body consistently, e.g.:\n\n```bash\ngit filter-repo \\\n  --mailmap .mailmap \\\n  --message-callback '\n    import re\n    patterns = [\n        rb\"...\",\n    ]\n    ...\n    return b\"\\n\".join(kept)\n  '\n```\n\nor shrink it to a single `return re.sub(...)` expression as in the docs.[12][7][6]\n\n### 2. Trailing newline preservation\n\n`message` arrives as a single bytestring that usually ends with a trailing newline; your code does:\n\n```python\nlines = message.split(b\"\\n\")\n...\nreturn b\"\\n\".join(kept)\n```\n\nIf the original message ends with `b\"...\\n\"`, `split(b\"\\n\")` produces a trailing empty string element; you keep it, then `b\"\\n\".join(kept)` produces a message **without** the final newline. That slightly changes all messages, not only the ones with trailers.\n\nThis is minor but not entirely cosmetic: you are rewriting every commit message\u2019s exact byte representation, which may matter if someone diffed raw commit objects or used tooling that assumes trailing newlines.[6]\n\n**Fix:** explicitly preserve whether `message` ends with `b\"\\n\"`:\n\n```python\nends_with_nl = message.endswith(b\"\\n\")\nlines = message.split(b\"\\n\")\n...\nnew = b\"\\n\".join(kept)\nif ends_with_nl and not new.endswith(b\"\\n\"):\n    new += b\"\\n\"\nreturn new\n```\n\n### 3. Pattern coverage and robustness\n\nYour patterns are generally well-scoped:\n\n```python\npatterns = [\n    rb\"^Co-authored-by:\\s*Claude.*?<noreply@anthropic\\.com>\\s*$\",\n    rb\"^Co-authored-by:\\s*Cursor Agent\\s*<cursoragent@cursor\\.com>\\s*$\",\n    rb\"^Co-authored-by:\\s*Copilot\\s*<\\d+\\+Copilot@users\\.noreply.github\\.com>\\s*$\",\n]\n...\nif any(re.match(p, line, re.IGNORECASE) for p in patterns):\n    continue\n```\n\nStrengths:\n\n- Anchoring to `^Co-authored-by:` (plus `re.IGNORECASE`) and the exact bot email domains means you won\u2019t strip arbitrary mentions of \u201cClaude\u201d or \u201cCopilot\u201d elsewhere in messages.[13][14]\n- `Claude.*?<noreply@anthropic\\.com>` will indeed capture multiple Claude model variants and the 1M-context label.[15][16][17]\n\nLimitations / edge cases:\n\n- If any Co-author line has **extra trailing metadata** (e.g. `Co-authored-by: Claude <noreply@anthropic.com> (#123)`), your pattern with `\\s*$` will not match, leaving such lines behind. That may not exist in this repo today, but it\u2019s an edge case your risk table implicitly claims to handle.\n- You rely on `re.match` with a pattern that already has `^` and `$`; here `^` is redundant and `$` is useful, but semantically you really want \u201cfull line match,\u201d which is more clearly expressed via `re.fullmatch` than `re.match`.[6]\n- You assume LF line endings; Git stores commit messages with LF internally, so this is fine, but it\u2019s good to call out that you are *not* robust to CRLF in case some external tool injected such messages.[6]\n\nA simpler, less error-prone approach is a single `re.sub` over the whole message, as in the docs\u2019 example:[7][12][6]\n\n```bash\ngit filter-repo --message-callback '\n    import re\n    pattern = rb\"(?mi)^Co-authored-by:\\s*(Claude.*?<noreply@anthropic\\.com>|Cursor Agent\\s*<cursoragent@cursor\\.com>|Copilot\\s*<\\d+\\+Copilot@users\\.noreply\\.github\\.com>)\\s*\\n?\"\n    return re.sub(pattern, b\"\", message)\n'\n```\n\nThis keeps indentation trivial, removes the lines and their trailing newline in one shot, and avoids manual split/join corner cases.\n\n***\n\n## GitHub contributors and Co-authored-by semantics\n\nGitHub\u2019s own docs say that commits with `Co-authored-by` trailers can be \u201cincluded in the profile contributions graph and the repository\u2019s statistics\u201d for the co-authors, provided the email matches a GitHub account. Independent reports confirm that AI tools adding these trailers cause the tool\u2019s account to appear in contributors graphs and commit UIs.[14][16][18][19][13][15]\n\nThere is conflicting community commentary suggesting that \u201cgraphs are based on authorship, not co-author metadata,\u201d but this appears either out-of-date or context-limited (Enterprise vs dotcom / specific views). In practice, removing those trailers via a history rewrite is the only reliable way to stop those accounts from appearing in the repo\u2019s contributors surfaces.[16][18][20][15]\n\nSo your overall direction (rewrite author emails + strip Co-authored-by) aligns with how GitHub builds contributors, but you should treat the outcome as empirical: verify on the actual contributors page after the push.\n\n***\n\n## Force-push and backup strategy\n\n### Backups\n\n- Pushing backup branches like `main-pre-agent-unify-2026-05-05` is a good start, but you\u2019re not backing up tags or remote-only branches (if any). Since `git filter-repo` will rewrite all reachable tags and branches by default, having backups only for a subset of branches is incomplete.[7][6]\n\n- Relying on reflog \u201cfor ~90 days\u201d is technically accurate for defaults, but fragile. Git\u2019s `gc.reflogExpire` defaults to 90 days for reachable entries and `gc.reflogExpireUnreachable` to 30 days, but both are configurable and can also be shortened by explicit `git reflog expire` or aggressive gc. So reflog is a *helpful* safety net, not a primary backup.[21][22][23]\n\n**Stronger safety pattern:**\n\n- Clone a **separate bare backup** of the current remote (or mirror clone: `git clone --mirror`), store it elsewhere, and leave it untouched until you\u2019re sure you like the new history.\n- Optionally, tag current main with a permanent \u201cbefore-rewrite\u201d tag, e.g. `git tag backup/pre-agent-unify-2026-05-05 main && git push origin backup/pre-agent-unify-2026-05-05`.\n\n### Force-push details\n\nYour push:\n\n```bash\ngit push --force-with-lease origin main\n```\n\nis the right *class* of command: `--force-with-lease` is safer than `--force` because it checks that the remote hasn\u2019t advanced relative to your last fetch. However:[24]\n\n- After a filter-repo run, your local `.git/config` may have had the `remote \"origin\"` and branch info stripped or modified, depending on how you ran it; users have reported needing to re-add `origin` and upstream tracking before pushing. Your plan doesn\u2019t mention checking/repairing `.git/config` before pushing.[10][5]\n- If you decide to rewrite **multiple branches**, you should push all of them consistently, e.g.:\n\n  ```bash\n  git push --force-with-lease origin main codex/diagnose-ms-field-discovery integration/safe-subset-cloud wip/pre-align-main-20260430T053503Z\n  ```\n\n  or a more explicit refspec set. Right now you only force-push `main`, leaving remote feature branches pointing at the old history, which is confusing unless you deliberately treat them as frozen archives.\n\n***\n\n## Branch and tag reconciliation\n\nYour Step 6 assumes:\n\n> Three local branches diverged from new main. Rebase onto new main or delete.\n\nBut given the default behavior of git-filter-repo, what actually happens is:\n\n- Every local branch is rewritten so that its commits are mapped 1:1 into the new history, preserving parent relationships. A branch that diverged from `main` before will still diverge at the corresponding rewritten ancestor afterwards.[25][6]\n- If you only push `main`, then:\n  - Remote `main` is updated to the new history (good).\n  - Remote feature branches remain on the **old** history.\n  - Local feature branches point to **new** history (assuming you rewrote all refs), so they can\u2019t be pushed without a force-push.\n\nSo you end up with:\n\n- Local branches: rewritten (new SHAs).\n- Remote `main`: rewritten (new SHAs).\n- Remote feature branches: old history (old SHAs).\n\nYour \u201crebase or delete\u201d step only addresses **local** topology, not the mismatch between local and remote branches.\n\n**Cleaner patterns:**\n\n1. **Rewrite main only:**\n\n   - Run filter-repo with `--refs main` so only `main` is rewritten.[7]\n   - Force-push main.\n   - For each feature branch that you still care about, do an interactive rebase onto new main (as you propose) and push with `--force-with-lease` or create new branches if you prefer not to force-push.\n   - Old remote branches (and the backup branch for main) serve as archival references to the pre-rewrite history.\n\n2. **Rewrite all active branches and tags:**\n\n   - Run filter-repo without `--refs` (as you currently do).\n   - Force-push **all** active branches and tags (after pushing backups).\n   - There is then no \u201crebase\u201d step; the topology is preserved, just with new SHAs.\n\nYour current hybrid (rewrite everything locally, push only main, then manually rebase local branches) is both more work and more confusing than either clean pattern.\n\n***\n\n## Missing safety/verification steps\n\nSeveral safety practices you mention in the risk table are not concretely integrated into the plan:\n\n- **Fresh-clone dry run:** git-filter-repo\u2019s own docs strongly suggest running on a fresh clone and warn when the repo doesn\u2019t look fresh. Your plan should explicitly say: \u201cClone a disposable copy, run filter-repo there first, inspect results, then repeat on the real clone.\u201d[4][5]\n\n- **Post-rewrite verification:**\n  - Compare `git shortlog -sn` or `git log --format='%h %an <%ae>'` before and after with `--use-mailmap` and without, to ensure only the intended identities changed.[26][24]\n  - Spot-check several representative commits (one per bot author, several with Co-authored-by trailers) to confirm that:\n    - Author/committer now show `jfaber@caltech.edu`.\n    - Only the targeted Co-Authored-By lines disappeared.\n    - Other message content is untouched.\n\n- **Integrity checks:** run `git fsck` after the rewrite to ensure you didn\u2019t end up with dangling refs or corruption.[5][4]\n\n- **GitHub side validation:** once pushed, verify:\n  - Repo contributors page shows only the intended accounts.\n  - A sample PR view and commit view no longer show bot avatars/co-authors.\n\n***\n\n## Better or alternative approaches\n\n- For the **author/committer rewrite**, `--mailmap` is simpler and more maintainable than an ad-hoc `--commit-callback` or `--email-callback`, and you\u2019re using it correctly.[1][3][10]\n\n- For the **message rewrite**, an interactive rebase over 235 commits would be unnecessarily manual. Using `--message-callback` with a well-tested regex is the right approach; just simplify it (as shown above) and test on a throwaway clone first.[12][7][6]\n\n- If you want to limit blast radius, consider restricting the rewrite to `main` with `--refs main`, then doing targeted rebases for any living feature branches you care about. Given you\u2019re the sole maintainer, rewriting all branches and tags is also acceptable if you fully commit to force-pushing them.[7]\n\n- There\u2019s no way to make `.mailmap` alone affect GitHub\u2019s contributors page; gitmailmap is explicitly for local reporting tools like `git shortlog`, `git log --use-mailmap`, etc., and does not alter stored history. So your choice to use a history rewrite (rather than just `.mailmap`) is necessary for the GitHub-visible outcome.[2][9][8]\n\n***\n\n## Direct answers to your eight questions\n\n1. **Is git-filter-repo with `--mailmap` + `--message-callback` the right tool?**  \n   Yes, it\u2019s an appropriate and modern approach, but you should:\n   - Run it on a fresh clone (or use `--force`) and document that.[4][5]\n   - Decide whether to rewrite only `main` (`--refs main`) or all branches/tags, and align your push/branch strategy with that.[7][6]\n\n2. **Is the message-callback regex correct for stripping only the agent Co-Authored-By lines?**  \n   Conceptually yes: it is tightly scoped to `Co-authored-by:` plus the specific bot emails. Implementation-wise you must:[13][14][15]\n   - Fix indentation so the callback compiles.[6]\n   - Decide whether to handle trailing annotations on the same line and preserve trailing newlines, or switch to a simpler `re.sub` approach over the whole message.[12][7][6]\n\n3. **Are there missing safety steps (dry run, verification, recovery)?**  \n   Yes:\n   - Run filter-repo first in a disposable clone.\n   - Create a full backup (mirror clone and/or tags on the old history), not just a few backup branches.[22][23][21]\n   - Verify author/committer and messages before pushing, and run `git fsck` afterward.[5][4]\n\n4. **Is `--force-with-lease` sufficient, or should you use a different push strategy?**  \n   `--force-with-lease` is the right primitive for safety. But:[24]\n   - You should push **all** rewritten branches/tags you intend to keep, not only `main`.\n   - Ensure `.git/config` still has the correct `origin` and branch configs after filter-repo, or re-add them before pushing.[10][5]\n\n5. **Will `--mailmap` apply to both author and committer?**  \n   Yes. git-filter-repo\u2019s `--mailmap` rewrites **author, committer, and tagger** names/emails using the mailmap file. You do not need a separate committer-fix mechanism.[3][1][10]\n\n6. **Can filter-repo handle a commit whose message is edited and whose author is rewritten in the same run?**  \n   Yes. `--mailmap` and `--message-callback` operate on different aspects of the commit object (names/emails vs message bytes) and are designed to be composed in a single pass. There is no conflict; you will just get a new commit whose author/committer reflect the mailmap and whose message reflects your callback.[1][6]\n\n7. **Is your branch-reconciliation approach (rebase or discard) right, or is there a cleaner pattern?**  \n   It\u2019s workable but not ideal:\n   - Either rewrite only `main` (using `--refs main`) and then explicitly rebase or delete feature branches, or\n   - Rewrite *all* branches/tags and force-push them together, avoiding extra rebases.[25][7][6]\n   The current plan (rewrite everything, push only `main`, then rebase local branches) is more complex and leaves remote branches in the old history.\n\n8. **Anything else missed?**  \n   Key additional points:\n   - Fix the `--message-callback` indentation and newline preservation or switch to a `re.sub`-based callback.\n   - Decide on a single canonical identity in `.mailmap` for Cursor Agent to avoid conflicting mappings.\n   - Explicitly consider tags and remote-only branches in your backup and push strategy.\n   - Accept that this is a permanent history rewrite and consider leaving an explicit \u201chistory-rewritten\u201d note (tag or README section) for future you and any potential collaborators.[25][4]\n\nIf you\u2019d like, I can propose a concrete, ready-to-run sequence (fresh-clone + exact filter-repo command + verification commands + push commands) tailored to \u201crewrite only main\u201d vs \u201crewrite all refs.\u201d",
+  "web_results": [
+    {
+      "name": "git-filter-repo(1) - Debian Manpages",
+      "url": "https://manpages.debian.org/testing/git-filter-repo/git-filter-repo.1.en.html",
+      "snippet": "--mailmap <filename> Use specified mailmap file (see git-shortlog(1) for details on the format) when rewriting author, committer, and tagger names and emails. If the specified file is part of git history, historical versions of the file will be ignored; only the current contents are consulted. ... \u2022Generic python callbacks for handling a certain type of data (the filename, message, name, email, and refname callbacks) ... \u2022The ability to import filter-repo as a module in a python program and..."
+    },
+    {
+      "name": "gitmailmap Documentation - Git",
+      "url": "https://git-scm.com/docs/gitmailmap",
+      "snippet": ""
+    },
+    {
+      "name": "git-filter-repo: Rewrite repository history | Man Page | Commands",
+      "url": "https://www.mankier.com/1/git-filter-repo",
+      "snippet": "Rapidly rewrite entire repository history using user-specified filters."
+    },
+    {
+      "name": "Git Filter-Repo: The Best Way to Rewrite Git History - Git Tower",
+      "url": "https://www.git-tower.com/learn/git/faq/git-filter-repo",
+      "snippet": "Git Filter-Repo allows users to remove files, rewrite commit messages, change author information, and restructure repositories while preserving commit history."
+    },
+    {
+      "name": "Should I use git-filter-repo on the repo clone or on the self hosted bare repo?",
+      "url": "https://stackoverflow.com/questions/76973710/should-i-use-git-filter-repo-on-the-repo-clone-or-on-the-self-hosted-bare-repo",
+      "snippet": "There's a self hosted git repository on a Windows Server (Bonobo based if anyone interested). The repository got bloated up because of binary blobs and I'd like to strip out these large blobs along..."
+    },
+    {
+      "name": "git-filter-repo - Rewrite repository history - Ubuntu Manpages",
+      "url": "https://manpages.ubuntu.com/manpages/jammy/man1/git-filter-repo.1.html",
+      "snippet": "For flexibility, filter-repo allows you to specify functions on the command line to further filter all changes. Please note that there are some API compatibility caveats associated with these callbacks that you should be aware of before using them; see the \"API BACKWARD COMPATIBILITY CAVEAT\" comment near the top of git-filter-repo source code. All callback functions are of the same general format. For a command line argument like --foo-callback 'BODY' the following code will be compiled and..."
+    },
+    {
+      "name": "Using git filter-repo to rewrite commit history - Aaron He's blog",
+      "url": "https://aaronhe.org/git-filter-repo-to-rewrite-commit-history/",
+      "snippet": "git filter-repo is a neat tool to rewrite commit history. A recent use case required me to move an entire repository to another repository while preserving history. A simple git subtree would do the move, but one little problem is after the commit history moved over, the commit messages would"
+    },
+    {
+      "name": "gitmailmap(5)",
+      "url": "https://www.kernel.org/pub/software/scm/git/docs/gitmailmap.html",
+      "snippet": "$GIT_WORK_TREE/.mailmap If the file . mailmap exists at the toplevel of the repository, or at the location pointed to by the mailmap.file or mailmap.blob configuration options (see git-config(1)), it is used to map author and committer names and email addresses to canonical real names and email addresses. The *#* character begins a comment to the end of line, blank lines are ignored. In the simple form, each line in the file consists of the canonical real name of an author, whitespace, and an..."
+    },
+    {
+      "name": "gitmailmap(5)",
+      "url": "https://man.archlinux.org/man/gitmailmap.5.en",
+      "snippet": "GITMAILMAP(5)Git ManualGITMAILMAP(5) gitmailmap - Map author/committer names and/or E-Mail addresses $GIT_WORK_TREE/.mailmap If the file .mailmap exists at the toplevel of the repository, or at the location pointed to by the mailmap.file or mailmap.blob configuration options (see git-config(1)), it is used to map author and committer names and email addresses to canonical real names and email addresses. The *#* character begins a comment to the end of line, blank lines are ignored. In the..."
+    },
+    {
+      "name": "Using filter-repo to modify git commit history - immwind - \u957f\u98ce",
+      "url": "http://x.immwind.com/git-filter-repo?locale=en",
+      "snippet": "\u524d\u4e24\u5929\u53d1\u73b0\u6709\u4e2a\u9879\u76ee\u7684 git \u90ae\u7bb1\u5199\u9519\u4e86\uff0c\u8d81\u4eca\u5929\u7a0d\u5fae\u7a7a\u4e9b\u51c6\u5907\u796d\u51fa\u7956\u4f20\u7684\u811a\u672c\u8fdb\u884c\u4fee\u6539\uff0c\u8c01\u77e5\u51fa\u73b0\u63d0\u793a: \"git-filter-branch has a glut of gotchas generating mangled history rewrites. Hit Ctrl-C\u2026"
+    },
+    {
+      "name": "git-filter-repo/Documentation/examples-from-user-filed-issues.md at ...",
+      "url": "https://github.com/newren/git-filter-repo/blob/main/Documentation/examples-from-user-filed-issues.md",
+      "snippet": "Quickly rewrite git repository history (filter-branch replacement) - newren/git-filter-repo"
+    },
+    {
+      "name": "How to change git history with git-filter-repo - Krzysztof Marczewski",
+      "url": "https://selfformat.com/blog/2025/02/26/how-to-change-git-history-with-git-filter-repo/",
+      "snippet": "Learn how to efficiently modify and rewrite your Git repository history using git-filter-repo in this step-by-step guide co-authored with Krzysztof Babis"
+    },
+    {
+      "name": "Creating a commit with multiple authors - GitHub Docs",
+      "url": "https://docs.github.com/en/enterprise-server@3.17/pull-requests/committing-changes-to-your-project/creating-and-editing-commits/creating-a-commit-with-multiple-authors",
+      "snippet": "You can attribute a commit to more than one author by adding one or more Co-authored-by trailers to the commit's message. Co-authored commits are visible on GitHub and can be included in the profile contributions graph and the repository's statistics."
+    },
+    {
+      "name": "Creating and editing commits - GitHub Enterprise Server 3.17 Docs",
+      "url": "https://docs.github.com/en/enterprise-server@3.17/pull-requests/committing-changes-to-your-project/creating-and-editing-commits",
+      "snippet": "Get started, troubleshoot, and make the most of GitHub. Documentation for new users, developers, administrators, and all of GitHub's products."
+    },
+    {
+      "name": "Do you attribute AI-assisted commits with co-authors? | SSW.Rules",
+      "url": "https://www.ssw.com.au/rules/attribute-ai-assisted-commits-with-co-authors",
+      "snippet": "Learn how to properly attribute commits when using AI coding assistants like Claude Code, GitHub Copilot, Cursor, and OpenCode. This standard ensures proper credit and transparency in AI-human collaboration."
+    },
+    {
+      "name": "How to nicely make Cursor to be commit co-author on GitHub?",
+      "url": "https://forum.cursor.com/t/how-to-nicely-make-cursor-to-be-commit-co-author-on-github/115782",
+      "snippet": "When using claude code, it adds \u201cCo-Authored-By: Claude noreply@anthropic.com\u201d to the commit message, which have my commits on GitHub shows a nifty co-author that leads to claude github user when clicking on it. How can I achieve the similar behavior with Cursor? i don\u2019t mind manually adding the Co-Authored-By. I just want the commit co-author to be displayed nicely."
+    },
+    {
+      "name": "The New Git Blame: Who's Responsible When AI Writes the Code?",
+      "url": "https://dev.to/pullflow/the-new-git-blame-whos-responsible-when-ai-writes-the-code-285j",
+      "snippet": "git blame used to be simple. It told you who wrote a line of code\u2014and maybe, if you squinted at the..."
+    },
+    {
+      "name": "Co-Authored-By trailer added to commits without user consent #1670",
+      "url": "https://github.com/ruvnet/ruflo/issues/1670",
+      "snippet": "Description When using claude-flow (via @claude-flow/cli), every git commit created during a session automatically includes the trailer: Co-Authored-By: claude-flow <ruv@ruv.net> This happens witho..."
+    },
+    {
+      "name": "What's the verdict on Claude adding \"Co-authored-by\" to ... - Reddit",
+      "url": "https://www.reddit.com/r/git/comments/1py9rcv/whats_the_verdict_on_claude_adding_coauthoredby/",
+      "snippet": "What\u2019s the verdict on Claude adding \"Co-authored-by\" to every commit?"
+    },
+    {
+      "name": "Contribution graph not showing \"Co-authored-by\" commits #186410",
+      "url": "https://github.com/orgs/community/discussions/186410",
+      "snippet": "Select Topic Area Question Body We usually do pair-programming and we realize that all the \"Co-authored-by\" commits are not counted in the graph. They are only counted for the one who do the commit..."
+    },
+    {
+      "name": "git-gc Documentation - Git",
+      "url": "https://git-scm.com/docs/git-gc",
+      "snippet": "If the file gc.log exists, then git gc --auto will print its content and exit with status zero instead of running unless that file is more than*gc.logExpiry* old. Default is \"1.day\". See gc.pruneExpire for more ways to specify its value. ... gc.reflogExpire gc.<pattern>.reflogExpire *git reflog expire* removes reflog entries older than this time; defaults to 90 days. The value \"now\" expires all entries immediately, and \"never\" suppresses expiration altogether. With \"<pattern>\" (e.g...."
+    },
+    {
+      "name": "git-reflog Documentation - Git",
+      "url": "https://git-scm.com/docs/git-reflog",
+      "snippet": "--expire= *<time> Prune entries older than the specified time. If this option is not specified, the expiration time is taken from the configuration setting gc.reflogExpire , which in turn defaults to 90 days. --expire=all prunes entries regardless of their age; --expire=never turns off pruning of reachable entries (but see --expire-unreachable ). --expire-unreachable= *<time> Prune entries older than *<time>* that are not reachable from the current tip of the branch. If this option is not..."
+    },
+    {
+      "name": "git gc | Git garbage collection for orphaned, dangling objects",
+      "url": "https://initialcommit.com/blog/git-gc",
+      "snippet": "A complete guide to using the git gc command for garbage collection in your Git repo."
+    },
+    {
+      "name": "How do I change the author and committer name/email for multiple ...",
+      "url": "https://stackoverflow.com/questions/750172/how-do-i-change-the-author-and-committer-name-email-for-multiple-commits",
+      "snippet": "How do I change the author for a range of commits?"
+    },
+    {
+      "name": "git-filter-repo/Documentation/converting-from-filter-branch.md at main \u00b7 newren/git-filter-repo",
+      "url": "https://github.com/newren/git-filter-repo/blob/main/Documentation/converting-from-filter-branch.md",
+      "snippet": "Quickly rewrite git repository history (filter-branch replacement) - newren/git-filter-repo"
+    },
+    {
+      "name": "git-check-mailmap Documentation - Git",
+      "url": "https://git-scm.com/docs/git-check-mailmap/2.0.5",
+      "snippet": ""
+    },
+    {
+      "name": "How do I change the author and committer name/email for multiple ...",
+      "url": "https://www.designgurus.io/answers/detail/how-do-i-change-the-author-and-committer-nameemail-for-multiple-commits",
+      "snippet": "How do I change the author and committer name/email for multiple commits?"
+    },
+    {
+      "name": ".mailmap - gn - Git at Google",
+      "url": "https://gn.googlesource.com/gn/+/main/.mailmap",
+      "snippet": "# This file allows mapping several author and committer email addresses and # names to a single canonical one for git shortlog, git log --author, # or git check-mailmap. # # For example, if you commit as random.person@example.com but sometimes use # \"Ra\u00f1dom Person\" and sometimes \"Random Person\" as name and you want the former # to be your canonical name, add # # Ra\u00f1dom Person <random.person@example.com> # # If you commit as both random.person@example.com and ranp@example.com and # you want the..."
+    },
+    {
+      "name": "git-filter-repo - changing author and committer email in ... - GitHub Gist",
+      "url": "https://gist.github.com/rm3l/0ef83820ab8731fd67db97ab9118d752",
+      "snippet": "git-filter-repo - changing author and committer email in multiple commits - git-filter-repo-change-commit-email.sh"
+    },
+    {
+      "name": "Using git mailmap when names change (or you mess up your email)",
+      "url": "https://ntietz.com/blog/git-mailmap-for-name-changes/",
+      "snippet": "Fortunately, we can paper over it by using git mailmap. This lets you replace the name and email addresses on commits with the correct ones. It's pretty straightforward. You create a file called .mailmap in the root of your repository. In it, each line says how to remap an email address (blank lines are ignored, and begins comments). There are a few different ways you can do this, which are provided in the docs. There's one that I think is the most useful, though. You list the correct name,..."
+    },
+    {
+      "name": "Write a shell script or Python code with default arguments for git-filter ...",
+      "url": "https://stackoverflow.com/questions/78181978/write-a-shell-script-or-python-code-with-default-arguments-for-git-filter-repo",
+      "snippet": "Sometimes, I need to change the author/committer email and name (assume author=committer always) for all commits in a repository. I need to do this once for repo, but I may need to do it for multiple"
+    },
+    {
+      "name": "How to use `git-filter-repo` to change author's and committer's date ...",
+      "url": "https://stackoverflow.com/questions/73576102/how-to-use-git-filter-repo-to-change-authors-and-committers-date-e-mail-and",
+      "snippet": "I wanted to use git filter-branch to rewrite each commit or SHA1 message history with a different author and committer's date, e-mail, and name, but I've been warned against this usage and encourag..."
+    },
+    {
+      "name": "git-filter-repo(1) \u2014 git-filter-repo \u2014 Debian bullseye-backports",
+      "url": "https://manpages.debian.org/bullseye-backports/git-filter-repo/git-filter-repo.1.en.html",
+      "snippet": ""
+    },
+    {
+      "name": "How do I add a co-author to latest pushed git commit? - Stack Overflow",
+      "url": "https://stackoverflow.com/questions/64311092/how-do-i-add-a-co-author-to-latest-pushed-git-commit",
+      "snippet": "I need to add a co-author to my last commit and I tried using git commit --amend --author=\"name <name@email.com>\" but change --author to --co-authored-by. I thought this would be an"
+    },
+    {
+      "name": "How to Handle Git Reflog for Recovery - OneUptime",
+      "url": "https://oneuptime.com/blog/post/2026-01-24-git-reflog-recovery/view",
+      "snippet": "Learn how to use Git reflog to recover lost commits, branches, and changes after accidental resets, rebases, or other destructive operations."
+    },
+    {
+      "name": "Co-author added without consent and can't be turned off!?",
+      "url": "https://forum.cursor.com/t/co-author-added-without-consent-and-cant-be-turned-off/150096",
+      "snippet": "Where does the bug appear (feature/product)? Cursor IDE Describe the Bug Is this a f* joke? In your newest version, you now auto add Cursor as co-author to all git commits?? And not even allowing users to deactivate this?? \u2018\u2019\u2019 \u2013trailer \u201cCo-authored-by: Cursor cursoragent@cursor.com\u201d \u2018\u2019\u2019 Option 1: Give clear infos/settings to turn this sh off. or Option 2: Be prepared for people to stop using Cursor and move to Claude Code and other services instead. I have zero interest in constan..."
+    },
+    {
+      "name": "Where is git reflog expire configuration stored? - Stack Overflow",
+      "url": "https://stackoverflow.com/questions/61743148/where-is-git-reflog-expire-configuration-stored",
+      "snippet": "I learned that git reflog will expired if the log is older than x days. The documentation says the default is 90 days. And it says the default got from configuration. So, I try to check it using ..."
+    },
+    {
+      "name": "How to keep the file in the file system with filter-repo? #527 - GitHub",
+      "url": "https://github.com/newren/git-filter-repo/issues/527",
+      "snippet": "I have successfully ran git-filter-repo as git filter-repo --invert-paths --path server/apps/main/external_sources/file.py --force It did exactly what I wanted it to do, it removed all references t..."
+    },
+    {
+      "name": "How `git-filter-repo` work on most recent commits that still ...",
+      "url": "https://github.com/newren/git-filter-repo/issues/105",
+      "snippet": "My current repo consists of a lot of binary files (*.dll, *.msm)and they have eaten up a large chunk of the repo size. A Bitbucket repo has a limit of 2GB. So my BIG repo is now running at 1.99GB, ..."
+    }
+  ],
+  "follow_up": {
+    "backend_uuid": "2e866159-d000-42a8-9d35-04917a3488f0",
+    "attachments": []
+  }
+}

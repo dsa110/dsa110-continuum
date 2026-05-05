@@ -1,0 +1,449 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{parskip}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{array}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\small DSA-110 Continuum Pipeline (\texttt{dsa110-continuum})}
+\lhead{\small Technical Report}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\setlength{\headheight}{14pt}
+
+\titlespacing*{\section}{0pt}{1.4ex plus 0.5ex minus 0.2ex}{0.8ex plus 0.2ex}
+\titlespacing*{\subsection}{0pt}{1.0ex plus 0.3ex minus 0.2ex}{0.5ex}
+\titlespacing*{\subsubsection}{0pt}{0.8ex}{0.4ex}
+
+\definecolor{codegray}{gray}{0.93}
+\newcommand{\code}[1]{\colorbox{codegray}{\texttt{\small #1}}}
+\newcommand{\degr}{\ensuremath{^\circ}}
+
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{3cm}
+  {\LARGE\bfseries The DSA-110 Continuum Imaging Pipeline\\[0.4em]
+   A Technical Report from Source Analysis of the\\[0.2em]
+   \texttt{dsa110-continuum} Repository\par}
+  \vspace{1.5cm}
+  {\large Caltech / Owens Valley Radio Observatory\par}
+  \vspace{1.2cm}
+  {\normalsize\itshape
+   Compiled from direct source analysis of\\
+   \texttt{/data/dsa110-continuum/}\\
+   (package \texttt{dsa110\_contimg}, version 0.1.0)\par}
+  \vspace{0.6cm}
+  {\normalsize Author: Jakob T.\ Faber (\texttt{jfaber@caltech.edu})\par}
+  \vfill
+  {\normalsize March 2026}
+\end{titlepage}
+
+\section*{Abstract}
+\addcontentsline{toc}{section}{Abstract}
+
+The \texttt{dsa110-continuum} repository is the current production continuum
+imaging pipeline for the DSA-110 radio interferometric array at the Owens
+Valley Radio Observatory (OVRO), California.  It is a clean rewrite and
+active successor to the archived \texttt{dsa110-contimg} codebase.  The
+pipeline ingests raw drift-scan correlated visibilities in UVH5/HDF5 format,
+converts them to CASA Measurement Sets, applies direction-independent delay,
+bandpass, and gain calibration, rephases the data to a common meridian phase
+centre, images with WSClean, mosaics multiple drift-scan tiles, and performs
+multi-epoch aperture photometry to detect Extreme Scattering Events (ESEs).
+This report describes the pipeline architecture, each processing stage,
+the imaging and mosaicking strategy, and the variability analysis framework,
+drawn entirely from direct source-code analysis.
+
+\section{Introduction and Science Context}
+
+The DSA-110 is a 110-dish interferometric array (4.7\,m dishes) operating at
+L-band ($\sim$1.28--1.53\,GHz) at OVRO.  Its primary real-time science
+objective is the detection and sub-arcsecond localisation of fast radio
+bursts (FRBs).  The continuum pipeline described here operates in a
+complementary mode, producing multi-epoch sky maps from drift-scan survey
+observations for two downstream science goals:
+(1) monitoring of persistent radio source populations for flux variability, and
+(2) detection of \textbf{Extreme Scattering Events} (ESEs)---transient
+refractive lensing events in the Galactic interstellar plasma that produce
+characteristic $\sim$2$\times$ flux-density dips lasting days to weeks in
+compact extragalactic sources.
+
+The pipeline is implemented in Python~$\geq$3.11 as the package
+\texttt{dsa110\_contimg} (version 0.1.0, MIT licence).  Its canonical science
+verification target is a calibrated image of 3C~454.3 (expected peak flux
+$\approx$12.5\,Jy/beam) produced from test data acquired on 2026-01-25.
+Key external dependencies include CASA~6.x (via \texttt{python-casacore}
+and \texttt{casatasks}) for calibration, WSClean for imaging, EveryBeam for
+primary beam modelling, and \texttt{pyuvdata~3.2.5} for HDF5 ingest.  The
+workflow engine is Dagster ($\geq$1.12.10), with SQLite used for catalog
+storage, photometric products, and pipeline state.
+
+\section{Reference Pipeline Execution}
+
+The canonical execution sequence is defined in
+\texttt{scripts/run\_pipeline.py} and consists of four steps:
+\begin{enumerate}[leftmargin=2em]
+  \item Phaseshift the science MS to the median meridian phase centre.
+  \item Apply pre-computed bandpass and gain calibration tables.
+  \item Image the calibrated data with WSClean.
+  \item Verify the peak flux in the output FITS image.
+\end{enumerate}
+
+Calibration tables (bandpass \texttt{.b} and gain \texttt{.g}) are produced
+from a separate calibrator observation and stored as CASA calibration tables.
+Application uses \code{apply\_to\_target} with
+\code{interp=["linear","linear"]}.  A ratio test
+$\langle|\text{CORRECTED}|\rangle / \langle|\text{DATA}|\rangle > 5$
+is checked on 10\,000 rows after application to confirm that calibration has
+materially altered the visibilities.
+
+\section{Data Ingestion: UVH5 to Measurement Set}
+
+\subsection{Subband Grouping and Writer Strategy}
+
+The DSA-110 correlator writes 16 sub-band files per $\sim$5-minute
+observation chunk, named \texttt{\{timestamp\}\_sb\{NN\}.hdf5} for
+$\text{NN} \in \{00,\ldots,15\}$, spanning $\sim$250\,MHz at L-band.
+The \texttt{ConversionOrchestrator} queries a pipeline SQLite database for
+valid subband groups and routes each group to a \texttt{DirectSubbandWriter}.
+This is the sole production writer type; the \texttt{pyuvdata},
+\texttt{parallel-subband}, and \texttt{auto} writer types are explicitly
+rejected at the factory level.
+
+\subsection{Phase Centre Assignment}
+
+DSA-110 is a transit (drift-scan) instrument that cannot track in right
+ascension.  A 5-minute observation therefore sweeps out $\sim$24 distinct
+sky positions.  The function \texttt{phase\_to\_meridian} in
+\texttt{conversion/helpers\_coordinates.py} assigns a unique per-timestamp
+phase centre at $\text{RA} = \text{LST}(t)$, $\text{Dec} = \text{pointing dec}$,
+creating one PyUVData phase-centre catalog entry per unique timestamp
+(\texttt{coord\_frame="icrs"}, \texttt{coord\_epoch=2000.0}).
+
+\subsection{UVW Reconstruction}
+
+After phase centres are assigned, UVW coordinates are derived geometrically
+from a survey-grade ITRF antenna position file via
+\texttt{compute\_and\_set\_uvw}, which calls
+\texttt{pyuvdata.utils.phasing.calc\_uvw} with \texttt{use\_ant\_pos=True}.
+A known issue in PyUVData~3.2+ requires the ITRF telescope location to be
+supplied as plain float arrays (not astropy Quantity objects) to avoid a
+\texttt{UnitTypeError} in \texttt{calc\_app\_coords}; units are stripped
+explicitly at the call site.
+
+\subsection{Telescope Identity Patching}
+
+\texttt{set\_telescope\_name} (\texttt{conversion/helpers\_telescope.py})
+patches \texttt{OBSERVATION::TELESCOPE\_NAME} to \texttt{DSA\_110} in the
+written MS.  EveryBeam must see \texttt{DSA\_110} to select the correct
+beam model.  The SPW-merge step executed before IDG imaging resets this
+field to \texttt{OVRO\_MMA} for CASA compatibility; it is therefore
+re-applied immediately before every WSClean run.
+
+\section{Phaseshift to Median Meridian}
+
+Before calibration is applied or imaging begins, all fields in the science
+MS are rephased to a single common phase centre by \texttt{phaseshift\_ms}
+(\texttt{calibration/runner.py}).
+
+\textbf{Why this step is necessary.}  A 5-minute drift-scan observation at
+$\delta = +16\degr$ produces $\sim$24 FIELD table entries, each at a different
+RA.  Rephasing to a single median position allows CASA calibration and WSClean
+deconvolution to operate on a stationary phase centre.
+
+\textbf{Modes.}  Three rephasing modes are supported:
+\textit{median\_meridian} (default) computes the circular mean of all
+FIELD RA values and the median Dec;
+\textit{calibrator} looks up a calibrator position from a VLA SQLite database
+and verifies it was transiting within $5\degr$ of the LST range;
+\textit{manual} accepts explicit RA/Dec coordinates.
+
+\textbf{Implementation.}  By default, rephasing uses WSClean's
+\texttt{chgcentre} utility, falling back to CASA \texttt{phaseshift} when
+\texttt{chgcentre} is unavailable.  After \texttt{chgcentre} completes, two
+metadata fixes are applied: (1) the new phase centre is written to all entries
+in \texttt{FIELD::PHASE\_DIR} (which \texttt{chgcentre} may not update),
+and (2) \texttt{FIELD::REFERENCE\_DIR} is synchronised to match, because
+CASA's \texttt{ft()} task reads \texttt{REFERENCE\_DIR}---not
+\texttt{PHASE\_DIR}---when computing model visibilities.
+The \texttt{POINTING}, \texttt{SYSCAL}, and \texttt{WEATHER} subtables
+are also cleared to reduce downstream CASA concat overhead.
+
+\section{Calibration}
+
+Pre-computed calibration tables are derived from a dedicated bright calibrator
+observation.  The application chain is K $\to$ B $\to$ G, though K (delay)
+solutions are used only for diagnostics and are not propagated into the
+science data by default.
+
+\subsection{Delay Calibration (K)}
+
+Solved by \texttt{solve\_delay} using CASA \texttt{gaincal} with
+\texttt{gaintype="K"}, \texttt{solint="inf"} (slow) or \texttt{solint="60s"}
+(fast).  The source code explicitly documents: \textit{``K solutions are
+computed and stored for diagnostics and QA.  They are NOT automatically
+applied in later gain calibration stages.''}
+
+\subsection{Bandpass Calibration (B)}
+
+Solved by \texttt{solve\_bandpass} using CASA \texttt{bandpass} with:
+\texttt{solint="inf"} (per-channel solution, one per scan);
+\texttt{solnorm=True}; \texttt{minsnr=3.0}; \texttt{minblperant=4};
+\texttt{uvrange=">1klambda"}; \texttt{fillgaps=3} (interpolates up to
+3 consecutive flagged channels); \texttt{combine\_fields=True}.
+QA thresholds on per-channel flag fraction:
+$<$3\% = PRISTINE; 3--5\% = GOOD; 5--10\% = MODERATE;
+10--20\% = HIGH; $>$20\% = CRITICAL.
+
+\subsection{Gain Calibration (G)}
+
+Solved by \texttt{solve\_gains} using a two-timescale approach.
+(1) Long timescale (\texttt{.g}): \texttt{calmode="ap"},
+\texttt{solint="inf"}, \texttt{gaintable=[bptable]}, \texttt{minsnr=3.0}.
+(2) Short timescale (\texttt{.2g}): identical except \texttt{solint="60s"},
+with the long-timescale table added to \texttt{gaintable}.
+Reference antennas are specified as a priority-ordered comma-separated
+string (e.g., \texttt{"103,111,113,115,104"}).
+
+\subsection{Self-Calibration (Optional)}
+
+A full self-calibration framework exists in \texttt{selfcal.py} and
+\texttt{selfcal\_routine.py} but is not yet integrated into the reference
+pipeline script.  The \texttt{SelfCalRoutineConfig} default scheme performs
+two phase-only iterations (solints \texttt{"inf"} and \texttt{"60s"}) with
+progressive auto-mask tightening ($5\sigma \to 4\sigma$), imaging at
+$4096 \times 4096$\,px, $2.5''$/pixel, 50\,000 iterations, \texttt{mgain=0.9}.
+An optional amplitude+phase pass (\texttt{solint="int"}, \texttt{minsnr=5.0})
+is disabled by default.
+
+\section{Imaging}
+
+\subsection{Backend: WSClean}
+
+The default and primary imaging backend is \textbf{WSClean}
+\cite{offringa2014wsclean}, invoked as a managed subprocess by
+\texttt{image\_ms} in \texttt{imaging/cli\_imaging.py}.  CASA
+\texttt{tclean} is available as a fallback (\texttt{backend="tclean"})
+but is not used in the reference pipeline.  WSClean is located via an
+explicit path override, \texttt{shutil.which("wsclean")}, or the Docker
+image \texttt{dsa110-contimg:gpu}.
+
+\subsection{Default Imaging Parameters}
+
+Default parameters are defined in the \texttt{ImagingParams} dataclass
+(\texttt{imaging/params.py}) and are summarised in Table~\ref{tab:wsclean}.
+The reference script uses \texttt{gridder="wgridder"}; the
+\texttt{ImagingParams} default is \texttt{"idg"} (GPU Image Domain Gridding).
+
+\begin{table}[h!]
+  \centering
+  \caption{Default WSClean imaging parameters.}
+  \label{tab:wsclean}
+  \begin{tabular}{lll}
+    \toprule
+    \textbf{Flag} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{-gridder}            & \code{idg} / \code{wgridder}   & IDG (GPU); wgridder in ref.\ run \\
+    \code{-idg-mode}           & \code{gpu}                     & Falls back to \code{cpu} \\
+    \code{-size}               & $2400\times2400$\,px            & \\
+    \code{-scale}              & $6''$/pixel                     & \\
+    \code{-weight briggs}      & robust $= 0.5$                  & \\
+    \code{-niter}              & 1000                            & 10\,000 in survey preset \\
+    \code{-abs-threshold}      & 5\,mJy                          & \\
+    \code{-auto-mask}          & $5\sigma$                       & \\
+    \code{-auto-threshold}     & $1.0\sigma$                     & \\
+    \code{-mgain}              & 0.8                             & \\
+    \code{-apply-primary-beam} & True                            & Via EveryBeam \\
+    \code{-minuv-l}            & 1000 ($>$1\,k$\lambda$)         & \\
+    \code{-pol}                & I                               & Stokes I only \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The $2400 \times 2400$\,pixel grid at $6''$/pixel covers
+$\approx 3.5\degr \times 3.5\degr$, sampling the $\sim$15$''$ synthesized
+beam at $\approx$2.5\,pixels.
+
+\subsection{IDG and Multi-SPW Merging}
+
+IDG requires a single-SPW Measurement Set.  When the input has multiple
+SPWs (the typical case after 16-subband combination), the pipeline merges
+them via \texttt{merge\_spws()} into a temporary
+\texttt{\{stem\}\_idg\_merged.ms}, runs WSClean, then deletes the file.
+
+\subsection{Primary Beam Correction}
+
+Primary beam correction is applied by WSClean via
+\texttt{-apply-primary-beam} calling EveryBeam.  EveryBeam requires
+\texttt{OBSERVATION::TELESCOPE\_NAME = DSA\_110} to load the correct beam
+model; this is patched into the MS immediately before each WSClean
+invocation.
+
+\subsection{Sky Model Seeding}
+
+Before deconvolution, \texttt{MODEL\_DATA} is pre-populated via a two-step
+WSClean prediction: (1) \texttt{make\_unified\_wsclean\_list} queries a
+FIRST+RACS+NVSS unified catalog above a configurable flux threshold within
+the primary beam extent and writes a WSClean-format source list; (2)
+\texttt{wsclean -draw-model} renders the list to a model FITS image; (3)
+\texttt{wsclean -predict} de-grids it back into \texttt{MODEL\_DATA}.
+The seeding radius is derived from the primary beam FWHM
+($1.22\lambda/D$, $D=4.7$\,m) and \texttt{pblimit} (default 0.2).
+A corresponding FITS mask is also generated and passed via
+\texttt{-fits-mask}, restricting deconvolution to known source positions
+and accelerating cleaning by 2--4$\times$.
+
+\subsection{Quality Tiers}
+
+Three quality tiers are defined: \textit{development} (300 iterations,
+$4\times$ coarser cell, non-science), \textit{standard} (1000 iterations),
+and \textit{high\_precision} ($\geq$2000 iterations).  A \textit{survey}
+preset specifies a multiscale deconvolver with pixel scales $\{0,5,15,45\}$,
+$n_\text{terms}=2$, 10\,000 iterations, Briggs robust~$=0.0$, and $4\sigma$
+auto-masking.
+
+\section{Mosaicking}
+
+Two complementary mosaicking strategies are implemented, with automatic
+tier selection based on the time span of the input data.
+
+\subsection{QUICKLOOK Tier (Image-Domain)}
+
+\texttt{build\_mosaic} (\texttt{mosaic/builder.py}) performs linear
+mosaicking directly on already-deconvolved FITS images using primary-beam
+weighting (Airy disk model, $D=4.7$\,m, weight floor at PB $< 0.1$).
+No interpolative reprojection is applied.  Selected for time ranges $<$1\,h;
+runtime limit 5\,min.
+
+\subsection{SCIENCE and DEEP Tiers (Visibility-Domain)}
+
+\texttt{build\_wsclean\_mosaic} (\texttt{mosaic/wsclean\_mosaic.py}) performs
+visibility-domain joint deconvolution: all MS files are copied to
+\texttt{/dev/shm/mosaic}, phase-shifted to a common mean meridian with
+\texttt{run\_chgcentre}, then jointly imaged by WSClean with
+\texttt{-use-idg}, \texttt{-grid-with-beam}, \texttt{-local-rms},
+\texttt{-size 4096 4096}, \texttt{-scale 1asec}, \texttt{-niter 50000},
+\texttt{-mgain 0.6}, \texttt{-auto-threshold 3.0},
+\texttt{-parallel-deconvolution 2000}.
+SCIENCE tier is used for 1--48\,h time ranges; DEEP tier ($>$48\,h) imposes
+tighter noise and astrometric constraints with a 120\,min timeout.
+
+\section{Photometry and ESE Detection}
+
+\subsection{Variability Metrics}
+
+Three variability metrics are implemented in
+\texttt{photometry/variability.py} following Mooley et al.\ (2016) \cite{mooley2016}:
+
+\begin{itemize}[leftmargin=2em]
+  \item \textbf{$\eta$ metric} (weighted variance):
+    $\eta = \frac{N}{N-1}
+      \bigl[\langle w f^2\rangle - \langle wf\rangle^2/\langle w\rangle\bigr]$,
+    $w_i = \sigma_i^{-2}$
+  \item \textbf{$V_s$ metric} (two-epoch $t$-statistic):
+    $V_s = (f_a - f_b)/\sqrt{\sigma_a^2 + \sigma_b^2}$
+  \item \textbf{$m$ metric} (modulation index):
+    $m = 2(f_a - f_b)/(f_a + f_b)$
+\end{itemize}
+
+\subsection{ESE Candidate Detection}
+
+\texttt{detect\_ese\_candidates} (\texttt{photometry/ese\_detection.py})
+queries the \texttt{monitoring\_sources} table for all sources with
+\texttt{sigma\_deviation} $\geq$ \texttt{min\_sigma} (default $5\sigma$)
+and inserts them into an \texttt{ese\_candidates} table with
+\texttt{flag\_type='auto'}, \texttt{status='active'}, and metadata
+including coordinates, mean flux, standard deviation, $\chi^2$, and
+epoch count.
+
+\section{Catalog Infrastructure}
+
+All reference catalogs are stored as SQLite databases at
+\texttt{/data/dsa110-contimg/state/catalogs/}.  Supported catalogs:
+NVSS, FIRST, RACS (alias RAX), VLASS, ATNF pulsar catalog, and a merged
+master catalog.  Catalogs exist as per-declination strip files
+(\texttt{\{type\}\_dec\{dec\}.sqlite3}, $6\degr$ fuzzy match) or full-sky
+databases (\texttt{\{type\}\_full.sqlite3}).  All queries use a box
+pre-filter on RA/Dec followed by exact great-circle separation, returning
+a \texttt{pandas.DataFrame} with columns \texttt{ra\_deg},
+\texttt{dec\_deg}, \texttt{flux\_mjy}.  Sky model seeding draws from a
+unified FIRST+RACS+NVSS combination via
+\texttt{make\_unified\_wsclean\_list}~(\texttt{calibration/skymodels.py}).
+
+\section{Discussion}
+
+The phaseshift-to-meridian step is fundamental to the drift-scan observing
+mode: without it, each 5-minute observation would present $\sim$24 distinct
+FIELD entries to CASA and WSClean, which neither handles efficiently in the
+standard single-MS path.
+
+WSClean is preferred over CASA \texttt{tclean} for both performance and native
+EveryBeam integration.  IDG with GPU acceleration achieves 2--5$\times$ faster
+imaging than CPU alternatives at the $2400 \times 2400$ image sizes typical of
+DSA-110 fields.
+
+The most persistent engineering challenge is the treatment of coordinate
+metadata across three software layers.  The \texttt{FIELD::PHASE\_DIR}
+vs \texttt{FIELD::REFERENCE\_DIR} distinction requires explicit post-phaseshift
+synchronisation; \texttt{TELESCOPE\_NAME} must be reset from
+\texttt{OVRO\_MMA} to \texttt{DSA\_110} before every WSClean run; and
+PyUVData~3.2+ requires dimensionless floats for telescope coordinates.  Each
+fix is individually small; any omission produces a silent science-quality
+failure.
+
+\section{Summary}
+
+The \texttt{dsa110-continuum} pipeline is a complete, production-grade radio
+interferometric reduction system for the DSA-110 drift-scan survey.  Its
+processing chain spans UVH5 ingest, per-timestamp meridian phase centre
+assignment, three-stage CASA calibration, WSClean visibility-domain imaging
+with EveryBeam primary beam correction, and multi-tier mosaicking, culminating
+in multi-epoch forced photometry and automated ESE candidate detection at
+$5\sigma$.  A full self-calibration framework is implemented and ready for
+integration.  All pipeline state is persisted in SQLite, making the system
+self-contained and deployable without external database services.
+
+\begin{thebibliography}{9}
+
+\bibitem{offringa2014wsclean}
+  Offringa, A.~R.\ et al.\ 2014,
+  \textit{MNRAS}, 444, 606.
+  WSClean: An Implementation of a Fast, Generic Wide-Field Imager for
+  Radio Astronomy.
+
+\bibitem{mcmullin2007casa}
+  McMullin, J.~P.\ et al.\ 2007,
+  \textit{ASP Conf.\ Ser.}, 376, 127.
+  CASA Architecture and Applications.
+
+\bibitem{mooley2016}
+  Mooley, K.~P.\ et al.\ 2016,
+  \textit{ApJ}, 818, 105.
+  A Large Survey for Gigahertz-peaked Spectrum Sources in the Green
+  Bank Telescope Survey.
+
+\bibitem{condon1998nvss}
+  Condon, J.~J.\ et al.\ 1998,
+  \textit{AJ}, 115, 1693.
+  The NRAO VLA Sky Survey.
+
+\bibitem{becker1995first}
+  Becker, R.~H., White, R.~L., \& Helfand, D.~J.\ 1995,
+  \textit{ApJ}, 450, 559.
+  The FIRST Survey: Faint Images of the Radio Sky at Twenty Centimeters.
+
+\end{thebibliography}
+
+\end{document}

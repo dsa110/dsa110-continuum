@@ -1,0 +1,290 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{parskip}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\setlength{\headheight}{14pt}
+\newcommand{\degr}{\ensuremath{^\circ}}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{caption}
+
+% Header / footer
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\small DSA-110 Continuum Imaging Pipeline}
+\lhead{\small Technical Report}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% Section title spacing
+\titlespacing*{\section}{0pt}{1.4ex plus 0.5ex minus 0.2ex}{0.8ex plus 0.2ex}
+\titlespacing*{\subsection}{0pt}{1.0ex plus 0.3ex minus 0.2ex}{0.5ex}
+
+% Inline code style
+\definecolor{codegray}{gray}{0.93}
+\newcommand{\code}[1]{\colorbox{codegray}{\texttt{\small #1}}}
+
+% -----------------------------------------------------------------------
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{3cm}
+  {\LARGE\bfseries The DSA-110 Continuum Imaging Pipeline\\[0.4em]
+   Architecture, Data Flow, and Design Rationale\par}
+  \vspace{1.5cm}
+  {\large Technical Report\\[0.3em]
+   Owens Valley Radio Observatory\par}
+  \vspace{1.2cm}
+  {\normalsize\itshape
+   Compiled from source analysis of the\\
+   \texttt{dsa110-contimg-legacy} repository\par}
+  \vfill
+  {\normalsize March 2026}
+\end{titlepage}
+
+% -----------------------------------------------------------------------
+\section*{Abstract}
+\addcontentsline{toc}{section}{Abstract}
+
+The DSA-110 Continuum Imaging Pipeline is an automated, end-to-end software
+system for producing calibrated radio continuum sky maps from the DSA-110
+interferometric array at the Owens Valley Radio Observatory (OVRO).  The
+pipeline ingests raw correlated visibilities stored in HDF5 format, applies
+direction-independent calibration against reference catalogs, images and
+mosaics the sky using the CASA toolkit, and performs aperture photometry to
+identify transient and variable radio sources across multi-epoch observations.
+This report describes the system architecture, the five sequential processing
+stages, the three autonomous microservices that drive continuous operation, and
+the key algorithmic decisions that reflect the instrument's specific operational
+constraints.
+
+% -----------------------------------------------------------------------
+\section{Introduction}
+
+The DSA-110 is a 110-dish interferometric array of 4.7\,m dishes operating at
+L-band ($\sim$1.28--1.53\,GHz) at OVRO, California.  Its primary science
+objective is the detection and sub-arcsecond localisation of fast radio bursts
+(FRBs) through commensal wide-field survey observations
+\cite{hallinan2019dsa}.  The continuum imaging pipeline operates in parallel
+with the real-time transient detection backend, producing time-resolved sky
+maps that support multi-epoch variability studies of persistent radio sources
+and provide an independent verification channel for FRB host-galaxy
+identification.
+
+The pipeline is implemented in Python~3.10 and relies on CASA~6.6.3 (Common
+Astronomy Software Applications) for the core interferometric operations ---
+flagging, bandpass and gain calibration, deconvolution, and mosaicking.
+Supporting astronomical libraries include \texttt{pyuvdata} (HDF5 data
+ingest), \texttt{astroquery} (VizieR catalog access), \texttt{photutils}
+(source detection), and \texttt{astropy} (coordinate handling, FITS I/O, WCS).
+The system is structured around a modular, stage-based processing model with
+three long-running asynchronous microservices that communicate via a
+Redis-backed message queue, enabling fully autonomous continuous operation with
+no human scheduling.
+
+% -----------------------------------------------------------------------
+\section{Pipeline Architecture}
+
+The pipeline is organised into five sequential processing stages, orchestrated
+by a central \code{PipelineOrchestrator} class.  A \code{ProcessingBlock}
+abstraction encapsulates a single $\sim$5-minute observation chunk --- one
+complete set of 16 HDF5 sub-band files --- as the fundamental unit of work.
+Each stage is independently testable and can be skipped or replayed from
+intermediate data products on disk.
+
+\subsection{Stage 1 --- Data Ingestion}
+
+Raw correlated visibilities are written by the DSA-110 correlator in UVH5
+format (PyUVData's HDF5 dialect), with 16 sub-band files per 5-minute chunk
+covering the full $\sim$250\,MHz bandwidth (\code{sb00} through \code{sb15}).
+The \code{UnifiedMSCreationManager} reads each sub-band with
+\code{run\_check=False} to bypass format validation, combines the 16 objects
+in memory via the \code{UVData +=} operator, and writes a single CASA
+Measurement Set (MS) spanning the full bandwidth.
+
+A technically critical step is the correction of a systematic phase centre
+error.  PyUVData's UVH5 reader silently ignores stored pointing coordinates
+and defaults the phase centre to zenith (declination $= +90\degr$), which
+would introduce a $\sim$37\degr\ pointing error in the output MS --- a
+catastrophic but runtime-silent failure.  The fix reads the true phase centre
+directly from the HDF5 header (\code{Header/phase\_center\_app\_ra},
+\code{Header/phase\_center\_app\_dec}), overrides all PyUVData internal
+attributes, and after writing explicitly patches the \code{REFERENCE\_DIR}
+column of the MS \code{FIELD} subtable via \code{casatools.table}.
+
+UVW coordinates are derived geometrically from a survey-grade ITRF antenna
+position file (RevF survey) using
+\code{set\_uvws\_from\_antenna\_positions()}, replacing an earlier erroneous
+approach that scaled antenna positions to match raw UVW magnitudes.  An output
+quality score (0--1) combines sub-band completeness (40\%), cross-file
+consistency of timestamps and antenna counts (30\%), and integration-time
+uniformity (30\%).
+
+\subsection{Stage 2 --- Calibration}
+
+Calibrator sources are selected automatically by querying the NVSS, FIRST,
+TGSS, and VLASS catalogs via \texttt{astroquery}/VizieR for compact sources in
+the flux range 3--15\,Jy at 1.4\,GHz within 1.5\degr\ of the survey
+declination of $+16\degr$.  Results are cached locally to minimise repeated
+network calls.  An NVSS cone search within the same radius additionally
+produces a CASA component list used as a \code{startmodel} seed to accelerate
+deconvolution.  Flux scaling between reference frequencies assumes a spectral
+index of $\alpha = -0.7$.
+
+CASA flagging (\code{rflag}, $3\sigma$ time and frequency cut-offs; \code{tfcrop};
+shadow and autocorrelation clipping) is applied first.  Bandpass calibration
+uses \code{solint=`inf'} (one solution per scan) with \code{solnorm=True};
+gain calibration uses \code{solint=`1h'} in amplitude-and-phase mode
+(\code{calmode=`ap'}).  Both tables are applied to the \code{CORRECTED\_DATA}
+column of the MS via \code{applycal}.
+
+\subsection{Stage 3 --- Imaging}
+
+CASA \code{tclean} is run in multi-frequency synthesis (MFS) mode with the
+\code{wproject} gridder, which corrects for the non-coplanar baseline effect
+that arises from the DSA-110's $\sim$4\degr\ field of view at 1.4\,GHz --- a
+regime in which the standard 2D FFT imaging approximation breaks down.  Key
+parameters are summarised in Table~\ref{tab:tclean}.
+
+\begin{table}[h!]
+  \centering
+  \caption{Default \texttt{tclean} parameters for DSA-110 imaging.}
+  \label{tab:tclean}
+  \begin{tabular}{ll}
+    \toprule
+    \textbf{Parameter} & \textbf{Value} \\
+    \midrule
+    \code{specmode}    & \code{mfs} \\
+    \code{gridder}     & \code{wproject} (auto W-planes) \\
+    \code{deconvolver} & \code{hogbom} \\
+    \code{imsize}      & $4800 \times 4800$\,px \\
+    \code{cell}        & $3''$/pixel \\
+    \code{weighting}   & Briggs, robust $= 0.5$ \\
+    \code{niter}       & 5000 \\
+    \code{threshold}   & 1\,mJy \\
+    \code{pbcor}       & True \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The grid of $4800 \times 4800$ pixels at $3''$/pixel covers $\approx4\degr
+\times 4\degr$ and oversamples the $\sim$15$''$ synthesized beam by a factor
+of five, trading storage for positional accuracy in multi-epoch source
+matching.  Primary beam correction is applied and the result is exported to
+FITS.  An image quality score is computed from the dynamic range, RMS noise,
+and peak source flux.
+
+\subsection{Stage 4 --- Mosaicking}
+
+Approximately 12 individual 5-minute field images are combined per 60-minute
+block using CASA \code{linearmosaic} with primary-beam weighting.  The output
+mosaic spans $\approx 28800 \times 4800$ pixels, covering a $\sim$24\degr\
+$\times$~4\degr\ strip along the survey declination, and is exported to FITS.
+
+\subsection{Stage 5 --- Photometry}
+
+Source detection and aperture photometry are performed on each mosaic FITS
+image using \texttt{photutils}.  A $6''$ aperture ($\approx 2\times$ the
+synthesized beam FWHM) with a $9''$--$15''$ sky annulus is used for all
+sources.  Relative flux calibration is applied using an ensemble of up to 10
+local NVSS reference sources within $15'$.  Photometric measurements --- flux
+density, uncertainty, sky background, and epoch --- are written to a SQLite
+(or optionally PostgreSQL) database keyed by source position.
+
+% -----------------------------------------------------------------------
+\section{Microservices and Continuous Operation}
+
+For unattended autonomous operation, the pipeline stages are wrapped in three
+asynchronous daemon services.
+
+\textbf{HDF5 Watcher.}  A \code{watchdog.Observer} monitors the incoming HDF5
+directory.  When a new file arrives, it is grouped with co-temporal sub-band
+files into a \code{ProcessingBlock} and a \code{HDF5\_READY} event is
+published to the Redis message queue.
+
+\textbf{MS Processor.}  Consumes \code{HDF5\_READY} events and drives the
+full five-stage pipeline for each block.  Processing results and error
+conditions are published back to the queue.
+
+\textbf{Variability Analyzer.}  Runs on a daily cron schedule (default
+01:00~UTC).  Queries the photometry database over a 90-day lookback window
+and flags as variability candidates any sources whose flux exhibits a
+$\geq 5\sigma$ median absolute deviation (MAD) excursion on at least two
+consecutive epochs.  Results are written to \code{variable\_candidates.csv}.
+
+A Prometheus-compatible \texttt{aiohttp} dashboard exposes service health
+metrics at \code{localhost:8080}.
+
+% -----------------------------------------------------------------------
+\section{Discussion}
+
+Several design decisions reflect the specific operational constraints of the
+DSA-110.  The choice of the \code{wproject} gridder over the computationally
+cheaper \code{standard} gridder is required by the instrument's wide field of
+view, which violates the coplanar-baseline approximation at L-band.  The
+automated calibrator finder eliminates manual scheduling, which is essential
+for a survey telescope that cycles through many pointings continuously without
+human oversight.  The SQLite photometry store provides zero-infrastructure
+persistence suitable for single-node operation, while the optional PostgreSQL
+backend allows scaling to distributed deployments.
+
+The most distinctive engineering challenge in the codebase is the phase centre
+correction described in Section~2.1.  It illustrates a class of failure common
+in scientific software pipelines: a library default that is silently incorrect
+for the specific instrument's data format, producing no runtime exception but
+yielding qualitatively wrong science output.  The fix required patching data at
+three distinct levels simultaneously --- Python object attributes, PyUVData's
+internal phase-centre catalog, and the on-disk CASA \code{FIELD} subtable ---
+underscoring the importance of end-to-end integration tests that validate
+output coordinate frames against known catalog positions rather than merely
+confirming that processing steps complete without error.
+
+% -----------------------------------------------------------------------
+\section{Summary}
+
+The DSA-110 Continuum Imaging Pipeline is a fully automated radio
+interferometric reduction system spanning HDF5 ingest through multi-epoch
+variability detection.  Its modular stage-based architecture, Redis-driven
+microservice orchestration, and CASA-based calibration and imaging core make it
+well suited to the continuous, unattended survey mode of the DSA-110.  Key
+engineering contributions include a targeted correction of a systematic phase
+centre error introduced by the upstream data-format library, a geometrically
+consistent UVW recalculation from survey-grade antenna positions, and an
+autonomous calibrator selection system that queries four archival radio
+catalogs without human intervention.
+
+% -----------------------------------------------------------------------
+\begin{thebibliography}{9}
+
+\bibitem{hallinan2019dsa}
+  Hallinan, G.\ et al.\ 2019,
+  \textit{BAAS}, 51, 261.
+  The DSA-110: A Radio Survey Camera for FRB Localisation.
+
+\bibitem{mcmullin2007casa}
+  McMullin, J.~P.\ et al.\ 2007,
+  \textit{ASP Conf.\ Ser.}, 376, 127.
+  CASA Architecture and Applications.
+
+\bibitem{offringa2014wsclean}
+  Offringa, A.~R.\ et al.\ 2014,
+  \textit{MNRAS}, 444, 606.
+  WSClean: An Implementation of a Fast, Generic Wide-Field Imager for
+  Radio Astronomy.
+
+\bibitem{perley2017nvss}
+  Condon, J.~J.\ et al.\ 1998,
+  \textit{AJ}, 115, 1693.
+  The NRAO VLA Sky Survey.
+
+\end{thebibliography}
+
+\end{document}

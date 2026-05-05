@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-A radio astronomy continuum imaging pipeline for DSA-110 (Deep Synoptic Array, 110 antennas) at OVRO, ported from the older `dsa110-contimg` codebase. Science goal: detect variable/transient compact radio sources (ESEs) via daily-cadenced per-source forced photometry on sky-mosaics, each ~1 hour long.
+A radio astronomy continuum imaging pipeline for DSA-110 (Deep Synoptic Array, 110 antennas) at OVRO, ported from the older `dsa110-contimg` codebase. Science goal: detect variable/transient compact radio sources (ESEs) via daily-cadenced per-source forced photometry on hourly-epoch mosaics (~1 hour each).
 
 Verified working state: `scripts/run_pipeline.py` produces a calibrated image of 3C454.3 at 12.5 Jy/beam against test HDF5 in `/data/incoming/` on H17.
 
@@ -127,16 +127,11 @@ BP/G table acquisition order (must match implementation; update both this sectio
 4. Borrow nearest validated tables (strip-compatibility required).
 5. Fail loudly. NEVER proceed silently with unknown calibration provenance.
 
-Provenance semantics:
-- Primary path: model-anchored, `flux_anchor=perley_butler_primary`.
-- Bright-source fallback: catalog-anchored, `flux_anchor=vla_catalog`.
-- `selection_pool` records `primary` or `bright_fallback`.
+Bright-source fallback search: if `obs_dec_deg` is known, search is Dec-local (configured tolerance). If unknown, search uses full-sky Dec range to avoid false "no usable calibrator" failures.
 
-Declination: if `obs_dec_deg` is known, fallback search is Dec-local (configured tolerance). If unknown, full-sky range to avoid false "no usable calibrator" failures.
+Legacy table names like `/stage/dsa110-contimg/ms/{date}T22:26:05_0~23.{b,g}` are still supported. Manual symlinking from a validated reference date is acceptable for operational recovery, but must satisfy strip-compatibility validation.
 
-Legacy table names like `/stage/dsa110-contimg/ms/{date}T22:26:05_0~23.{b,g}` are still supported. Manual symlinking from a validated reference date is acceptable for recovery, but must satisfy strip-compatibility validation.
-
-See `docs/reference/calibration.md` for K/B/G parameters, DEFAULT_PRESET, SelfCalConfig, and `bp_minsnr=5.0` (NOT the function default of 3.0).
+See `CONTEXT.md` `## Calibration` for vocabulary (table conventions, borrowing semantics, `flux_anchor`, `selection_pool`, refant default, provenance sidecar) and `docs/reference/calibration.md` for K/B/G parameters, DEFAULT_PRESET, SelfCalConfig, and `bp_minsnr=5.0` (NOT the function default of 3.0).
 
 </important>
 
@@ -187,14 +182,20 @@ Save under `/data/dsa110-continuum/outputs/` (organize by topic or date). Do NOT
 
 </important>
 
+<important if="you are touching FastAPI services: dsa110_continuum/mosaic/api.py, scripts/qa_server.py, or scripts/monitor_server.py">
+
+Three FastAPI services exist; their statuses differ:
+- `dsa110_continuum/mosaic/api.py` — **dormant**. Defines a router but no caller currently mounts it. Do NOT assume users hit this path; verify the mount before changing behavior.
+- `scripts/qa_server.py` — **live**. The QA dashboard users currently rely on. Treat as production: changes need the same care as pipeline code.
+- `scripts/monitor_server.py` — **live, host-ops**. Exposes a `POST /exec` shell hook; any change to that endpoint is a security-relevant edit and must be flagged.
+
+The live-observability-stack work lands across these services; tracking issues #48–#62 (`gh issue list --label needs-triage --state open`).
+
+</important>
+
 <important if="you are reasoning about instrument geometry, data volumes, or observation cadence">
 
-DSA-110 is a meridian drift-scan transit array — the sky drifts through a fixed beam, the array does not track:
-- 96 online antennas (117 array elements in HDF5; some correspond to non-existent antennas)
-- 4.65 m dishes, L-band (1.31–1.50 GHz, 187.5 MHz BW)
-- 16 subbands × 48 channels, 12.885 s integrations
-- One "tile" ≈ 5-minute transit; imaging produces 4800×4800 px at 3 arcsec/px
-- Hourly-epoch mosaic ≈ ~12 sequential tiles (~1 hour) along the current Dec strip, with overlap into adjacent epochs (see `CONTEXT.md`)
+See `CONTEXT.md` `## Instrument` and `## Pipeline stages and products` for antenna count, dish size, band/subband structure, integration time, tile geometry, and hourly-epoch mosaic definition (batch and sliding modes), all with `path::Symbol` citations. Use the glossary's vocabulary verbatim — *tile*, *hourly-epoch mosaic*, *Dec strip* (not "RA strip", not "daily mosaic", not "snapshot/frame"); see `docs/agents/domain.md`.
 
 </important>
 
@@ -212,9 +213,6 @@ Five canonical workflow labels: `needs-triage`, `needs-info`, `ready-for-agent`,
 
 Single-context. Glossary at repo-root `CONTEXT.md` (with `path::Symbol` citations verifiable via `scripts/verify_glossary.py`); ADRs in `docs/adr/`. See `docs/agents/domain.md`.
 
-## Next tasks
+## Current focus
 
-- Multi-epoch production runs (`batch_pipeline.py` on 2026-02-12 through 2026-03-05)
-- Per-date gain calibration (eliminate cross-date phase cal transfer)
-- Run source finding (BANE + Aegean) on mosaics
-- Generate multi-epoch light curves and variability analysis
+Live observability stack — issues #48–#62 (`gh issue list --label needs-triage --state open` for the full set). See `docs/agents/issue-tracker.md` for gh-CLI conventions.

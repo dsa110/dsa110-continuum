@@ -2511,3 +2511,152 @@ def detect_and_flag_dead_antennas(
     except (OSError, RuntimeError, KeyError) as e:
         logger.error(f"Error detecting dead antennas in {ms}: {e}")
         return result
+
+
+def run_pre_calibration_flagging(
+    ms_file: str,
+    *,
+    do_flagging: bool = True,
+    enable_bad_pol_detection: bool = False,
+    bad_pol_phase_table: str | None = None,
+    bad_pol_dry_run: bool = False,
+) -> dict:
+    """Run the full pre-calibration flagging sequence on a Measurement Set.
+
+    Wraps the pre-cal flagging steps that previously lived inline in
+    ``calibration/runner.py``:
+
+    - Autocorr flag + AOFlagger RFI flag (with CASA tfcrop+rflag fallback) —
+      gated by ``do_flagging``.
+    - Dead-antenna detection at 95% threshold, applied — always runs.
+    - Single-polarization detection — opt-in via ``enable_bad_pol_detection``.
+
+    Parameters
+    ----------
+    ms_file :
+        Path to the Measurement Set.
+    do_flagging :
+        If True, run autocorr flag + AOFlagger RFI flag with CASA fallback.
+        If False, skip those and run only dead-antenna detection.
+    enable_bad_pol_detection :
+        If True, run ``detect_and_flag_bad_polarizations`` after the dead-antenna
+        pass. **OFF by default** — this is a cautious-rollout switch; production
+        callers must opt in explicitly until the feature has been validated on
+        real data.
+    bad_pol_phase_table :
+        Path to the pre-bandpass phase calibration table for the strong primary
+        detection path. If None or missing, the function falls back to MS-coherence
+        analysis (less reliable per the underlying function's docstring).
+    bad_pol_dry_run :
+        If True, only report bad polarizations without applying CASA flags.
+
+    Returns
+    -------
+    dict
+        - ``"dead_result"`` — return value of ``detect_and_flag_dead_antennas``,
+          or ``None`` if it raised.
+        - ``"bad_pol_result"`` — return value of ``detect_and_flag_bad_polarizations``
+          when ``enable_bad_pol_detection=True``, or ``None`` otherwise (also
+          ``None`` if the detection raised — failures are swallowed for
+          science-safety, matching the dead-antenna pattern).
+    """
+    logger = logging.getLogger(__name__)
+    result: dict = {"dead_result": None, "bad_pol_result": None}
+
+    if do_flagging:
+        try:
+            service = CASAService()
+            logger.info("Flagging autocorrelations...")
+            service.flagdata(vis=ms_file, autocorr=True, flagbackup=False)
+
+            logger.info("Running AOFlagger RFI flagging...")
+            try:
+                flag_rfi(ms_file, backend="aoflagger")
+                logger.info(" AOFlagger RFI flagging complete")
+            except Exception as aoflagger_err:  # noqa: BLE001
+                logger.warning(
+                    "AOFlagger failed (%s), falling back to CASA tfcrop+rflag",
+                    aoflagger_err,
+                )
+                service.flagdata(
+                    vis=ms_file,
+                    mode="tfcrop",
+                    datacolumn="data",
+                    timecutoff=4.0,
+                    freqcutoff=4.0,
+                    extendflags=False,
+                    flagbackup=False,
+                )
+                service.flagdata(
+                    vis=ms_file,
+                    mode="rflag",
+                    datacolumn="data",
+                    timedevscale=4.0,
+                    freqdevscale=4.0,
+                    extendflags=False,
+                    flagbackup=False,
+                )
+                logger.info(" CASA tfcrop+rflag flagging complete")
+        except Exception as err:  # noqa: BLE001
+            logger.warning("Pre-calibration flagging failed (continuing): %s", err)
+
+    try:
+        dead_result = detect_and_flag_dead_antennas(
+            ms_file, threshold=0.95, dry_run=False
+        )
+        result["dead_result"] = dead_result
+        n_dead = int(dead_result.get("n_dead", 0))
+        before = float(dead_result.get("total_flagged_before", 0.0)) * 100
+        after = float(dead_result.get("total_flagged_after", before / 100)) * 100
+        if n_dead > 0:
+            logger.warning(
+                "Pre-cal dead-antenna detection: flagged %d dead antennas %s "
+                "(flag fraction %.2f%% -> %.2f%%)",
+                n_dead,
+                dead_result.get("dead_antennas", []),
+                before,
+                after,
+            )
+        else:
+            logger.info(
+                "Pre-cal dead-antenna detection: 0 dead antennas (flag fraction %.2f%%)",
+                before,
+            )
+    except Exception as err:  # noqa: BLE001 - science-safe: never abort the pipeline here
+        logger.warning("Dead-antenna detection failed (continuing): %s", err)
+
+    if enable_bad_pol_detection:
+        try:
+            bad_pol_result = detect_and_flag_bad_polarizations(
+                ms_file,
+                phase_table=bad_pol_phase_table,
+                dry_run=bad_pol_dry_run,
+            )
+            result["bad_pol_result"] = bad_pol_result
+            n_affected = int(bad_pol_result.get("n_antennas_affected", 0))
+            method = bad_pol_result.get("detection_method", "unknown")
+            action_taken = bool(bad_pol_result.get("action_taken", False))
+            if n_affected > 0:
+                # Distinguish "flagged" (action applied) from "detected" (dry_run
+                # or detector skipped already-flagged selections). An operator
+                # reading the log needs to know whether the MS state changed.
+                verb = "flagged" if action_taken else "detected"
+                logger.warning(
+                    "Pre-cal bad-polarization detection (%s): %s %d antenna-pol pairs "
+                    "(action_taken=%s, dry_run=%s) %s",
+                    method,
+                    verb,
+                    n_affected,
+                    action_taken,
+                    bad_pol_dry_run,
+                    bad_pol_result.get("bad_polarizations", []),
+                )
+            else:
+                logger.info(
+                    "Pre-cal bad-polarization detection (%s): 0 single-pol failures",
+                    method,
+                )
+        except Exception as err:  # noqa: BLE001 - science-safe: never abort the pipeline here
+            logger.warning("Bad-polarization detection failed (continuing): %s", err)
+
+    return result

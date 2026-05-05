@@ -1114,81 +1114,20 @@ def run_calibrator(
     logger.info(f"Field(s): {cal_field}")
     logger.info(f"Reference Antenna: {refant}")
 
-    # Step 0: Pre-calibration flagging (optional)
-    if do_flagging:
-        try:
-            from dsa110_continuum.calibration.casa_service import CASAService
+    # Step 0/0.5: Pre-calibration flagging (autocorr + AOFlagger RFI with
+    # CASA tfcrop+rflag fallback) plus dead-antenna detection at 95%
+    # threshold. Behavior unchanged from the previous inline form; extracted
+    # to ``run_pre_calibration_flagging`` for testability.
+    #
+    # CASA solvers raise getcell::TIME on antennas with no usable data, which
+    # is why the dead-ant pass is unconditional. The post-cal QA gate
+    # (_check_flag_fraction) separately excludes receptors that end up >=99%
+    # flagged in the caltable; antennas in the 95-99% band are pre-flagged
+    # here and therefore excluded by that gate too. Marginal antennas below
+    # 95% are left in the solve on purpose.
+    from dsa110_continuum.calibration.flagging import run_pre_calibration_flagging
 
-            service = CASAService()
-
-            logger.info("Flagging autocorrelations...")
-            service.flagdata(vis=ms_file, autocorr=True, flagbackup=False)
-
-            # RFI flagging with AOFlagger (critical for bandpass!)
-            logger.info("Running AOFlagger RFI flagging...")
-            try:
-                from dsa110_continuum.calibration.flagging import flag_rfi
-
-                flag_rfi(ms_file, backend="aoflagger")
-                logger.info(" AOFlagger RFI flagging complete")
-            except Exception as aoflagger_err:
-                logger.warning(
-                    "AOFlagger failed (%s), falling back to CASA tfcrop+rflag", aoflagger_err
-                )
-                # Fallback to CASA flagging
-                service.flagdata(
-                    vis=ms_file,
-                    mode="tfcrop",
-                    datacolumn="data",
-                    timecutoff=4.0,
-                    freqcutoff=4.0,
-                    extendflags=False,
-                    flagbackup=False,
-                )
-                service.flagdata(
-                    vis=ms_file,
-                    mode="rflag",
-                    datacolumn="data",
-                    timedevscale=4.0,
-                    freqdevscale=4.0,
-                    extendflags=False,
-                    flagbackup=False,
-                )
-                logger.info(" CASA tfcrop+rflag flagging complete")
-        except Exception as err:
-            logger.warning("Pre-calibration flagging failed (continuing): %s", err)
-
-    # Step 0.5: Pre-flag dead antennas (>=95% flagged) before any solve.
-    # CASA solvers raise getcell::TIME on antennas with no usable data. The
-    # post-cal QA gate (_check_flag_fraction) separately excludes receptors
-    # that end up >=99% flagged in the caltable; antennas in the 95-99% band
-    # get pre-flagged here and are therefore excluded by that gate too.
-    # Marginal antennas below 95% are left in the solve on purpose.
-    from dsa110_continuum.calibration.flagging import detect_and_flag_dead_antennas
-
-    try:
-        dead_result = detect_and_flag_dead_antennas(
-            ms_file, threshold=0.95, dry_run=False
-        )
-        n_dead = int(dead_result.get("n_dead", 0))
-        before = float(dead_result.get("total_flagged_before", 0.0)) * 100
-        after = float(dead_result.get("total_flagged_after", before / 100)) * 100
-        if n_dead > 0:
-            logger.warning(
-                "Pre-cal dead-antenna detection: flagged %d dead antennas %s "
-                "(flag fraction %.2f%% -> %.2f%%)",
-                n_dead,
-                dead_result.get("dead_antennas", []),
-                before,
-                after,
-            )
-        else:
-            logger.info(
-                "Pre-cal dead-antenna detection: 0 dead antennas (flag fraction %.2f%%)",
-                before,
-            )
-    except Exception as err:  # noqa: BLE001 - science-safe: never abort the pipeline here
-        logger.warning("Dead-antenna detection failed (continuing): %s", err)
+    run_pre_calibration_flagging(ms_file, do_flagging=do_flagging)
 
     # Step 1: Phaseshift to calibrator position (CRITICAL for DSA-110!)
     # This removes the geometric phase gradient from the offset between
