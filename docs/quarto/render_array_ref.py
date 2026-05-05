@@ -131,21 +131,21 @@ of more sparsely distributed outrigger antennas at larger baselines.</p>
 <div class="callout-title-container flex-fill">Simulation harness configuration</div>
 </div>
 <div class="callout-body-container callout-body">
-<p>Always use <code>n_antennas=117</code> when constructing a <code>SimulationHarness</code>. The default
-of <code>n_antennas=8</code> is for unit tests only. Using <code>n_antennas=96</code> takes the first
-96 rows of <code>antennas.csv</code> (51 EW + 45 NS + <strong>0 outriggers</strong>) — geometrically
-incorrect and the cause of image artifacts in earlier pipeline runs.</p>
+<p>Always use <code>n_antennas=117</code> when constructing a <code>SimulationHarness</code> for full
+simulation geometry. Using <code>n_antennas=96</code> takes the first 96 station rows and
+excludes the outrigger slots, so it is not a valid proxy for the 96 active
+operational array.</p>
 <div class="sourceCode"><pre class="sourceCode python code-with-copy"><code class="sourceCode python">harness <span class="op">=</span> SimulationHarness(n_antennas<span class="op">=</span><span class="dv">117</span>, n_integrations<span class="op">=</span><span class="dv">24</span>)</code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 </div>
 
 <section id="station-layout" class="level3">
 <h3 class="anchored" data-anchor-id="station-layout">Station layout</h3>
-<p>The position file used by the simulation is
-<code>dsa110_continuum/simulation/pyuvsim/antennas.csv</code> (117 rows, projected ECEF
-columns <code>east_m</code>, <code>north_m</code>, <code>up_m</code>). The figure below shows the resulting
-local-ENU positions after the geodetic → ECEF → local-ENU transform applied by
-<code>load_geodetic_enu()</code>.</p>
+<p>The current default real-position path uses
+<code>dsa110_continuum/simulation/pyuvsim/DSA110_Station_Coordinates.csv</code>
+(117 station rows, WGS84 latitude/longitude/elevation). The figure below shows
+the resulting local-ENU positions after the geodetic → ECEF → local-ENU
+transform applied by <code>load_geodetic_enu()</code>.</p>
 <div class="quarto-figure quarto-figure-center">
 <figure class="figure">
 <p><img src="images/dsa110_antenna_layout.png" class="img-fluid figure-img" style="width:90%"></p>
@@ -158,16 +158,17 @@ outriggers (DSA103–117) shown in orange. Baselines from the T-junction extend 
 
 <section id="active-antenna-count" class="level3">
 <h3 class="anchored" data-anchor-id="active-antenna-count">Active antenna count</h3>
-<p><strong>96 of the 117 allocated station slots are active</strong> (Connor et al. 2025,
-arXiv:2510.18136):</p>
+<p><strong>96 of the 117 allocated station slots are active</strong> is the currently cited
+operational total. The per-arm active breakdown is external_pending because
+repo-local references have disagreed between 47 and 51 active E-W antennas:</p>
 <table class="caption-top table">
 <thead>
 <tr><th>Arm</th><th>Active</th><th>Slot pool</th><th>Notes</th></tr>
 </thead>
 <tbody>
-<tr><td>E-W core</td><td>51</td><td>DSA001–DSA051</td><td>All 51 slots built and active</td></tr>
-<tr><td>N-S arm</td><td>35</td><td>DSA052–DSA102</td><td>51 slots allocated; 35 active</td></tr>
-<tr><td>Outriggers</td><td>14</td><td>DSA103–DSA117</td><td>15 slots; DSA-117 likely inactive (no elevation in CSV)</td></tr>
+<tr><td>E-W core</td><td>external_pending</td><td>DSA001–DSA051</td><td>Verify against Connor et al. 2025 or real HDF5/MS antenna metadata</td></tr>
+<tr><td>N-S arm</td><td>external_pending</td><td>DSA052–DSA102</td><td>Verify against Connor et al. 2025 or real HDF5/MS antenna metadata</td></tr>
+<tr><td>Outriggers</td><td>external_pending</td><td>DSA103–DSA117</td><td>Verify against Connor et al. 2025 or real HDF5/MS antenna metadata</td></tr>
 <tr><td><strong>Total</strong></td><td><strong>96</strong></td><td>—</td><td>—</td></tr>
 </tbody>
 </table>
@@ -180,8 +181,8 @@ arXiv:2510.18136):</p>
 <p>The exact list of which 96 station numbers are active is <strong>not machine-readable
 in this repository</strong>. The authoritative source is the HDF5/MS antenna metadata
 from real data on <code>h17</code>, accessed via <code>pyuvdata</code>'s <code>telescope.antenna_numbers</code>
-field. For simulation purposes, using all 117 positions is correct — the 21
-inactive slots produce zero-weighted baselines that do not degrade image quality.</p>
+field. For full-geometry simulation, use all 117 station positions; for a
+96-active simulation, use a real active-antenna list from HDF5/MS metadata.</p>
 </div>
 </div>
 </section>

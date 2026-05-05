@@ -20,10 +20,10 @@ of more sparsely distributed outrigger antennas at larger baselines.
 
 ::: {.callout-important}
 **Simulation harness configuration**  
-Always use `n_antennas=117` when constructing a `SimulationHarness`. The default
-of `n_antennas=8` is for unit tests only. Using `n_antennas=96` takes the first
-96 rows of `antennas.csv` (51 EW + 45 NS + **0 outriggers**) — geometrically
-incorrect and the cause of image artifacts in earlier pipeline runs.
+Always use `n_antennas=117` when constructing a `SimulationHarness` for full
+simulation geometry. Using `n_antennas=96` takes the first 96 station rows and
+excludes the outrigger slots, so it is not a valid proxy for the 96 active
+operational array.
 
 ```python
 harness = SimulationHarness(n_antennas=117, n_integrations=24)
@@ -32,11 +32,11 @@ harness = SimulationHarness(n_antennas=117, n_integrations=24)
 
 ### Station layout
 
-The position file used by the simulation is
-`dsa110_continuum/simulation/pyuvsim/antennas.csv` (117 rows, projected ECEF
-columns `east_m`, `north_m`, `up_m`). The figure below shows the resulting
-local-ENU positions after the geodetic → ECEF → local-ENU transform applied by
-`load_geodetic_enu()`.
+The current default real-position path uses
+`dsa110_continuum/simulation/pyuvsim/DSA110_Station_Coordinates.csv`
+(117 station rows, WGS84 latitude/longitude/elevation). The figure below shows
+the resulting local-ENU positions after the geodetic → ECEF → local-ENU
+transform applied by `load_geodetic_enu()`.
 
 ![DSA-110 ENU layout — 117 stations. T-core (EW + NS arms) shown in blue;
 outriggers (DSA103–117) shown in orange. Baselines from the T-junction extend to
@@ -44,22 +44,23 @@ outriggers (DSA103–117) shown in orange. Baselines from the T-junction extend 
 
 ### Active antenna count
 
-**96 of the 117 allocated station slots are active** (Connor et al. 2025,
-arXiv:2510.18136):
+**96 of the 117 allocated station slots are active** is the currently cited
+operational total. The per-arm active breakdown is external_pending because
+repo-local references have disagreed between 47 and 51 active E-W antennas:
 
 | Arm | Active | Slot pool | Notes |
 |---|---|---|---|
-| E-W core | 51 | DSA001–DSA051 | All 51 slots built and active |
-| N-S arm | 35 | DSA052–DSA102 | 51 slots allocated; 35 active |
-| Outriggers | 14 | DSA103–DSA117 | 15 slots; DSA-117 likely inactive (no elevation in CSV) |
+| E-W core | external_pending | DSA001–DSA051 | Verify against Connor et al. 2025 or real HDF5/MS antenna metadata |
+| N-S arm | external_pending | DSA052–DSA102 | Verify against Connor et al. 2025 or real HDF5/MS antenna metadata |
+| Outriggers | external_pending | DSA103–DSA117 | Verify against Connor et al. 2025 or real HDF5/MS antenna metadata |
 | **Total** | **96** | — | — |
 
 ::: {.callout-note}
 The exact list of which 96 station numbers are active is **not machine-readable
 in this repository**. The authoritative source is the HDF5/MS antenna metadata
 from real data on `h17`, accessed via `pyuvdata`'s `telescope.antenna_numbers`
-field. For simulation purposes, using all 117 positions is correct — the 21
-inactive slots produce zero-weighted baselines that do not degrade image quality.
+field. For full-geometry simulation, use all 117 station positions; for a
+96-active simulation, use a real active-antenna list from HDF5/MS metadata.
 :::
 
 ### Key baseline lengths

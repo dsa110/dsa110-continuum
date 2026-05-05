@@ -30,8 +30,8 @@ been made.
 |---|---|---|
 | Total allocated antenna slots (CSV) | 117 | dsa110-antpos position CSV |
 | **Active antennas** | **96** | Connor et al. 2025 (arxiv:2510.18136) |
-| Dense core antennas (b < 485 m) | 82 (47 E-W + 35 N-S) | Connor et al. 2025 |
-| Outrigger antennas (to ~2.6 km, IDs 103–117) | 14 active (15 allocated slots) | Connor et al. 2025 |}
+| Dense core active breakdown (b < 485 m) | external_pending | Repo docs have disagreed between 47 and 51 active E-W antennas; verify against DSA-specific evidence before using a breakdown. |
+| Outrigger active breakdown (to ~2.6 km, IDs 103–117) | external_pending | Often cited as 14 active of 15 allocated, but keep external_pending until reconciled with the active-ID source. |}
 | **Dish diameter** | **4.65 m** ± 0.01 m | Measured (dsa110_measured_parameters.yaml) |
 | Observing band | L-band (1.28–1.53 GHz nominal) | Instrument design |
 | **Science frequency range** | **1311.25–1498.75 MHz** | Observed band (confirmed) |

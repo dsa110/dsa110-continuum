@@ -54,16 +54,16 @@ The DSA-110 is a **T-shaped array** consisting of three components:
 
 | Component | Count (total slots) | Active | Notes |
 |---|---|---|---|
-| East-West (E-W) arm | 51 slots (DSA001–DSA051) | 51 | All 51 position slots are filled; 4 gaps indicate missing commissioning pads, but all 51 are active station locations |
-| North-South (N-S) arm | 51 slots (DSA052–DSA102) | 45 | Only 45 of 51 positions were built out per the N-S arm completion through early 2025 |
-| Outriggers | 15 slots (DSA103–DSA117) | 15 | All 15 are present in the position CSV |
+| East-West (E-W) arm | 51 slots (DSA001–DSA051) | unresolved | Repo-local docs have disagreed between 47 and 51 active E-W antennas; verify against Connor et al. 2025 or real HDF5/MS antenna metadata before using a breakdown. |
+| North-South (N-S) arm | 51 slots (DSA052–DSA102) | unresolved | Often cited as 35 active, but the active-ID list is not machine-readable in this repo. |
+| Outriggers | 15 slots (DSA103–DSA117) | unresolved | Often cited as 14 active; verify against DSA-specific metadata before using a breakdown. |
 | **Total (CSV slots)** | **117** | — | CSV has 117 rows (headerline=5) |
-| **Active antennas** | — | **96** | 47 core E-W + 35 N-S arm + 14 outriggers per Connor et al. 2025 |
+| **Active antennas** | — | **96** | Total active count cited by Connor et al. 2025; per-arm breakdown remains external_pending. |
 
-> **Important:** The breakdown 47 + 35 + 14 = 96 is from Connor et al. 2025 (arxiv:2510.18136),
-> which describes the operational array as completed in early 2025. The CSV in this
-> repository (`dsa110_continuum/simulation/pyuvsim/antennas.csv`) contains all 117
-> allocated position slots. Pipeline code should use the 96-active-antenna subset.
+> **Important:** The CSV in this repository
+> (`dsa110_continuum/simulation/pyuvsim/antennas.csv`) contains all 117 allocated
+> position slots. Pipeline code that models thermal noise uses 96 active antennas,
+> but the exact per-arm active breakdown is not settled by repo-local evidence.
 > The `ant_ids_mid.csv` in the `dsa110-antpos` repo is a **66-antenna commissioning
 > configuration** (48 EW + 3 near the T-junction + 15 outriggers) used during an
 > earlier science run — it does NOT represent the full operational array.
@@ -114,7 +114,7 @@ The DSA-110 is a **T-shaped array** consisting of three components:
 |---|---|---|
 | `antpos/data/DSA110_Station_Coordinates.csv` | lat/lon/elevation WGS84 | 117 stations; canonical; updated 2022-02-15 |
 | `antpos/data/DSA110_positions_RevF.csv` | lat/lon by arm with design spacings | 51 EW + 51 NS + 2 reference markers |
-| `dsa110_continuum/simulation/pyuvsim/antennas.csv` | east_m, north_m, up_m (local ENU projected) | 117 rows; large absolute values are projected ECEF offsets from a reference origin; used by the simulation harness |
+| `dsa110_continuum/simulation/pyuvsim/antennas.csv` | east_m, north_m, up_m (local ENU projected) | 117 rows; bundled projected-coordinate alternate; the default harness path uses `DSA110_Station_Coordinates.csv` via `load_geodetic_enu()`. |
 
 **Reading `antennas.csv`:** The columns `east_m`, `north_m`, `up_m` in the
 simulation CSV are not raw ECEF; they are projected local coordinates with
@@ -318,24 +318,26 @@ that require the `fillgaps=3` interpolation in bandpass calibration.
 
 ### 11.1 Operational Array (as of 2025; Connor et al. 2025)
 
-The **96 active antennas** break down as:
+The repo treats DSA-110 as a **96 active antenna** array for operational noise
+and QA calculations. The per-arm breakdown is unresolved in repo-local evidence:
+current files have previously asserted both 47 and 51 active E-W antennas.
 
 | Component | Active count | Station number range |
 |---|---|---|
-| E-W core arm | **47** | Subset of DSA001–DSA051 |
-| N-S arm | **35** | Subset of DSA052–DSA102 |
-| Outriggers | **14** | Subset of DSA103–DSA117 |
+| E-W core arm | **external_pending** | Subset of DSA001–DSA051 |
+| N-S arm | **external_pending** | Subset of DSA052–DSA102 |
+| Outriggers | **external_pending** | Subset of DSA103–DSA117 |
 | **Total** | **96** | — |
 
-The **82-antenna dense core** (b < 485 m) = 47 E-W + 35 N-S = 82 antennas;
-this is used for real-time continuum imaging. The 14 outriggers extend the
-maximum baseline to ~2.6 km for precise FRB localization.
+Do not use a per-arm active breakdown until it is reconciled against Connor et
+al. 2025, real HDF5/MS antenna metadata from H17, or a sibling DSA-specific
+`dsa110-antpos` checkout.
 
 ### 11.2 Earlier Commissioning Configurations
 
-- **64-antenna (pre-N-S arm):** 47 E-W core only; used in early DSA-110 science
-  runs (Sherman et al. 2024 polarimetry paper describes this phase: "110-antenna
-  design during commissioning").
+- **64-antenna (pre-N-S arm):** E-W active count is external_pending here; verify
+  against DSA-specific commissioning metadata before using a per-arm count. This
+  phase is associated with early DSA-110 science runs.
 - **66-antenna (`ant_ids_mid.csv`):** 48 EW + 3 near T-junction + 15 outriggers;
   a specific correlator configuration used for a particular observing campaign.
   This file does NOT represent the full operational 96-antenna array.
@@ -376,8 +378,9 @@ def load_antenna_enu(csv_path, active_count=None):
 
 For the most physically correct simulation, use all 117 entries (which includes
 all built positions) and let the UV gridder/imager naturally handle the geometry.
-The 21 inactive slots (117 − 96) will simply produce zero-weighted baselines if
-the corresponding antenna flags are set.
+The harness does not currently implement inactive-slot zero weighting; use a
+real active-antenna list from HDF5/MS metadata if a 96-active simulation is
+required.
 
 ---
 
@@ -399,8 +402,8 @@ the corresponding antenna flags are set.
 ```
 DSA-110 at a glance
 ===================
-Active antennas:   96 (47 EW + 35 NS + 14 outriggers)
-Dense core:        82 (b < 485 m)
+Active antennas:   96 total; per-arm active breakdown external_pending
+Dense core:        external_pending active count
 Max baseline:      2.6 km (outriggers)
 Dish diameter:     4.65 m
 Frequency:         1311.25–1498.75 MHz (187.5 MHz bandwidth)
