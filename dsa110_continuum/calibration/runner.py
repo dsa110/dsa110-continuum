@@ -1158,6 +1158,38 @@ def run_calibrator(
         except Exception as err:
             logger.warning("Pre-calibration flagging failed (continuing): %s", err)
 
+    # Step 0.5: Pre-flag dead antennas (>=95% flagged) before any solve.
+    # CASA solvers raise getcell::TIME on antennas with no usable data. The
+    # post-cal QA gate (_check_flag_fraction) separately excludes receptors
+    # that end up >=99% flagged in the caltable; antennas in the 95-99% band
+    # get pre-flagged here and are therefore excluded by that gate too.
+    # Marginal antennas below 95% are left in the solve on purpose.
+    from dsa110_continuum.calibration.flagging import detect_and_flag_dead_antennas
+
+    try:
+        dead_result = detect_and_flag_dead_antennas(
+            ms_file, threshold=0.95, dry_run=False
+        )
+        n_dead = int(dead_result.get("n_dead", 0))
+        before = float(dead_result.get("total_flagged_before", 0.0)) * 100
+        after = float(dead_result.get("total_flagged_after", before / 100)) * 100
+        if n_dead > 0:
+            logger.warning(
+                "Pre-cal dead-antenna detection: flagged %d dead antennas %s "
+                "(flag fraction %.2f%% -> %.2f%%)",
+                n_dead,
+                dead_result.get("dead_antennas", []),
+                before,
+                after,
+            )
+        else:
+            logger.info(
+                "Pre-cal dead-antenna detection: 0 dead antennas (flag fraction %.2f%%)",
+                before,
+            )
+    except Exception as err:  # noqa: BLE001 - science-safe: never abort the pipeline here
+        logger.warning("Dead-antenna detection failed (continuing): %s", err)
+
     # Step 1: Phaseshift to calibrator position (CRITICAL for DSA-110!)
     # This removes the geometric phase gradient from the offset between
     # the meridian phase center and the calibrator's actual position.
