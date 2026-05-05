@@ -1,0 +1,31 @@
+{
+  "imaging_params": {
+    "imsize": 2100,
+    "cell_arcsec": 6.0,
+    "weighting": "briggs",
+    "robust": 0.5,
+    "specmode": "mfs",
+    "deconvolver": "hogbom",
+    "nterms": 1,
+    "niter": 1000,
+    "threshold": "0.005Jy",
+    "auto_mask": 5.0,
+    "auto_threshold": 1.0,
+    "mgain": 0.8,
+    "pbcor": true,
+    "gridder": "wgridder",
+    "uvrange": ">1klambda",
+    "quality_tier": "standard"
+  },
+  "resources": {
+    "threads": 40,
+    "mem_gb": 16
+  },
+  "inputs": {
+    "ms_path": "/dev/shm/dsa110-continuum/hdf5_calibrator_tile_smoke/20260430T233107Z_3c48_20260222T231751/ms/image/calibrator_image.ms"
+  },
+  "meta": {
+    "timestamp": "2026-05-01T00:06:20.727697+00:00",
+    "pipeline": "dsa110-continuum"
+  }
+}

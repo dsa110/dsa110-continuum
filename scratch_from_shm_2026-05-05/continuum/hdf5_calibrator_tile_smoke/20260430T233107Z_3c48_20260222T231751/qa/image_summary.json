@@ -1,0 +1,21 @@
+{
+  "fits_path": "/dev/shm/dsa110-continuum/hdf5_calibrator_tile_smoke/20260430T233107Z_3c48_20260222T231751/images/3c48-image.fits",
+  "peak_jy_per_beam": 16.366851806640625,
+  "rms_jy_per_beam": 0.036057098964916906,
+  "finite_pixel_fraction": 1.0,
+  "header": {
+    "NAXIS": 4,
+    "NAXIS1": 2100,
+    "NAXIS2": 2100,
+    "CTYPE1": "RA---SIN",
+    "CTYPE2": "DEC--SIN",
+    "CRVAL1": 24.3061117338525,
+    "CRVAL2": 33.0186884654454
+  },
+  "calibrator": {
+    "name": "3C48",
+    "ra_deg": 24.422080962499997,
+    "dec_deg": 33.159759163888886,
+    "detected_positive_peak": true
+  }
+}
