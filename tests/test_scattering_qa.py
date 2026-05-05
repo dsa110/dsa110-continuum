@@ -1,12 +1,20 @@
 """Tests for scattering transform texture QA."""
 import math
 import os
+import sys
 import tempfile
+import types
 from collections import namedtuple
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+
+
+def _mock_scattering_module(synthesis):
+    module = types.ModuleType("scattering")
+    module.synthesis = synthesis
+    return patch.dict(sys.modules, {"scattering": module})
 
 
 # ---------------------------------------------------------------------------
@@ -30,7 +38,7 @@ def test_score_patch_identical_coefficients():
     mock_stc.L = 4
     mock_stc.scattering_cov.return_value = mock_cov
 
-    with patch("scattering.synthesis", return_value=patch_data[None, :]):
+    with _mock_scattering_module(MagicMock(return_value=patch_data[None, :])):
         score, _co_orig, _co_syn = score_patch(patch_data, mock_stc, synthesis_steps=5)
 
     assert math.isclose(score, 1.0, abs_tol=1e-5), f"Expected 1.0, got {score}"
@@ -47,7 +55,8 @@ def test_score_patch_nan_heavy_returns_nan():
     patch_data[:50, :50] = 1.0  # only 50*50/256*256 = 3.8% finite
 
     mock_stc = MagicMock()
-    result, co_orig, co_syn = score_patch(patch_data, mock_stc, synthesis_steps=5)
+    with _mock_scattering_module(MagicMock()):
+        result, co_orig, co_syn = score_patch(patch_data, mock_stc, synthesis_steps=5)
 
     assert math.isnan(result), f"Expected nan, got {result}"
     assert co_orig is None
@@ -199,7 +208,7 @@ def test_score_patch_returns_coefficients():
     mock_stc.L = 4
     mock_stc.scattering_cov.side_effect = mock_scattering_cov
 
-    with patch("scattering.synthesis", return_value=patch_data[None, :]):
+    with _mock_scattering_module(MagicMock(return_value=patch_data[None, :])):
         score, co_orig, co_syn = score_patch(patch_data, mock_stc, synthesis_steps=5)
 
     assert isinstance(co_orig, np.ndarray), "co_orig should be ndarray"
