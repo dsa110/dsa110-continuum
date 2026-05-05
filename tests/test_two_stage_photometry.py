@@ -345,3 +345,32 @@ def test_cli_simple_peak_sim_produces_csv(tmp_path):
     assert "measured_flux_jy" in rows[0]
     assert "snr" in rows[0]
     assert "injected_flux_jy" in rows[0]
+
+
+def test_cli_two_stage_sim_produces_coarse_snr_column(tmp_path):
+    import csv as _csv
+    import subprocess
+    import sys
+
+    mosaic = tmp_path / "synth_mosaic.fits"
+    _make_sim_mosaic(str(mosaic))
+    assert mosaic.exists(), f"helper failed to write {mosaic}"
+    out_csv = tmp_path / "out.csv"
+
+    repo_root = Path(__file__).parents[1]
+    result = subprocess.run(
+        [sys.executable, "scripts/forced_photometry.py",
+         "--mosaic", str(mosaic),
+         "--method", "two_stage",
+         "--sim",
+         "--snr-coarse", "0.0",
+         "--output", str(out_csv)],
+        capture_output=True, text=True,
+        cwd=str(repo_root),
+    )
+    assert result.returncode == 0, result.stderr
+    with open(out_csv) as f:
+        rows = list(_csv.DictReader(f))
+    assert len(rows) > 0
+    assert "coarse_snr" in rows[0]
+    assert "passed_coarse" in rows[0]
