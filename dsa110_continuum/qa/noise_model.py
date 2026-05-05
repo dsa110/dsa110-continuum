@@ -17,7 +17,7 @@ def calculate_theoretical_rms(
     ms_path: str | None = None,
     bandwidth_hz: float = 188e6,  # DSA-110 effective bandwidth (~188 MHz after RFI flagging)
     integration_time_s: float | None = None,  # Extracted from MS (typical: 12.88s drift-scan)
-    num_antennas: int = 96,  # DSA-110 active antennas (51 EW + 35 NS + 14 outriggers)
+    num_antennas: int = 96,  # DSA-110 active antennas; per-arm breakdown is not repo-verified.
     sefd_per_element_jy: float = 5800.0,  # Measured from T_sys = 25 K (see dsa110_measured_parameters.yaml)
     efficiency: float = 0.7,
 ) -> float:
