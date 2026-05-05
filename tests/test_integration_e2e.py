@@ -650,28 +650,31 @@ class TestStage9SiteAndPhaseCenter:
         np.testing.assert_allclose(np.degrees(cat["cat_lat"]), custom_dec, atol=0.01)
 
 
-# ── Slow / expensive tests ────────────────────────────────────────────────────
+# ── Full-scale shape / closure invariants ────────────────────────────────────
 
-@pytest.mark.slow
-class TestSlow:
-    """Full-scale tests skipped in normal CI. Run with: pytest --run-slow"""
+def test_full_96_antenna_subband(tmp_path):
+    """96-antenna UVH5 subband produces the expected baseline / time counts.
 
-    def test_full_96_antenna_subband(self, tmp_path):
-        """Generate a realistic 96-antenna, 24-integration UVH5 subband."""
-        h = SimulationHarness(n_antennas=96, n_integrations=24, n_sky_sources=50,
-                              noise_jy=1.0, seed=0)
-        p = tmp_path / "full96.uvh5"
-        h.generate_subband(0, p)
-        uv = h.load_subband(p)
-        n_bls = 96 * 95 // 2  # = 4560
-        assert uv.Nbls == n_bls
-        assert uv.Ntimes == 24
+    The metadata invariant (Nbls = 96·95/2 = 4560) is what makes this a
+    cloud-safe validation of the simulation harness scaling to the full DSA-110
+    array; the integration count is small to keep the test in the default
+    suite budget.
+    """
+    h = SimulationHarness(n_antennas=96, n_integrations=4, n_sky_sources=5,
+                          noise_jy=1.0, seed=0)
+    p = tmp_path / "full96.uvh5"
+    h.generate_subband(0, p)
+    uv = h.load_subband(p)
+    n_bls = 96 * 95 // 2  # = 4560
+    assert uv.Nbls == n_bls
+    assert uv.Ntimes == 4
 
-    def test_all_16_subbands_closure(self, tmp_path):
-        """All 16 subbands should pass closure with a small noiseless array."""
-        h = SimulationHarness(n_antennas=6, n_integrations=3, noise_jy=0.0, seed=0)
-        for sb in range(_N_SUBBANDS):
-            p = tmp_path / f"full_cl_sb{sb:02d}.uvh5"
-            h.generate_subband(sb, p)
-            result = h.check_closure(p, n_triangles=10)
-            assert result["passed"], f"SB{sb} closure failed"
+
+def test_all_16_subbands_closure(tmp_path):
+    """All 16 subbands pass closure with a small noiseless array."""
+    h = SimulationHarness(n_antennas=6, n_integrations=3, noise_jy=0.0, seed=0)
+    for sb in range(_N_SUBBANDS):
+        p = tmp_path / f"full_cl_sb{sb:02d}.uvh5"
+        h.generate_subband(sb, p)
+        result = h.check_closure(p, n_triangles=10)
+        assert result["passed"], f"SB{sb} closure failed"
