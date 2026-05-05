@@ -39,7 +39,7 @@ The codebase contains rich, well-implemented QA infrastructure that is largely d
 
 | Location | Issue |
 |----------|-------|
-| `qa/noise_model.py` | `num_antennas=117` default — should be 96 active antennas; per-arm active breakdown is external_pending pending DSA-specific validation. |
+| `qa/noise_model.py` | `num_antennas=117` default — should be 96 (47 E-W + 35 N-S + 14 outriggers, verified 2026-05-05 against H17 HDF5 metadata) |
 | `photometry/epoch_qa.py` | `QA_RMS_LIMIT_MJY = 17.1` comment says "TODO: recompute" — this depends on the 117→96 fix |
 | `stage_c.py` | Flux ratio distribution never summarized (median, std, outlier fraction across all matched sources) |
 

@@ -159,16 +159,16 @@ outriggers (DSA103–117) shown in orange. Baselines from the T-junction extend 
 <section id="active-antenna-count" class="level3">
 <h3 class="anchored" data-anchor-id="active-antenna-count">Active antenna count</h3>
 <p><strong>96 of the 117 allocated station slots are active</strong> is the currently cited
-operational total. The per-arm active breakdown is external_pending because
-repo-local references have disagreed between 47 and 51 active E-W antennas:</p>
+operational total. The per-arm active breakdown was resolved on 2026-05-05
+from real H17 HDF5 metadata (<code>/data/incoming/2026-01-25T00:00:10_sb00.hdf5</code>):</p>
 <table class="caption-top table">
 <thead>
 <tr><th>Arm</th><th>Active</th><th>Slot pool</th><th>Notes</th></tr>
 </thead>
 <tbody>
-<tr><td>E-W core</td><td>external_pending</td><td>DSA001–DSA051</td><td>Verify against Connor et al. 2025 or real HDF5/MS antenna metadata</td></tr>
-<tr><td>N-S arm</td><td>external_pending</td><td>DSA052–DSA102</td><td>Verify against Connor et al. 2025 or real HDF5/MS antenna metadata</td></tr>
-<tr><td>Outriggers</td><td>external_pending</td><td>DSA103–DSA117</td><td>Verify against Connor et al. 2025 or real HDF5/MS antenna metadata</td></tr>
+<tr><td>E-W core</td><td><strong>47</strong></td><td>DSA001–DSA051</td><td>Inactive: DSA-{10, 21, 22, 23}</td></tr>
+<tr><td>N-S arm</td><td><strong>35</strong></td><td>DSA052–DSA102</td><td>Active range DSA068–DSA102 (DSA052–DSA067 inactive)</td></tr>
+<tr><td>Outriggers</td><td><strong>14</strong></td><td>DSA103–DSA117</td><td>DSA117 inactive</td></tr>
 <tr><td><strong>Total</strong></td><td><strong>96</strong></td><td>—</td><td>—</td></tr>
 </tbody>
 </table>

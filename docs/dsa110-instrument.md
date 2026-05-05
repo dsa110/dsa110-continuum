@@ -54,16 +54,16 @@ The DSA-110 is a **T-shaped array** consisting of three components:
 
 | Component | Count (total slots) | Active | Notes |
 |---|---|---|---|
-| East-West (E-W) arm | 51 slots (DSA001–DSA051) | unresolved | Repo-local docs have disagreed between 47 and 51 active E-W antennas; verify against Connor et al. 2025 or real HDF5/MS antenna metadata before using a breakdown. |
-| North-South (N-S) arm | 51 slots (DSA052–DSA102) | unresolved | Often cited as 35 active, but the active-ID list is not machine-readable in this repo. |
-| Outriggers | 15 slots (DSA103–DSA117) | unresolved | Often cited as 14 active; verify against DSA-specific metadata before using a breakdown. |
+| East-West (E-W) arm | 51 slots (DSA001–DSA051) | **47** | Verified from H17 HDF5 metadata (2026-05-05). Inactive: DSA-{10, 21, 22, 23}. |
+| North-South (N-S) arm | 51 slots (DSA052–DSA102) | **35** | Verified from H17 HDF5 metadata. Active range: DSA068–DSA102 (DSA052–DSA067 inactive). |
+| Outriggers | 15 slots (DSA103–DSA117) | **14** | Verified from H17 HDF5 metadata. Inactive: DSA-117. |
 | **Total (CSV slots)** | **117** | — | CSV has 117 rows (headerline=5) |
-| **Active antennas** | — | **96** | Total active count cited by Connor et al. 2025; per-arm breakdown remains external_pending. |
+| **Active antennas** | — | **96** | `Nants_data=96` in real H17 HDF5 metadata (`/data/incoming/2026-01-25T*_sb00.hdf5`). Verified 2026-05-05; full active list in `outputs/ground_truth_audit_2026-05-04/active_antennas_2026-01-25.md`. |
 
 > **Important:** The CSV in this repository
 > (`dsa110_continuum/simulation/pyuvsim/antennas.csv`) contains all 117 allocated
-> position slots. Pipeline code that models thermal noise uses 96 active antennas,
-> but the exact per-arm active breakdown is not settled by repo-local evidence.
+> position slots. Pipeline code that models thermal noise uses 96 active antennas
+> (47 E-W + 35 N-S + 14 outriggers, verified 2026-05-05 against H17 HDF5 metadata).
 > The `ant_ids_mid.csv` in the `dsa110-antpos` repo is a **66-antenna commissioning
 > configuration** (48 EW + 3 near the T-junction + 15 outriggers) used during an
 > earlier science run — it does NOT represent the full operational array.
@@ -319,25 +319,24 @@ that require the `fillgaps=3` interpolation in bandpass calibration.
 ### 11.1 Operational Array (as of 2025; Connor et al. 2025)
 
 The repo treats DSA-110 as a **96 active antenna** array for operational noise
-and QA calculations. The per-arm breakdown is unresolved in repo-local evidence:
-current files have previously asserted both 47 and 51 active E-W antennas.
+and QA calculations. The per-arm breakdown was resolved on 2026-05-05 from real
+H17 HDF5 metadata (`/data/incoming/2026-01-25T00:00:10_sb00.hdf5`):
 
 | Component | Active count | Station number range |
 |---|---|---|
-| E-W core arm | **external_pending** | Subset of DSA001–DSA051 |
-| N-S arm | **external_pending** | Subset of DSA052–DSA102 |
-| Outriggers | **external_pending** | Subset of DSA103–DSA117 |
+| E-W core arm | **47** | DSA001–DSA051 (inactive: 10, 21, 22, 23) |
+| N-S arm | **35** | DSA068–DSA102 (DSA052–DSA067 inactive) |
+| Outriggers | **14** | DSA103–DSA116 (DSA117 inactive) |
 | **Total** | **96** | — |
 
-Do not use a per-arm active breakdown until it is reconciled against Connor et
-al. 2025, real HDF5/MS antenna metadata from H17, or a sibling DSA-specific
-`dsa110-antpos` checkout.
+The full active station-number list is in
+`outputs/ground_truth_audit_2026-05-04/active_antennas_2026-01-25.md`.
 
 ### 11.2 Earlier Commissioning Configurations
 
-- **64-antenna (pre-N-S arm):** E-W active count is external_pending here; verify
-  against DSA-specific commissioning metadata before using a per-arm count. This
-  phase is associated with early DSA-110 science runs.
+- **64-antenna (pre-N-S arm):** Historical E-W-only commissioning phase associated
+  with early DSA-110 science runs; per-arm active counts for that era are not
+  reconstructible from the present H17 metadata snapshot.
 - **66-antenna (`ant_ids_mid.csv`):** 48 EW + 3 near T-junction + 15 outriggers;
   a specific correlator configuration used for a particular observing campaign.
   This file does NOT represent the full operational 96-antenna array.
@@ -402,8 +401,8 @@ required.
 ```
 DSA-110 at a glance
 ===================
-Active antennas:   96 total; per-arm active breakdown external_pending
-Dense core:        external_pending active count
+Active antennas:   96 total (47 E-W + 35 N-S + 14 outriggers, verified 2026-05-05)
+Dense core:        82 (47 E-W + 35 N-S, b < 485 m)
 Max baseline:      2.6 km (outriggers)
 Dish diameter:     4.65 m
 Frequency:         1311.25–1498.75 MHz (187.5 MHz bandwidth)

@@ -74,9 +74,9 @@ _DISH_DIAM_M      = 4.65
 # ── Antenna positions ─────────────────────────────────────────────────────────
 
 # Path to the canonical antenna position CSV (relative to this file).
-# The CSV has 117 rows (all allocated station slots). The operational active
-# array is usually cited as 96 antennas, but the per-arm active breakdown is not
-# repo-verified.
+# The CSV has 117 rows (all allocated station slots); 96 are active in the
+# operational array (47 E-W + 35 N-S + 14 outriggers, verified 2026-05-05
+# against real H17 HDF5 metadata; see docs/GROUND_TRUTH.md).
 _DEFAULT_ANT_CSV = Path(__file__).parent / "pyuvsim" / "antennas.csv"
 _DEFAULT_GEO_CSV = Path(__file__).parent / "pyuvsim" / "DSA110_Station_Coordinates.csv"
 
