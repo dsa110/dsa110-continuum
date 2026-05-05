@@ -1,205 +1,75 @@
-# DSA-110 Simulation Ground Truth Reference
+# DSA-110 Ground Truth
 
-**Purpose:** Single authoritative reference for all DSA-110 parameters used in
-the simulation pipeline. Every agent session should consult this file before
-making assumptions about instrument geometry, timing, or spectral setup.
+This file is an evidence index for DSA-110 parameters used by this repository.
+It is not allowed to become an unsourced authority document: each claim below
+has a status, evidence pointer, and verification date.
 
-**Last updated:** 2026-04-17  
-**Sources:** `docs/dsa110-instrument.md`, `dsa110_measured_parameters.yaml`,
-`dsa110_continuum/simulation/pyuvsim/antennas.csv`,
-Connor et al. 2025 (arXiv:2510.18136)
+Status vocabulary:
 
----
+- `repo_verified`: directly supported by current checked-in code or config.
+- `computed`: recomputed from current checked-in code or data files.
+- `test_asserted`: asserted by current checked-in tests.
+- `external_pending`: plausible or cited externally, but not verified in this pass.
+- `stale_rejected`: present in older docs but contradicted by current evidence.
 
-## 1. Array Geometry
+External validation sources for DSA-110 instrument facts are limited to:
 
-### 1.1 Reference Location (OVRO)
+- Connor et al. 2025.
+- Real HDF5/MS antenna metadata from H17 `/data/incoming/`, read via `pyuvdata`.
+- A sibling DSA-specific `dsa110-antpos` checkout if present.
 
-| Parameter | Value | Source |
-|---|---|---|
-| Latitude | 37.2339° N | `harness.py` `_OVRO_LAT_DEG` |
-| Longitude | −118.2825° E | `harness.py` `_OVRO_LON_DEG` |
-| Altitude | 1222.0 m | `harness.py` `_OVRO_ALT_M` |
+Do not use ASKAP/VAST references as authority for DSA-110 antenna counts,
+station positions, or active-array composition.
 
-### 1.2 Active Antenna Count
+## Current Claims
 
-**96 active antennas** out of 117 allocated station slots (Connor et al. 2025):
-
-| Arm | Active | Slot pool | Notes |
+| Claim | Status | Evidence | Last verified |
 |---|---|---|---|
-| E-W core | **51** | DSA001–DSA051 | All 51 slots built and active. Physical gaps (DSA022→023: 63 m; around DSA029/030/035: ~23 m each) are unbuilt pad *locations*, not offline antennas. |
-| N-S arm | **35** | DSA052–DSA102 | 51 slots allocated; 45 built out; 35 active. Which 16 are inactive is **not enumerated in this repo**. |
-| Outriggers | **14** | DSA103–DSA117 | 15 slots; 14 active. DSA-117 lacks an elevation entry in the canonical CSV and is the likely inactive outrigger, but **not confirmed in any repo file**. |
-| **Total** | **96** | — | — |
+| The repository currently contains 117 allocated DSA-110 station rows in `antennas.csv`. | repo_verified | `dsa110_continuum/simulation/pyuvsim/antennas.csv`; `wc -l` gives 118 lines including header. | 2026-05-05 |
+| The repository currently contains 117 DSA station rows in `DSA110_Station_Coordinates.csv`; DSA-117 has a blank elevation field. | repo_verified | `dsa110_continuum/simulation/pyuvsim/DSA110_Station_Coordinates.csv`; `wc -l` gives 123 lines including metadata/header rows; tail shows DSA-117 blank elevation. | 2026-05-05 |
+| `load_geodetic_enu()` reads `DSA110_Station_Coordinates.csv`, converts WGS84 coordinates to ECEF, and rotates into local ENU. | repo_verified | `dsa110_continuum/simulation/harness.py` function `load_geodetic_enu`. | 2026-05-05 |
+| The default `SimulationHarness` real-position path uses `load_geodetic_enu()`. | repo_verified | `dsa110_continuum/simulation/harness.py` property `antenna_enu`. | 2026-05-05 |
+| `antennas.csv` is a bundled projected-coordinate station file, but it is not the current default path for `SimulationHarness` real positions. | repo_verified | `dsa110_continuum/simulation/harness.py` has `_load_antenna_enu_from_csv()` for `antennas.csv`; `antenna_enu` calls `load_geodetic_enu()` by default. | 2026-05-05 |
+| `SimulationHarness` defaults to `n_antennas=117`, `n_integrations=24`, `n_sky_sources=20`, `seed=42`, and `pointing_dec_deg=16.15`. | repo_verified | `dsa110_continuum/simulation/harness.py` dataclass defaults. | 2026-05-05 |
+| Full-geometry simulation should use `n_antennas=117`; `n_antennas=96` selects the first 96 station rows and excludes outrigger station rows, so it is not a proxy for the 96 active operational array. | repo_verified | `SimulationHarness.antenna_enu` slices the first `n_antennas` rows through `load_geodetic_enu(n_antennas=...)`; station rows DSA103-DSA117 are outside the first 96 rows. | 2026-05-05 |
+| The harness OVRO constants are latitude `37.2339 deg`, longitude `-118.2825 deg`, altitude `1222.0 m`. | repo_verified | `dsa110_continuum/simulation/harness.py` constants `_OVRO_LAT_DEG`, `_OVRO_LON_DEG`, `_OVRO_ALT_M`. | 2026-05-05 |
+| The simulation spectral setup is 16 subbands, 48 channels per subband, 768 channels total, and channel width `244140.625 Hz`. | repo_verified | `dsa110_continuum/simulation/harness.py` constants; `dsa110_continuum/simulation/config/dsa110_measured_parameters.yaml` `spectral`. | 2026-05-05 |
+| The YAML channel-width value is currently `244140.625 Hz`; the old `325.520833 kHz` warning is obsolete. | repo_verified | `dsa110_continuum/simulation/config/dsa110_measured_parameters.yaml` `spectral.channel_width_hz` and `system_parameters.channel_width` history note. | 2026-05-05 |
+| Current harness subband channel centers span `1311.3720703125 MHz` through `1498.6279296875 MHz`; 768 channel widths span `187.5 MHz`. | computed | Recomputed with `SimulationHarness.subband_freqs(0..15)` under `/opt/miniforge/envs/casa6/bin/python`. | 2026-05-05 |
+| Current harness tile timing is 24 integrations times `12.884902 s`, giving `309.237648 s`. | computed | Recomputed from `24 * 12.884902`; integration constant is in `dsa110_continuum/simulation/harness.py`. | 2026-05-05 |
+| The current default simulation tile start is `2026-01-25T22:26:05`; the median RA for that tile is about `344.124049 deg`. | computed | `SimulationHarness.make_time_array()` default start plus recomputed apparent sidereal time at `_OVRO_LON_DEG`. | 2026-05-05 |
+| The current default simulation declination `16.15 deg` is a canary/simulation default, not an operational fixed survey declination. | repo_verified | `SimulationHarness.pointing_dec_deg` default; `docs/pipeline-specs.md` states survey declination is read from incoming observation metadata. | 2026-05-05 |
+| Current `load_geodetic_enu(117)` produces E span about `1768.56 m` and N span about `2219.73 m`. | computed | Recomputed with `load_geodetic_enu(117)` under `/opt/miniforge/envs/casa6/bin/python`. | 2026-05-05 |
+| The synthetic simulation sky uses random point sources with a power-law flux distribution and spectral-index scatter. | repo_verified | `dsa110_continuum/simulation/harness.py` function `_make_sky_model()`. | 2026-05-05 |
+| The default synthetic sky uses `n_sky_sources=20` and `seed=42`. | repo_verified | `SimulationHarness` dataclass defaults. | 2026-05-05 |
+| `scripts/plot_tile_image.py` uses `AMP_SCATTER = 0.05` and `PHASE_SCATTER = 5.0`. | repo_verified | `scripts/plot_tile_image.py` constants. | 2026-05-05 |
+| The QA noise model default uses `num_antennas=96`. | repo_verified | `dsa110_continuum/qa/noise_model.py` `calculate_theoretical_rms()` signature. | 2026-05-05 |
+| Noise-model behavior around 96 versus 117 antennas is asserted by tests. | test_asserted | `tests/test_noise_model_fix.py`. | 2026-05-05 |
+| The operational active-antenna total is commonly cited as 96. | external_pending | Repo docs cite Connor et al. 2025, and code uses 96 for noise QA, but this pass did not verify Connor et al. 2025 or H17 antenna metadata directly. | 2026-05-05 |
+| The per-arm active breakdown of the 96 active antennas is unresolved in repo-local evidence. | external_pending | Repo references previously disagreed between 47 and 51 active E-W antennas; must be reconciled against Connor et al. 2025, H17 HDF5/MS metadata, or DSA-specific `dsa110-antpos`. | 2026-05-05 |
+| The exact active station-number list for the 96 active antennas is not established by this repository. | external_pending | No active-96 station list was found in this repo audit; validate against real HDF5/MS metadata or a sibling DSA-specific `dsa110-antpos` checkout. | 2026-05-05 |
+| Commissioning configuration counts from `ant_ids.csv` and `ant_ids_mid.csv` are not repo-ground-truth until checked against a DSA-specific `dsa110-antpos` checkout. | external_pending | Those files are not present in this repository. | 2026-05-05 |
+| Reference figure metrics such as PSF HPBW, peak sidelobe, and UV fill are not ground truth until regenerated or checked from their source scripts. | external_pending | `docs/images/*` exists, but this pass did not regenerate or validate figure numerical content. | 2026-05-05 |
 
-> **Critical caveat:** The exact list of which 96 station numbers are active is
-> **not machine-readable anywhere in this repository or in `dsa110-antpos`**.
-> The authoritative source is the HDF5/MS antenna metadata from real data on `h17`,
-> accessed via `pyuvdata`'s `telescope.antenna_numbers` field at conversion time.
->
-> For simulation purposes the correct approach is to **use all 117 station
-> positions** from `antennas.csv` (§1.3) — this gives the correct array
-> geometry with all built positions. The 21 inactive slots produce zero-weighted
-> baselines in the imager and do not degrade image quality.
+## Rejected Old Claims
 
-### 1.3 Position Files
-
-Two files encode station positions. Use `antennas.csv` for simulation:
-
-| File | Format | Use |
-|---|---|---|
-| `dsa110_continuum/simulation/pyuvsim/DSA110_Station_Coordinates.csv` | WGS84 lat/lon/elevation, 117 rows, header at row 5 | Human reference only |
-| `dsa110_continuum/simulation/pyuvsim/antennas.csv` | Projected ECEF columns `east_m`, `north_m`, `up_m`, 117 rows | **Used by `load_geodetic_enu()` and the simulation harness** |
-
-**Relative ENU (subtract DSA-001 raw values to get metres from DSA-001):**
-
-```
-DSA-001 raw:  east_m = 411169.605,  north_m = −375417.782,  up_m = −24373.994
-Δeast  = east_m  − 411169.605
-Δnorth = north_m − (−375417.782)   ← note: north_m values are large negative numbers
-Δup    = up_m    − (−24373.994)
-```
-
-**Key relative positions (metres from DSA-001, from `load_geodetic_enu(117)`):**
-
-> These are the values the harness actually uses (geodetic → ECEF → local-ENU
-> rotation). They are the authoritative simulation positions.
-
-| Station | Δeast (m) | Δnorth (m) | Notes |
+| Claim | Status | Evidence | Last verified |
 |---|---|---|---|
-| DSA-001 | 0.0 | 0.0 | West end of E-W arm |
-| DSA-022 | +120.8 | 0.0 | Last station before 63 m gap |
-| DSA-023 | +184.1 | 0.0 | First station after 63 m gap |
-| DSA-051 | +396.9 | 0.0 | East end of E-W arm |
-| DSA-052 | +198.4 | +8.6 | South end of N-S arm (T-junction) |
-| DSA-102 | +198.4 | +441.4 | North end of N-S arm |
-| DSA-103 | +388.0 | −374.4 | Closest outrigger (S) |
-| DSA-104 | +781.8 | +209.0 | Outrigger (E) |
-| DSA-108 | +790.5 | +1845.4 | Far N outrigger |
-| DSA-114 | −905.2 | +1840.1 | Far NW outrigger |
-| DSA-116 | −795.0 | −217.3 | SW outrigger |
-| DSA-117 | −978.1 | −204.3 | **Likely inactive** (missing elevation in CSV) |
+| `OLD_GROUND_TRUTH.md` is a single authoritative reference that every agent should trust. | stale_rejected | The file was created in commit `6ad8a00` alongside many simulation changes and contains claims contradicted by current source. | 2026-05-05 |
+| `DSA110_Station_Coordinates.csv` is human reference only and `antennas.csv` is used by `load_geodetic_enu()`. | stale_rejected | Current `load_geodetic_enu()` reads `DSA110_Station_Coordinates.csv`. | 2026-05-05 |
+| `SimulationHarness` default `n_antennas` is 8. | stale_rejected | Current dataclass default is `117`. | 2026-05-05 |
+| DSA-110 operational declination is fixed at `16.15 deg`. | stale_rejected | `16.15 deg` is a simulation default; operational docs say declination is read from observation metadata. | 2026-05-05 |
+| The YAML still contains a stale `325.520833 kHz` channel-width value to ignore. | stale_rejected | Current YAML records `244.140625 kHz` and a correction note. | 2026-05-05 |
+| Inactive station slots produce zero-weighted baselines in the simulation harness. | stale_rejected | Current harness creates baselines across the selected antenna rows; no zero-weighting of inactive slots was found. | 2026-05-05 |
+| The active per-arm breakdown is repo-verified as either `47 EW + 35 NS + 14 outriggers` or `51 EW + 35 NS + 14 outriggers`. | stale_rejected | Repo-local references have disagreed; the breakdown is `external_pending`. | 2026-05-05 |
 
-**Array extents (all 117 stations, relative to DSA-001):**
+## Working Audit
 
-| Dimension | Extent |
-|---|---|
-| E-W arm span | ~397 m (DSA-001 to DSA-051) |
-| N-S arm span | ~432 m (DSA-052 to DSA-102) |
-| Max E baseline | ~1769 m (total E-W including outriggers) |
-| Max N baseline | ~2220 m (total N-S including outriggers) |
-| Nearest outrigger | DSA-103, 374 m S of T-junction |
+The claim matrix that led to this rewrite is preserved at:
 
-### 1.4 Correct Harness Configuration
+- `outputs/ground_truth_audit_2026-05-04/README.md`
+- `outputs/ground_truth_audit_2026-05-04/ground_truth_claims_audit.csv`
 
-**Always use `n_antennas=117`** (all built positions). Do not use `n_antennas=96`
-(takes first 96 CSV rows = 51 EW + 45 NS + 0 outriggers — geometrically wrong,
-misses all outriggers).
-
-```python
-from dsa110_continuum.simulation.harness import SimulationHarness
-harness = SimulationHarness(n_antennas=117, n_integrations=24)
-```
-
-The `SimulationHarness` default of `n_antennas=8` is **for unit tests only**.
-Scripts that simulate real DSA-110 data must pass `n_antennas=117`.
-
----
-
-## 2. Timing
-
-| Parameter | Value | Source |
-|---|---|---|
-| Integration time | **12.884902000427246 s** | `dsa110_measured_parameters.yaml` → `temporal.integration_time_sec` |
-| Fields per tile | **24** | One drift-scan tile = 24 integrations × 12.885 s ≈ 309.2 s |
-| Tile duration | **~309.2 s** | 24 × 12.884902 s |
-| Tile 0 start (UTC) | **2026-01-25T22:26:05** | `scripts/plot_tile_image.py` `T_START` |
-| Tile 0 median RA | **344.124°** | Harness drift-scan calculation for T_START |
-| Declination | **16.15°** | Fixed (OVRO transit strip at Dec ≈ +16°) |
-
----
-
-## 3. Spectral Setup
-
-| Parameter | Value | Source |
-|---|---|---|
-| Subbands | **16** | `harness.py` |
-| Channels per subband | **48** | `harness.py` |
-| Total channels | **768** | 16 × 48 |
-| Channel width | **244.140625 kHz** | 250 MHz / 1024 total correlator channels; `dsa110_measured_parameters.yaml` → `spectral.channel_width_hz` |
-| Frequency range | **1311.372 – 1498.628 MHz** | `harness.subband_freqs(0)` min → `harness.subband_freqs(15)` max |
-| Bandwidth | **~187.3 MHz** | 768 × 244.14 kHz |
-| Polarizations | **XX, YY** (2 pols) | pyuvdata convention |
-
-> **YAML inconsistency (known bug):** `dsa110_measured_parameters.yaml` contains
-> a stale entry `frequency_setup.channel_width.value = 325.520833 kHz` based on
-> the derivation "15.625 MHz / 48 channels". This is **wrong for the operational
-> pipeline**: the per-subband bandwidth is 11.71875 MHz (not 15.625 MHz), giving
-> 11718750 / 48 = **244.14 kHz**. The 325.5 kHz figure reflects a different
-> correlator mode and should be ignored. The correct value is in
-> `spectral.channel_width_hz: 244140.625`.
-
----
-
-## 4. Sky Model (Simulation)
-
-The simulation sky model is **entirely synthetic** — random point sources drawn
-from a power-law flux distribution using `seed=42`. Sources are **not** from
-NVSS or any real catalog.
-
-| Parameter | Value |
-|---|---|
-| Number of sources | `n_sky_sources=20` (harness default) |
-| Seed | `seed=42` (reproducible) |
-| Flux distribution | Power law, calibrated to realistic L-band source counts |
-| Real source catalog | Exists at `outputs/diagnostics/2026-03-09/tile_2026-01-25T22-26-05_source_list.txt` but is **not connected to the simulation** |
-
-For PSF and calibration testing the synthetic sky is sufficient. For end-to-end
-validation against real data, the sky model must be replaced with a real catalog
-(e.g. NVSS/FIRST/RACS) matched to the tile field of view.
-
----
-
-## 5. Commissioning Configuration History
-
-Do not confuse these with the operational 96-antenna array:
-
-| Config | File | Count | Composition |
-|---|---|---|---|
-| Early commissioning | `antpos/data/ant_ids.csv` | 24 | DSA013–020, 024–035, 100–102, 116 |
-| Mid-campaign | `antpos/data/ant_ids_mid.csv` | 66 | 48 EW + 3 NS (100–102) + 15 outriggers |
-| Operational (current) | **not in any CSV** | **96** | 51 EW + 35 NS + 14 outriggers |
-
----
-
-## 6. Known Simulation Limitations
-
-1. **Active antenna list:** No machine-readable 96-antenna ID list exists in this
-   repo. Using all 117 positions is the correct approximation for simulation.
-
-2. **Sky model:** Synthetic only. Real-data validation requires a catalog sky model.
-
-3. **Gain corruption:** The simulation applies per-antenna gain errors with
-   amplitude scatter ~10% and phase scatter ~5°. These are representative but
-   not calibrated against real DSA-110 gain stability measurements.
-
-4. **No ionosphere:** The simulation does not model ionospheric phase fluctuations,
-   which are significant at L-band for DSA-110's 2 km baselines.
-
-5. **WSClean `-pol I` convention:** Returns `(XX + YY) / 2` per baseline in
-   Jy/beam. Source fluxes in the sky model are Stokes I; the output image is
-   in Stokes I units after WSClean combination.
-
----
-
-## 7. Reference Figures
-
-All figures are stored in `docs/images/`. See [`docs/images/README.md`](images/README.md)
-for full descriptions and regeneration instructions.
-
-| Figure | Key result |
-|---|---|
-| `docs/images/dsa110_antenna_layout.png` | ENU layout — T-core + outrigger distribution clearly visible |
-| `docs/images/dsa110_psf_analysis.png` | PSF at Dec +16°: HPBW 75"×332", peak sidelobe 0.415, UV fill 0.90% |
-| `docs/images/step2_calibrator_visibility.png` | Approved calibrator visibility output |
-| `docs/images/step3_gain_solutions.png` | Approved gain solution output |
+These audit artifacts are part of this docs change set and should be committed
+with `docs/GROUND_TRUTH.md`; otherwise this pointer will intentionally be
+removed.
