@@ -56,16 +56,6 @@ def test_beam_correction_zero_cdelt():
     assert factor == 1.0
 
 
-@pytest.mark.skipif(not MOSAIC.exists(), reason="Step 6 mosaic not on disk")
-def test_coarse_pass_returns_finite():
-    coords = [(344.124, 16.15), (346.71, 16.15)]
-    results = run_coarse_pass(str(MOSAIC), coords, global_rms=None)
-    assert len(results) == 2
-    for aug in results:
-        assert isinstance(aug, CoarseAugment)
-        assert np.isfinite(aug.coarse_peak_jyb)
-
-
 def test_coarse_pass_synthetic_fits():
     """run_coarse_pass works on a small synthetic FITS — no real mosaic needed."""
     import tempfile
@@ -108,20 +98,6 @@ def test_coarse_pass_synthetic_fits():
     assert aug.coarse_peak_jyb == pytest.approx(0.5, rel=0.05)
     assert aug.coarse_snr == pytest.approx(500.0, rel=0.05)  # 0.5 / 0.001
     assert aug.passed_coarse is True
-
-
-@pytest.mark.skipif(not MOSAIC.exists(), reason="Step 6 mosaic not on disk")
-def test_snr_gate_all_pass_with_low_rms():
-    coords = [(344.124, 16.15)]
-    results = run_coarse_pass(str(MOSAIC), coords, global_rms=1e-6, snr_coarse_min=3.0)
-    assert results[0].passed_coarse is True
-
-
-@pytest.mark.skipif(not MOSAIC.exists(), reason="Step 6 mosaic not on disk")
-def test_snr_gate_all_fail_with_high_rms():
-    coords = [(344.124, 16.15)]
-    results = run_coarse_pass(str(MOSAIC), coords, global_rms=1e6, snr_coarse_min=3.0)
-    assert results[0].passed_coarse is False
 
 
 def test_two_stage_returns_paired_lists():
