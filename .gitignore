@@ -49,3 +49,6 @@ pipeline_diagnostic.png
 
 # Forced photometry benchmark JSONs (regenerable via scripts/bench_forced_photometry.py)
 outputs/photometry-bench/
+
+# Playwright CLI cache (skill scratch state)
+.playwright-cli/
