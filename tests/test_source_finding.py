@@ -212,15 +212,12 @@ def _make_aegean_source(ra=344.0, dec=16.0, peak=0.05, rms=0.003):
 
 def test_run_aegean_import_error():
     """ImportError with install hint when AegeanTools is absent."""
-    # Ensure AegeanTools is not available
-    for k in list(sys.modules.keys()):
-        if "AegeanTools" in k:
-            del sys.modules[k]
     import importlib
     from dsa110_continuum.source_finding import core as sf_core
     importlib.reload(sf_core)
-    with pytest.raises(ImportError, match="AegeanTools not installed"):
-        sf_core.run_aegean("fake.fits", "fake_bkg.fits", "fake_rms.fits")
+    with patch.dict(sys.modules, {"AegeanTools.source_finder": None}):
+        with pytest.raises(ImportError, match="AegeanTools not installed"):
+            sf_core.run_aegean("fake.fits", "fake_bkg.fits", "fake_rms.fits")
     # Restore module state
     importlib.reload(sf_core)
 

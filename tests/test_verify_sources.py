@@ -178,7 +178,7 @@ def test_verify_sources_integration():
 
         result = subprocess.run(
             [
-                sys.executable, "scripts/verify_sources.py",
+                sys.executable, "-m", "scripts.verify_sources",
                 "--fits",        str(fits_path),
                 "--master-db",   str(master_db),
                 "--nvss-db",     str(nvss_db),
