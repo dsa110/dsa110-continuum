@@ -131,56 +131,77 @@ def test_build_patch_grid_coverage():
 
 
 # ---------------------------------------------------------------------------
-# Test 7 (slow): full check_tile_scattering on a real synthetic mosaic FITS
+# Test 7: check_tile_scattering on a synthetic mosaic FITS with mocked scattering
 # ---------------------------------------------------------------------------
-@pytest.mark.slow
-def test_check_tile_scattering_integration():
-    """Full pipeline: synthetic 512x512 FITS -> check_tile_scattering -> score in [0,1]."""
-    import tempfile
-    import os
+def test_check_tile_scattering_integration(tmp_path):
+    """check_tile_scattering on a 512x512 FITS exercises the full grid + gate path.
+
+    Real code paths covered: FITS read, ``_build_patch_grid`` fallback (since
+    ``tile_dir=None``), per-patch slicing, score aggregation, and gate logic.
+    The CPU-heavy ``scattering`` package is mocked using the same pattern as
+    the surrounding score_patch tests so the test runs in the default suite.
+    """
+    import torch
     from astropy.io import fits
 
-    # Build a synthetic 512x512 FITS (2 patches of 256x256 fit exactly)
+    # Build a synthetic 512x512 FITS (4 patches of 256x256 fit exactly)
     rng = np.random.default_rng(0)
     data = rng.standard_normal((512, 512)).astype(np.float32) * 0.01
-    # Inject a bright source
-    data[256, 256] = 1.0
+    data[256, 256] = 1.0  # inject a bright source
 
-    with tempfile.NamedTemporaryFile(suffix=".fits", delete=False) as f:
-        mosaic_path = f.name
-    try:
-        hdr = fits.Header()
-        hdr["NAXIS"] = 2
-        hdr["NAXIS1"] = 512
-        hdr["NAXIS2"] = 512
-        hdr["CDELT1"] = -20.0 / 3600.0
-        hdr["CDELT2"] = 20.0 / 3600.0
-        hdr["CRPIX1"] = 256.0
-        hdr["CRPIX2"] = 256.0
-        hdr["CRVAL1"] = 344.0
-        hdr["CRVAL2"] = 16.15
-        hdr["CTYPE1"] = "RA---TAN"
-        hdr["CTYPE2"] = "DEC--TAN"
-        fits.writeto(mosaic_path, data, hdr, overwrite=True)
+    mosaic_path = tmp_path / "mosaic.fits"
+    hdr = fits.Header()
+    hdr["NAXIS"] = 2
+    hdr["NAXIS1"] = 512
+    hdr["NAXIS2"] = 512
+    hdr["CDELT1"] = -20.0 / 3600.0
+    hdr["CDELT2"] = 20.0 / 3600.0
+    hdr["CRPIX1"] = 256.0
+    hdr["CRPIX2"] = 256.0
+    hdr["CRVAL1"] = 344.0
+    hdr["CRVAL2"] = 16.15
+    hdr["CTYPE1"] = "RA---TAN"
+    hdr["CTYPE2"] = "DEC--TAN"
+    fits.writeto(str(mosaic_path), data, hdr, overwrite=True)
 
-        from dsa110_continuum.qa.scattering_qa import check_tile_scattering
+    # Mock stc: returns identical coefficients for orig and synthesis
+    coef = np.ones(371, dtype=np.float32)
+    mock_cov = {"for_synthesis_iso": torch.tensor(coef[None, :])}
+    mock_stc = MagicMock()
+    mock_stc.J = 7
+    mock_stc.L = 4
+    mock_stc.scattering_cov.return_value = mock_cov
+
+    # ``synthesis`` must return a (1, patch_size, patch_size)-shaped array
+    fake_syn = np.zeros((1, 256, 256), dtype=np.float32)
+
+    from dsa110_continuum.qa.scattering_qa import check_tile_scattering
+
+    with _mock_scattering_module(MagicMock(return_value=fake_syn)), \
+         patch(
+             "dsa110_continuum.qa.scattering_qa._get_scattering_calculator",
+             return_value=mock_stc,
+         ):
         result = check_tile_scattering(
             mosaic_path,
             tile_dir=None,          # force grid fallback
             patch_size=256,
             J=7,
             L=4,
-            synthesis_steps=20,     # fewer steps for speed in testing
+            synthesis_steps=5,
         )
-        assert result.gate in ("PASS", "WARN", "FAIL")
-        assert len(result.patch_scores) == 4   # 512/256 x 512/256 = 4 patches
-        assert result.tile_source == "grid"
-        for ps in result.patch_scores:
-            assert math.isnan(ps.score) or 0.0 <= ps.score <= 1.0, (
-                f"Score out of range: {ps.score}"
-            )
-    finally:
-        os.unlink(mosaic_path)
+
+    assert result.gate in ("PASS", "WARN", "FAIL")
+    assert len(result.patch_scores) == 4   # 512/256 x 512/256 = 4 patches
+    assert result.tile_source == "grid"
+    for ps in result.patch_scores:
+        # float32 dot product can land 1 ulp above 1.0 when vectors are identical
+        assert math.isnan(ps.score) or 0.0 <= ps.score <= 1.0 + 1e-5, (
+            f"Score out of range: {ps.score}"
+        )
+    # Identical mock coefficients -> exact-match score of 1.0 -> PASS gate.
+    assert result.gate == "PASS"
+    assert math.isclose(result.min_score, 1.0, abs_tol=1e-5)
 
 
 # ---------------------------------------------------------------------------
