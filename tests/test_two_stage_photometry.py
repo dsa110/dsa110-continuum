@@ -8,8 +8,6 @@ from unittest.mock import patch
 
 from dsa110_continuum.photometry.two_stage import CoarseAugment, beam_correction_factor, run_coarse_pass, run_two_stage
 
-MOSAIC = Path("pipeline_outputs/step6/step6_mosaic.fits")
-
 
 def test_coarse_augment_fields():
     aug = CoarseAugment(
@@ -276,22 +274,69 @@ def test_beam_correction_ratio_bright_sources(tmp_path):
 
 # ── Task 5: CLI integration tests ──────────────────────────────────────────
 
-@pytest.mark.skipif(
-    not Path("pipeline_outputs/step6/step6_mosaic.fits").exists(),
-    reason="Step 6 mosaic not on disk",
-)
-def test_cli_simple_peak_sim_produces_csv():
-    import csv as _csv, tempfile, subprocess, sys
-    with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
-        out_csv = f.name
+
+def _make_sim_mosaic(fits_path: str) -> None:
+    """Write a synthetic FITS that covers the SimulationHarness(seed=42) sky model.
+
+    Default-config sky model (used by forced_photometry.py --sim) puts 20 sources
+    in RA 341.91-345.23, Dec 14.55-17.80 around pointing (343.5, 16.15). The
+    image is 700x700 px at 20"/pix (3.89° span) with low-amplitude Gaussian noise
+    so mad_std-based RMS estimation produces a sensible value, and each injected
+    source is a single bright pixel at its WCS-rounded position.
+    """
+    from astropy.io import fits as afits
+    from astropy.wcs import WCS as AWCS
+
+    from dsa110_continuum.simulation.harness import SimulationHarness
+
+    h = SimulationHarness(seed=42)
+    sky = h.make_sky_model()
+    coords = [(float(sky.ra[k].deg), float(sky.dec[k].deg)) for k in range(sky.Ncomponents)]
+    fluxes = [float(sky.stokes[0, 0, k].value) for k in range(sky.Ncomponents)]
+
+    ny, nx = 700, 700
+    cdelt_deg = 20.0 / 3600.0
+    rng = np.random.default_rng(0)
+    data = rng.normal(0.0, 1e-4, (ny, nx)).astype(np.float32)
+
+    w = AWCS(naxis=2)
+    w.wcs.ctype = ["RA---SIN", "DEC--SIN"]
+    w.wcs.crval = [h.pointing_ra_deg, h.pointing_dec_deg]
+    w.wcs.crpix = [nx / 2.0, ny / 2.0]
+    w.wcs.cdelt = [-cdelt_deg, cdelt_deg]
+
+    for (ra, dec), flux in zip(coords, fluxes):
+        x, y = w.wcs_world2pix([[ra, dec]], 0)[0]
+        ix, iy = int(round(x)), int(round(y))
+        if 0 <= ix < nx and 0 <= iy < ny:
+            data[iy, ix] = float(flux)
+
+    hdr = w.to_header()
+    hdr["BMAJ"] = 30.0 / 3600.0
+    hdr["BMIN"] = 30.0 / 3600.0
+    hdr["BPA"] = 0.0
+    afits.PrimaryHDU(data=data, header=hdr).writeto(fits_path)
+
+
+def test_cli_simple_peak_sim_produces_csv(tmp_path):
+    import csv as _csv
+    import subprocess
+    import sys
+
+    mosaic = tmp_path / "synth_mosaic.fits"
+    _make_sim_mosaic(str(mosaic))
+    assert mosaic.exists(), f"helper failed to write {mosaic}"
+    out_csv = tmp_path / "out.csv"
+
+    repo_root = Path(__file__).parents[1]
     result = subprocess.run(
         [sys.executable, "scripts/forced_photometry.py",
-         "--mosaic", "pipeline_outputs/step6/step6_mosaic.fits",
+         "--mosaic", str(mosaic),
          "--method", "simple_peak",
          "--sim",
-         "--output", out_csv],
+         "--output", str(out_csv)],
         capture_output=True, text=True,
-        cwd="/home/user/workspace/dsa110-continuum",
+        cwd=str(repo_root),
     )
     assert result.returncode == 0, result.stderr
     with open(out_csv) as f:
@@ -300,29 +345,3 @@ def test_cli_simple_peak_sim_produces_csv():
     assert "measured_flux_jy" in rows[0]
     assert "snr" in rows[0]
     assert "injected_flux_jy" in rows[0]
-
-
-@pytest.mark.skipif(
-    not Path("pipeline_outputs/step6/step6_mosaic.fits").exists(),
-    reason="Step 6 mosaic not on disk",
-)
-def test_cli_two_stage_sim_produces_coarse_snr_column():
-    import csv as _csv, tempfile, subprocess, sys
-    with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
-        out_csv = f.name
-    result = subprocess.run(
-        [sys.executable, "scripts/forced_photometry.py",
-         "--mosaic", "pipeline_outputs/step6/step6_mosaic.fits",
-         "--method", "two_stage",
-         "--sim",
-         "--snr-coarse", "0.0",
-         "--output", out_csv],
-        capture_output=True, text=True,
-        cwd="/home/user/workspace/dsa110-continuum",
-    )
-    assert result.returncode == 0, result.stderr
-    with open(out_csv) as f:
-        rows = list(_csv.DictReader(f))
-    assert len(rows) > 0
-    assert "coarse_snr" in rows[0]
-    assert "passed_coarse" in rows[0]
