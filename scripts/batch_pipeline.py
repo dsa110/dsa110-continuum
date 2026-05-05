@@ -1841,6 +1841,9 @@ def main() -> None:
     except Exception as _report_err:
         log.warning("Run report render failed (non-fatal): %s", _report_err)
 
+    _emit_promotion_record(manifest, paths, args)
+
+
 def emit_run_summary(
     date: str,
     cal_date: str,
@@ -1913,6 +1916,29 @@ def emit_run_summary(
             _req.post(notify_url, json=payload, timeout=10)
         except Exception:
             pass  # notification is best-effort
+
+
+def _emit_promotion_record(manifest, paths: dict, args) -> None:
+    """Auto-emit per-(date, hour) promotion side-car JSON and ledger row.
+
+    Non-fatal: a writer failure must not fail an otherwise completed run.
+    The manifest and run summary remain the source of truth.
+    """
+    try:
+        from dsa110_continuum.qa.promotion import emit_for_run
+
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        products_root = os.path.dirname(os.path.dirname(paths["products_dir"]))
+        emit_for_run(
+            manifest,
+            paths["products_dir"],
+            repo_root,
+            cli_invocation=list(sys.argv),
+            skip_epoch_gaincal=bool(getattr(args, "skip_epoch_gaincal", False)),
+            products_root=products_root,
+        )
+    except Exception as exc:
+        log.warning("Promotion auto-emit failed (non-fatal): %s", exc)
 
 
 if __name__ == "__main__":
