@@ -1,0 +1,20 @@
+{
+  "raw_response": "**Overall rating: TRUE**\n\nGitHub’s documentation supports the core idea that the `/user/emails` endpoint shows email addresses and marks which one is public, and that the `visibility` field indicates whether an email is publicly visible rather than merely readable by the API user. The statement that only one email can have `visibility=public` is consistent with GitHub’s design for a single public email on a profile, though the docs more explicitly say you can set “your primary email” to be public than they spell out the “only one at a time” rule in those exact words.[1][2]\n\n## Claim analysis\n\n| Claim | Rating | Evidence |\n|---|---|---|\n| “On a GitHub user account, only ONE email at a time can have `visibility=public` via the GitHub API's `/user/emails` endpoint.” | TRUE | GitHub says the endpoint lists all email addresses and “specifies which one is visible to the public,” and the public-visibility setting is applied to the primary email, implying a single public email at a time [1][2]. |\n| “The `visibility` field marks which email is displayed as the public profile email on github.com, not whether the email is generally readable.” | TRUE | GitHub’s docs describe the `visibility`/public-email behavior as the publicly visible email address shown on the profile page, and distinguish this from simply listing email addresses via the authenticated endpoint [1][2]. |\n\n## Source URLs\n\n- GitHub REST API endpoints for emails: https://docs.github.com/en/rest/users/emails[1]\n- GitHub REST API endpoints for users: https://docs.github.com/en/rest/users/users?apiVersion=2026-03-10[2]\n\n## Short summary\n\nThe content is accurate: GitHub treats `visibility=public` as the single public profile email, not as a generic “readable by the API” flag.[2][1]",
+  "citations": [
+    "https://docs.github.com/en/rest/users/emails",
+    "https://docs.github.com/en/rest/users/users?apiVersion=2026-03-10",
+    "https://github.com/orgs/community/discussions/61718",
+    "https://github.com/JoshuaKGoldberg/github-username-to-emails",
+    "https://docs.github.com/en/enterprise-server@3.20/rest/users/emails",
+    "https://docs.github.com/en/rest/users/users",
+    "https://libguides.pittcc.edu/evaluate/fact-checking",
+    "https://github.com/orgs/community/discussions/59731",
+    "https://docs.github.com/v3/users",
+    "https://commguide.businesscommunication.wisc.edu/understanding-searching-for-professional-publications/how-to-fact-check-a-claim/",
+    "https://stackoverflow.com/questions/897586/does-git-publicly-expose-my-e-mail-address",
+    "https://stackoverflow.com/questions/40874967/cant-get-email-from-github-api",
+    "https://www.poynter.org/educators-students/2016/how-to-write-a-clear-fact-check/",
+    "https://tryapis.com/github/api/users-list-public-emails-for-authenticated-user/",
+    "https://docs.github.com/enterprise-cloud@latest/rest/orgs/members"
+  ]
+}

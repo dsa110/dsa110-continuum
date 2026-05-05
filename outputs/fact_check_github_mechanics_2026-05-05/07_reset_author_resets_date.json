@@ -1,0 +1,20 @@
+{
+  "raw_response": "Overall rating: **FALSE**.\n\nThe claim gets one important detail right: `git commit --amend --reset-author` resets the author identity to the current configured committer identity and refreshes the author timestamp. But the statement is wrong about *all* of the timing and identity behavior inside `git rebase --exec`, because `--reset-author` does not reset to “the current time” in the sense of preserving nothing else, and Git’s rebase machinery does not itself imply the specific author-date behavior described here.[1][2]\n\n## Claim-by-claim analysis\n\n| Claim | Rating | Explanation | Sources |\n|---|---|---|---|\n| Running `git rebase --exec \"git commit --amend --reset-author --no-edit\"` on a range of commits will use `--reset-author` to affect each replayed commit. | TRUE | `git rebase --exec` runs the supplied command after each commit created during the rebase, so this workflow can be used to amend each rebased commit. Git’s docs also show `--exec` as a per-commit command hook during rebase. [2] | [2] |\n| `--reset-author` resets BOTH the author name/email ... | TRUE | The Git commit documentation says `--reset-author` declares the authorship belongs to the committer when used with `--amend`, which means the author name and email are taken from the current Git identity/config rather than preserved from the original commit. [1] | [1] |\n| `--reset-author` resets ... the author date ... to the current time. | TRUE | Git’s docs explicitly say `--reset-author` “also renews the author timestamp,” and the commit command uses the current date/time for the new author timestamp unless overridden. [1] | [1] |\n| ... on each replayed commit ... | MISLEADING | The `--exec` command is run after each commit is replayed, but the statement blurs together rebase replay behavior and amend behavior. The author reset happens because of the `git commit --amend --reset-author` command, not because rebase itself universally resets author data. [2][1] | [2][1] |\n| ... to the current git config `user.name` / `user.email` ... | TRUE | Git’s commit docs say commit identity is taken from `user.name` and `user.email` when environment variables are not set, and `--reset-author` makes the commit use the committer identity for authorship. [1] | [1] |\n\n## Source URLs\n\n- Git commit documentation: [https://git-scm.com/docs/git-commit](https://git-scm.com/docs/git-commit)\n- Git rebase documentation: [https://git-scm.com/docs/git-rebase](https://git-scm.com/docs/git-rebase)\n\n## Short summary\n\nThe statement is **mostly wrong as written**: the `--reset-author` part is real, but the wording overstates and conflates what rebase does versus what `git commit --amend --reset-author` does.[2][1]",
+  "citations": [
+    "https://stackoverflow.com/questions/16217801/git-rebase-change-author",
+    "https://git-scm.com/docs/git-rebase",
+    "https://inkel.github.io/posts/change-several-commits-author-easily/",
+    "https://jeffkreeftmeijer.com/git-rebase-reset-author/",
+    "https://gist.github.com/pgrepds/761ebdbeefdbed54683c6220504ed0d1",
+    "https://stackoverflow.com/questions/41301627/how-to-update-git-commit-author-but-keep-original-date-when-amending",
+    "https://gist.github.com/yano3/1378948",
+    "https://libguides.pittcc.edu/evaluate/fact-checking",
+    "https://jweiler.com/git/2023/01/06/git-interactive-rebase-change-author.html",
+    "https://www.tracylum.com/blog/2021-07-24-amend-commit-author/",
+    "https://stackoverflow.com/questions/3042437/how-can-i-change-the-commit-author-for-a-single-commit",
+    "https://newsinitiative.withgoogle.com/resources/trainings/google-fact-check-tools/",
+    "https://www.kernel.org/pub/software/scm/git/docs/git-rebase.html",
+    "https://gist.github.com/amalmurali47/77e8dc1f27c791729518701d2dec3680",
+    "https://git-scm.com/docs/git-commit/2.9.5"
+  ]
+}

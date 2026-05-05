@@ -1,0 +1,20 @@
+{
+  "raw_response": "**Overall rating: TRUE**\n\nThe claim is correct: GitHub’s **“Block command line pushes that expose my email”** setting is what triggers the **GH007** push rejection when a pushed commit’s author email is one of your private GitHub emails. GitHub’s docs also make clear that this is tied to the private-email protection setting, not merely to whether an email address is individually visible in your profile.[1]\n\n## Claim-by-claim analysis\n\n| Claim | Rating | Evidence |\n|---|---|---|\n| GitHub's setting “Block command line pushes that expose my email” causes the GH007 error “Your push would publish a private email address” when pushing commits that use a private email. | TRUE | GitHub says that when this setting is enabled, it checks the most recent commit and blocks the push if the author email is a private email on your GitHub account, warning that it would expose your private email. [1] |\n| This is separate from each email's individual visibility flag. | TRUE | GitHub distinguishes between the **“Keep my email addresses private”** setting and the separate **“Block command line pushes that expose my email”** setting, which applies specifically to command-line pushes. [1] |\n\n## Short summary\n\nThe statement is accurate and matches GitHub’s documentation closely: the GH007 error is caused by the command-line push privacy blocker when the commit author email is private, and it is distinct from the general email-visibility setting.[1]\n\n## Source URLs\n\n- https://docs.github.com/en/account-and-profile/how-tos/email-preferences/blocking-command-line-pushes-that-expose-your-personal-email-address",
+  "citations": [
+    "https://gist.github.com/gengwg/ef9a073a6fd845786d5993914439c946",
+    "https://stackoverflow.com/questions/43863522/error-your-push-would-publish-a-private-email-address",
+    "https://github.com/orgs/community/discussions/189946",
+    "https://trailhead.salesforce.com/trailblazer-community/feed/0D54S00000JgFYBSA3",
+    "https://github.com/github/docs/issues/25280",
+    "http://r3id.dev/notes/setting-an-email-address-per-repo",
+    "https://github.com/go-gitea/gitea/issues/31255",
+    "https://libguides.pittcc.edu/evaluate/fact-checking",
+    "https://docs.github.com/en/account-and-profile/how-tos/email-preferences/blocking-command-line-pushes-that-expose-your-personal-email-address",
+    "https://stackoverflow.com/questions/58144794/error-remote-error-gh007-even-though-i-am-using-the-same-username-and-email",
+    "https://stuartmccoll.github.io/posts/2020-10-10-push-declined-due-to-email-privacy-restrictions/",
+    "https://newsinitiative.withgoogle.com/resources/trainings/google-fact-check-tools/",
+    "https://lanceleonard.com/tips/git/remote-privacy-errors/",
+    "https://gist.github.com/gengwg/ef9a073a6fd845786d5993914439c946?permalink_comment_id=6025853",
+    "https://stackoverflow.com/questions/43378060/meaning-of-the-github-message-push-declined-due-to-email-privacy-restrictions"
+  ]
+}

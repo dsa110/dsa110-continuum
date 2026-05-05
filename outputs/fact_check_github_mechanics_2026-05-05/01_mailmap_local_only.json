@@ -1,0 +1,29 @@
+{
+  "raw_response": "**Overall rating: MOSTLY_FALSE.** Git’s `.mailmap` does rewrite author and committer names/emails for Git tools like `git log`, `git blame`, and `git shortlog`, but the claim that GitHub “IGNORES `.mailmap` and reads raw commit metadata” is not supported by current GitHub documentation and is contradicted by GitHub’s own commit-email attribution rules.[1][2][3]\n\n## Short summary\nThe first half of the statement is true: `.mailmap` is a local Git display-mapping feature. The second half is too absolute and misleading, because GitHub attributes commits by commit email and does not document `.mailmap` as a universal “ignore”/“read raw metadata” rule; GitHub’s behavior is based on email association rather than `.mailmap` processing.[2][3][1]\n\n## Claim analysis\n\n| Claim | Rating | Evidence |\n|---|---|---|\n| `.mailmap` is purely a local display rewrite for `git log`, `git blame`, `git shortlog`. | TRUE | Git’s docs say `.mailmap` is used to map author and committer names/emails to canonical names/emails, and it is specifically intended for Git’s own output tools. [1] |\n| GitHub ignores `.mailmap`. | MISLEADING | GitHub docs explain that commit attribution is based on the email address in the commit header and the email addresses added to a GitHub account, not on `.mailmap`; that means GitHub does not rely on `.mailmap` for attribution, but “ignores” is broader than the documentation supports. [2][3] |\n| GitHub reads raw commit metadata. | TRUE | GitHub’s documentation states that it uses the email address in the commit header to link commits to a user, which means attribution is derived from commit metadata rather than from `.mailmap`. [2][3] |\n\n## Why this matters\n`.mailmap` affects how Git presents history locally, but GitHub’s commit attribution system works differently and is tied to verified email addresses on the account. So the accurate takeaway is that `.mailmap` does not control GitHub profile attribution in the same way it controls Git command output.[3][1][2]\n\n## Sources\n- Git `.mailmap` documentation: https://git-scm.com/docs/gitmailmap[1]\n- GitHub Docs, setting commit email address: https://docs.github.com/en/account-and-profile/how-tos/email-preferences/setting-your-commit-email-address[2]\n- GitHub Enterprise docs, why commits are linked to the wrong user: https://docs.github.com/en/enterprise/2.15/user/articles/why-are-my-commits-linked-to-the-wrong-user[3]",
+  "citations": [
+    "https://git-scm.com/docs/gitmailmap",
+    "https://docs.github.com/en/account-and-profile/how-tos/email-preferences/setting-your-commit-email-address",
+    "https://docs.github.com/en/enterprise/2.15/user/articles/why-are-my-commits-linked-to-the-wrong-user",
+    "https://stackoverflow.com/questions/53629125/does-github-consider-mailmap-for-contribution-graph",
+    "https://ntietz.com/blog/git-mailmap-for-name-changes/",
+    "https://github.com/orgs/community/discussions/22518",
+    "https://github.com/sympy/sympy/issues/29676",
+    "https://gist.github.com/103e5070bc33c99d8d4bb4656927e39f",
+    "https://docs.github.com/enterprise-cloud@latest/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository",
+    "https://ballotpedia.org/The_methodologies_of_fact-checking",
+    "https://www.kernel.org/pub/software/scm/git/docs/gitmailmap.html",
+    "https://con.github.io/tributors/docs/parsers/mailmap",
+    "https://stackoverflow.com/questions/2683248/can-i-add-metadata-to-git-commits-or-can-i-hide-some-tags-in-gitk",
+    "https://libguides.pittcc.edu/evaluate/fact-checking",
+    "https://github.com/holman/ama/issues/551",
+    "https://www.reddit.com/r/git/comments/1jpqro3/is_it_possible_to_convert_all_contributions_from/",
+    "https://dev.to/beatngu1101/pre-push-commit-message-validation-on-github-enterprise-25o0",
+    "https://github.com/orgs/community/discussions/41583",
+    "https://github.com/api7/contributor-graph",
+    "https://gitdash.dev/blog/git-mailmap-clean-contribution-history",
+    "https://docs.github.com/ko/enterprise-server@3.16/account-and-profile/how-tos/setting-up-and-managing-your-personal-account-on-github/managing-email-preferences/setting-your-commit-email-address",
+    "https://github.com/orgs/community/discussions/155946",
+    "https://github.com/orgs/community/discussions/185811",
+    "https://docs.github.com/en/account-and-profile/how-tos/contribution-settings/viewing-contributions-on-your-profile"
+  ]
+}

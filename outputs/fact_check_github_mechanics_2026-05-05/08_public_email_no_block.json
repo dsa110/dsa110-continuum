@@ -1,0 +1,32 @@
+{
+  "raw_response": "**Overall rating: MOSTLY_FALSE.** The claim gets the core GitHub behavior wrong: GitHub’s command-line push block is based on whether the commit author email is a **private email on your GitHub account**, not simply whether the email is verified or public.[1][2]\n\n## Short summary\nGitHub’s docs say the `Block command line pushes that expose my email` setting blocks pushes when the most recent commit’s author email is a **private email on your account**. GitHub also says that if email privacy is enabled, commits use a no-reply address by default, and if privacy is not enabled you can choose among verified emails for web-based operations. The provided content’s statement that a verified public email will never trigger GH007 is too broad and not supported by the docs.[2][3][1]\n\n## Claim-by-claim analysis\n\n| Claim | Rating | Evidence |\n|---|---|---|\n| “If a GitHub user has a verified email with visibility=public on their account, pushing commits authored with that email will not trigger the GH007 ‘private email’ rejection…” | **MISLEADING** | GitHub says the push block checks whether the commit author email is a **private email on your GitHub account**; it does not say that any verified public email is always exempt in every case [1]. GitHub also distinguishes verified email addresses from privacy settings, and says commit author email choices depend on whether email privacy is enabled [3][2]. |\n| “…even when ‘Block command line pushes that expose my email’ is enabled.” | **FALSE** | GitHub’s docs explicitly say that when this setting is enabled, GitHub checks the most recent commit and blocks the push **if the author email is a private email on your GitHub account** [1]. So the setting absolutely can block pushes; it is not bypassed merely because the address is verified. |\n| “The block only fires for emails that are private/protected on the account.” | **MOSTLY_TRUE** | This matches GitHub’s documentation closely: the push is blocked when the author email is a **private email on your GitHub account** [1]. The wording “protected” is not GitHub’s own term, but the underlying idea is right [1][2]. |\n\n## Sources\n- GitHub Docs: [Blocking command line pushes that expose your personal email address](https://docs.github.com/en/account-and-profile/how-tos/email-preferences/blocking-command-line-pushes-that-expose-your-personal-email-address)[1]\n- GitHub Docs: [Setting your commit email address](https://docs.github.com/en/account-and-profile/how-tos/email-preferences/setting-your-commit-email-address)[3]\n- GitHub Docs: [Email addresses reference](https://docs.github.com/en/account-and-profile/reference/email-addresses-reference)[2]",
+  "citations": [
+    "https://docs.github.com/en/account-and-profile/how-tos/email-preferences/blocking-command-line-pushes-that-expose-your-personal-email-address",
+    "https://docs.github.com/en/account-and-profile/reference/email-addresses-reference",
+    "https://docs.github.com/en/account-and-profile/how-tos/email-preferences/setting-your-commit-email-address",
+    "https://gist.github.com/gengwg/ef9a073a6fd845786d5993914439c946",
+    "https://stackoverflow.com/questions/58144794/error-remote-error-gh007-even-though-i-am-using-the-same-username-and-email",
+    "https://github.com/orgs/community/discussions/189946",
+    "http://r3id.dev/notes/setting-an-email-address-per-repo",
+    "https://intellij-support.jetbrains.com/hc/en-us/community/posts/360009903160-github-push-rejected-because-it-would-publish-a-private-email-address",
+    "https://www.geeksforgeeks.org/git/how-to-protect-your-private-email-addresses-in-git-github/",
+    "https://libguides.pittcc.edu/evaluate/fact-checking",
+    "https://www.reddit.com/r/github/comments/zbo2tt/cant_push_without_making_email_public/",
+    "https://github.com/go-gitea/gitea/issues/31255",
+    "https://newsinitiative.withgoogle.com/resources/trainings/google-fact-check-tools/",
+    "https://github.com/orgs/community/discussions/153997",
+    "https://github.com/orgs/community/discussions/31263",
+    "https://www.reddit.com/r/github/comments/1kvlsaj/friendly_reminder_you_can_make_your_email_address/",
+    "https://docs.github.com/en/account-and-profile/how-tos/email-preferences/verifying-your-email-address",
+    "https://docs.github.com/en/account-and-profile/concepts/email-addresses",
+    "https://docs.github.com/en/authentication/troubleshooting-commit-signature-verification/using-a-verified-email-address-in-your-gpg-key",
+    "https://github.com/orgs/community/discussions/48609",
+    "https://corneliusconcepts.tech/signed-and-verified-github-commits",
+    "https://dev.to/bad-logic/git-keeping-your-email-safe-in-public-repositories-16cg",
+    "https://stackoverflow.com/questions/897586/does-git-publicly-expose-my-e-mail-address",
+    "https://stackoverflow.com/questions/3694907/private-email-addresses-for-private-collaborators-using-github-api",
+    "https://github.com/desktop/desktop/issues/4363",
+    "https://github.com/orgs/community/discussions/22762",
+    "https://github.com/orgs/community/discussions/187914"
+  ]
+}

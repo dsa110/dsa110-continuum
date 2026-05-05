@@ -1,0 +1,33 @@
+{
+  "raw_response": "**Overall rating: MOSTLY_TRUE.** GitHub documents that the ID-based no-reply format `ID+USERNAME@users.noreply.github.com` is tied to a specific account via the user ID, and GitHub says GitHub-provided noreply addresses cannot be unlinked or reattributed to another account. The only caveat is that “cannot be claimed by any other account” is slightly stronger than the documentation itself, which states the address cannot be unlinked/reconnected rather than describing a formal “claiming” process.[1][2]\n\n## Summary\nThe core claim is supported: the ID-based GitHub noreply address is account-bound and GitHub-provided noreply addresses cannot be transferred to a different account. A small wording issue remains, because GitHub’s docs focus on unlinking and reattribution, not on whether another account could ever add the same string as an email address in some edge case.[2][3][1]\n\n## Claim 1\n**Claim:** GitHub's no-reply email aliases of the form `ID+USERNAME@users.noreply.github.com` are bound to a specific GitHub user account by GitHub itself.  \n**Rating:** TRUE.  \n**Why:** GitHub’s documentation says that for accounts created after July 18, 2017, the noreply address takes the form `ID+USERNAME@users.noreply.github.com`, where the ID-based format is preserved even if the username changes. GitHub also says the GitHub-provided noreply email address cannot be unlinked from an account and commits authored with a noreply address cannot be reconnected to a different account.[1][2]\n**Sources:**[2][1]\n\n## Claim 2\n**Claim:** These aliases cannot be claimed by any other account.  \n**Rating:** MOSTLY TRUE / slightly overstated.  \n**Why:** GitHub explicitly says the GitHub-provided noreply email address cannot be unlinked from an account, and commits authored with it cannot be reconnected to a different account. That strongly supports the practical conclusion that another account cannot take over the address for attribution purposes. However, the documentation does not literally use the phrase “cannot be claimed by any other account,” so that wording is a bit broader than the source text.[3][2]\n**Sources:**[3][2]",
+  "citations": [
+    "https://docs.github.com/en/account-and-profile/reference/email-addresses-reference",
+    "https://docs.github.com/en/account-and-profile/concepts/account-management",
+    "https://docs.github.com/en/account-and-profile/how-tos/email-preferences/troubleshooting-email-verification",
+    "https://community.atlassian.com/forums/Bitbucket-questions/add-quot-github-noreply-quot-as-email-alias/qaq-p/903520",
+    "https://github.com/dwyl/dev-setup/issues/22",
+    "https://www.reddit.com/r/github/comments/1kvlsaj/friendly_reminder_you_can_make_your_email_address/",
+    "https://github.com/orgs/community/discussions/42300",
+    "https://github.com/orgs/community/discussions/23521",
+    "https://ballotpedia.org/The_methodologies_of_fact-checking",
+    "https://github.com/orgs/community/discussions/73393",
+    "https://stackoverflow.com/questions/54076863/github-co-authored-by-with-private-noreply-address",
+    "https://libguides.pittcc.edu/evaluate/fact-checking",
+    "https://stackoverflow.com/questions/65186849/sending-an-email-to-github-no-reply-email-id",
+    "https://github.com/isaacs/github/issues/1690",
+    "https://newsinitiative.withgoogle.com/resources/trainings/google-fact-check-tools/",
+    "https://docs.github.com/en/account-and-profile/how-tos/email-preferences/setting-your-commit-email-address",
+    "https://www.reddit.com/r/github/comments/1jrtcag/confused_concerned/",
+    "https://docs.github.com/en/enterprise-cloud@latest/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/adding-a-security-policy-to-your-repository",
+    "https://docs.github.com/en/enterprise-cloud@latest/account-and-profile/concepts/email-addresses",
+    "https://docs.github.com/en/enterprise-server@3.20/admin/configuring-settings/configuring-user-applications-for-your-enterprise/configuring-email-for-notifications",
+    "https://docs.github.com/en/enterprise-server@3.20/subscriptions-and-notifications/reference/email-notification-headers",
+    "https://docs.github.com/en/migrations/using-github-enterprise-importer/completing-your-migration-with-github-enterprise-importer/reclaiming-mannequins-for-github-enterprise-importer",
+    "https://docs.github.com/en/enterprise-server@3.16/admin/configuring-settings/configuring-user-applications-for-your-enterprise/configuring-web-commit-signing",
+    "https://docs.github.com/en/account-and-profile/how-tos/contribution-settings/troubleshooting-missing-contributions",
+    "https://docs.github.com/en/enterprise-server@3.20/admin/configuring-settings/configuring-user-applications-for-your-enterprise/configuring-web-commit-signing",
+    "https://docs.github.com/articles/creating-a-commit-with-multiple-authors",
+    "https://docs.github.com/en/enterprise-server@3.20/account-and-profile/reference/email-addresses-reference",
+    "https://docs.github.com/en/account-and-profile/reference/personal-account-reference"
+  ]
+}

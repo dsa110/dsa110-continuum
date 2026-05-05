@@ -1,0 +1,31 @@
+{
+  "raw_response": "**Overall rating: MOSTLY_TRUE.** The statement matches GitHub and Git’s documentation on trailers, with one nuance: GitHub says co-authorship is tied to commit trailers and contributor attribution depends on the co-author’s email, but the exact “does NOT count the trailer-named user toward the contributors graph” wording is slightly oversimplified because GitHub describes contribution counting by commit/authorship rules rather than explicitly by trailer text alone.[1][2]\n\n**Summary:** `Co-authored-by` lines are commit trailers in the commit message body, not the commit author field, and GitHub renders them on commit pages. GitHub’s contributors graph counts contributions based on commit attribution and the author email connected to a GitHub account, so a co-author may or may not appear depending on that linkage and whether the commit counts as a contribution.[3][1]\n\n## Claim 1: “Co-Authored-By trailers in git commit messages are metadata in the commit body”\n**Rating: TRUE**\n\nGit documentation treats trailers as key-value pairs applied to the commit message, and GitHub’s docs describe `Co-authored-by:` as a commit trailer added to the message body. Git’s `interpret-trailers` documentation explicitly frames trailers as parts of the free-form message text, not the commit header fields.[2][4][3]\n\n## Claim 2: “They do NOT appear in the author field of the commit”\n**Rating: TRUE**\n\nGit’s `--author` option controls the commit author field, while `--trailer` adds key-value trailers to the message; these are separate mechanisms in Git. GitHub’s co-authoring guide likewise says to add `Co-authored-by:` to the commit message, which supports that this is message metadata rather than the author header.[2][3]\n\n## Claim 3: “github.com displays them on the PR/commit page near the commit SHA”\n**Rating: TRUE**\n\nGitHub documents that co-authored commits “will appear on GitHub.com” after push, and its co-authoring guide says the commit message is shown on GitHub.com. Public references also describe GitHub rendering co-authorship in the web UI near commits, which is consistent with the claim.[5][2]\n\n## Claim 4: “github.com does NOT count the trailer-named user toward the repository’s contributors graph”\n**Rating: MISLEADING**\n\nGitHub’s contributors graph counts commits to the repository, and for a co-author to count as a contribution, GitHub says the email used in the `Co-authored-by` trailer must match the email associated with that user’s GitHub account. So the trailer-named user is not automatically excluded; whether they appear depends on GitHub’s contribution rules, including default-branch inclusion, top-100 limits, and email linkage. The stronger claim that GitHub “does not count” them is therefore too absolute.[1]\n\n## Source URLs\n- GitHub Docs: Creating a commit with multiple authors — https://docs.github.com/articles/creating-a-commit-with-multiple-authors[2]\n- GitHub Docs: Viewing a project's contributors — https://docs.github.com/en/repositories/viewing-activity-and-data-for-your-repository/viewing-a-projects-contributors[1]\n- Git documentation: git-commit — https://git-scm.com/docs/git-commit[3]\n- Git documentation: git-interpret-trailers — https://git-scm.com/docs/git-interpret-trailers[4][6]",
+  "citations": [
+    "https://www.reddit.com/r/git/comments/1nbi79m/can_git_add_metadata_to_commits_if_a_chunk_of/",
+    "https://docs.github.com/articles/creating-a-commit-with-multiple-authors",
+    "https://git-scm.com/docs/git-commit",
+    "https://git-scm.com/docs/git-interpret-trailers/2.32.0",
+    "https://gist.github.com/lisawolderiksen/f9747a3ae1e58e9daa7d176ab98f1bad",
+    "https://git-scm.com/docs/git-interpret-trailers",
+    "https://github.com/microsoft/vscode/issues/266584",
+    "https://news.ycombinator.com/item?id=47992861",
+    "https://forum.cursor.com/t/co-author-added-without-consent-and-cant-be-turned-off/150096/21",
+    "https://risadams.com/blog/2025/04/17/git-notes/",
+    "https://stackoverflow.com/questions/48536030/github-shows-that-my-commits-have-been-pushed-by-2-authors-me-and-me",
+    "https://docs.github.com/en/repositories/viewing-activity-and-data-for-your-repository/viewing-a-projects-contributors",
+    "https://libguides.pittcc.edu/evaluate/fact-checking",
+    "https://stackoverflow.com/questions/58525836/git-magic-keywords-in-commit-messages-signed-off-by-co-authored-by-fixes",
+    "https://github.com/anuraghazra/github-readme-stats/issues/2244",
+    "https://commguide.businesscommunication.wisc.edu/understanding-searching-for-professional-publications/how-to-fact-check-a-claim/",
+    "https://dev.to/piiiico/co-authored-by-is-not-enough-1nee",
+    "https://github.com/orgs/community/discussions/186410",
+    "https://dev.to/cassidoo/co-authoring-git-commits-3gin",
+    "https://stackoverflow.com/questions/64311092/how-do-i-add-a-co-author-to-latest-pushed-git-commit",
+    "https://blog.sasworkshops.com/adding-co-authors-for-git-commits/",
+    "https://tina.io/docs/tinacloud/git-co-authoring",
+    "https://git-scm.com/docs/SubmittingPatches",
+    "https://www.kernel.org/pub/software/scm/git/docs/git-interpret-trailers.html",
+    "https://developercommunity.visualstudio.com/t/support-multiple-authors-with-co-authored-by-in-co/1082607",
+    "https://www.reddit.com/r/GithubCopilot/comments/1s5ff77/how_do_i_remove_the_coauthoredby_trailer/"
+  ]
+}
