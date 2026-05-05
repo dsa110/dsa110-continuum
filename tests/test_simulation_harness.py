@@ -844,8 +844,6 @@ class TestGeodeticAntennaPositions:
 
     def test_geodetic_enu_ew_arm_is_east_west(self):
         """DSA001–051 (E-W arm) should have North offsets < 1 m and East >> 0."""
-        import sys
-        sys.path.insert(0, '/home/user/workspace/dsa110-continuum')
         from dsa110_continuum.simulation.harness import load_geodetic_enu
 
         enu = load_geodetic_enu(n_antennas=51)   # first 51 = E-W arm
@@ -866,8 +864,7 @@ class TestGeodeticAntennaPositions:
         consistent (|W| <= max_bl) rather than asserting W is small.
         WSClean's w-projection gridder handles the non-zero W correctly.
         """
-        import sys, numpy as np
-        sys.path.insert(0, '/home/user/workspace/dsa110-continuum')
+        import numpy as np
         from dsa110_continuum.simulation.harness import load_geodetic_enu, _enu_to_ecef
         from dsa110_continuum.simulation.harness import _OVRO_LAT_DEG, _OVRO_LON_DEG, _OVRO_ALT_M
 
@@ -905,8 +902,7 @@ class TestGeodeticAntennaPositions:
 
     def test_geodetic_enu_max_baseline_gt_1km_with_outriggers(self):
         """All 117 station slots include outriggers spanning > 2 km."""
-        import sys, numpy as np
-        sys.path.insert(0, '/home/user/workspace/dsa110-continuum')
+        import numpy as np
         from dsa110_continuum.simulation.harness import load_geodetic_enu
 
         enu = load_geodetic_enu(n_antennas=117)
