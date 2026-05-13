@@ -40,21 +40,40 @@ HDF5 (16 subbands × N timestamps)
 
 Science cadence: hourly-epoch mosaics of ~12 sequential tiles (~1 hour) along the current *Dec strip*, with overlap into adjacent epochs. **Not** a single 24-hour mosaic. Two operational modes: *batch* (UTC-hour bins, ±2 tiles overlap; current production) and *sliding* (12-tile window, stride 6; streaming target). See `CONTEXT.md` for citations.
 
-## Key paths (H17)
+## Key paths
+
+Host-specific — workflows should use per-host roots rather than assuming a single one.
 
 ```
-/data/incoming/                  raw HDF5 files
-/stage/dsa110-contimg/ms/        Measurement Sets
-/opt/miniforge/envs/casa6        CASA conda env (use this for ALL pipeline work)
+H17 / dsacamera:
+  /data/incoming/                  raw HDF5 files
+  /stage/dsa110-contimg/ms/        Measurement Sets
+  /opt/miniforge/envs/casa6        CASA conda env (use this for ALL pipeline work)
+
+H23 (correlator):
+  /dataz/dsa110/operations/correlator/   raw correlator data (ZFS)
+
+Optional sibling checkouts (useful when present):
+  /data/radio-pipelines/askap-vast       reference for orchestration / QA parity
+  /data/dsa110-antpos                    `ant_ids*.csv` for antenna-selection cross-checks
 ```
+
+Do NOT track Measurement Sets or other large stage/correlation data in Git.
+
+## Collaboration preferences
+
+- When repo/runtime state is uncertain, prefer tests, diagnostics, or filesystem inspection over asking — ground recommendations in concrete evidence.
+- Default to short, plain one-sentence answers unless asked for more depth.
 
 <important if="you need to run anything in this repo (tests, scripts, lint, pipeline)">
 
 ALWAYS use the casa6 conda env: `/opt/miniforge/envs/casa6/bin/python`. It has numpy, casacore, astropy, CASA. System `python3` is 3.13 (no scientific deps). The `pip` shim points to system 3.8 — if you need pip, use `/opt/miniforge/envs/casa6/bin/python -m pip`.
 
+The editable install is unreliable (console-script entry points still point at the legacy `dsa110_contimg.*` namespace; see `pyproject.toml:150`). Set `PYTHONPATH=/workspace` when running scripts/tests from this workspace context.
+
 | Command | What it does |
 |---|---|
-| `/opt/miniforge/envs/casa6/bin/python -m pytest tests/ -q` | Full suite (220 tests, ~20 s) |
+| `/opt/miniforge/envs/casa6/bin/python -m pytest tests/ -q` | Full suite (~1000 tests as of 2026-05; collection ~47 s) |
 | `/opt/miniforge/envs/casa6/bin/python -m pytest tests/test_X.py::test_Y -q` | Single test |
 | `ruff check dsa110_continuum/ scripts/ tests/` | Lint |
 | `ruff check --fix dsa110_continuum/ scripts/ tests/` | Auto-fix safe issues |
@@ -71,6 +90,8 @@ ALWAYS use the casa6 conda env: `/opt/miniforge/envs/casa6/bin/python`. It has n
 | `scripts/verify_sources.py` | Verify fluxes against expected values |
 | `scripts/validate_date.py` | Run validation on one date's outputs |
 | `scripts/run_canary.sh` | QA smoke test against a reference FITS tile |
+| `PYTHONPATH=/workspace uvicorn scripts.monitor_server:app --host 0.0.0.0 --port 8765` | Start the monitor API (host-ops service) |
+| `scripts/check_import_migration.py` | List stale `dsa110_contimg` imports remaining under `dsa110_continuum/` |
 
 Pipeline DB: `dsa110 convert` queries the SQLite DB, NOT the filesystem. New dates must be indexed first:
 
@@ -78,9 +99,37 @@ Pipeline DB: `dsa110 convert` queries the SQLite DB, NOT the filesystem. New dat
 
 </important>
 
+<important if="the casa6 conda env is unavailable (cloud VM, Cursor Cloud, fresh container)">
+
+Fallback: system Python 3.12 with `PYTHONPATH=/workspace` mandatory.
+
+| Command | What it does |
+|---|---|
+| `PYTHONPATH=/workspace python3 -m pytest tests/ -q` | Full suite (cloud-VM variant) |
+| `ruff check dsa110_continuum/ scripts/ tests/` | Lint |
+| `ruff format --check dsa110_continuum/ scripts/ tests/` | Format check |
+| `PYTHONPATH=/workspace uvicorn scripts.monitor_server:app --host 0.0.0.0 --port 8765` | Start monitor API |
+
+A compatibility shim at `~/.local/lib/python3.12/site-packages/dsa110_contimg_shim.py` (auto-loaded via `.pth`) redirects `dsa110_contimg.core.*` imports to `dsa110_continuum.*` and stubs out `dsa110_contimg.common.*`, `dsa110_contimg.infrastructure.*`, and `dsa110_contimg.workflow.*`. Required for the bulk of the test suite to import successfully on cloud VMs.
+
+All `casacore.tables` imports use `dsa110_continuum.adapters.casa_tables` — a drop-in wrapper over `casatools.table` — to avoid the C++ shared-library conflict that segfaults when both `python-casacore` and `casatools` load. The wrapper handles row-axis layout differences (`_rows_first`/`_rows_last`).
+
+After installing `casatools` in a cloud VM, fix the bundled SQLite conflict:
+
+    rm ~/.local/lib/python3.12/site-packages/casatools/__casac__/lib/libsqlite3.so.0
+    ln -s /usr/lib/x86_64-linux-gnu/libsqlite3.so.0 ~/.local/lib/python3.12/site-packages/casatools/__casac__/lib/libsqlite3.so.0
+
+Cloud-only test failures (pre-existing, not bugs):
+- `test_ensure_calibration::test_fallback_full_sky_when_no_obs_dec` — needs VLA calibrator DB at `/data/dsa110-contimg/state/catalogs/vla_calibrators.sqlite3`.
+- `test_epoch_gaincal::test_wsclean_runs_when_flag_fraction_below_limit` — mock expects single `subprocess.run` but epoch gaincal makes two WSClean invocations.
+
+Telescope data paths (`/data/incoming/`, `/stage/dsa110-contimg/ms/`) do not exist on the cloud VM. Tests/scripts use mocks or skip gracefully.
+
+</important>
+
 <important if="you are linting or considering bulk style fixes">
 
-~900 pre-existing ruff violations exist (whitespace W293/W291, unsorted imports I001, missing docstrings D103). Keep new code clean but DO NOT bulk-fix existing violations — they are tracked separately.
+~1300 pre-existing ruff violations exist (as of 2026-05; whitespace W293/W291, unsorted imports I001, missing docstrings D103). Keep new code clean but DO NOT bulk-fix existing violations — they are tracked separately.
 
 </important>
 
@@ -162,6 +211,8 @@ Three silent-failure invariants that produce no exception but yield wrong scienc
 
 3. **`TELESCOPE_NAME = DSA_110` before each WSClean run.** `merge_spws()` (required before IDG) resets `OBSERVATION::TELESCOPE_NAME` to `OVRO_MMA` for CASA compatibility. EveryBeam needs `DSA_110`. Patch with `set_ms_telescope_name(ms_path, name="DSA_110")`. This is automatic inside `run_wsclean()` — preserve it if you change the imaging workflow. Symptom if missing: EveryBeam silently selects the wrong beam model → primary beam errors up to ~20% near field edge.
 
+4. **FIELD direction column shape normalization.** `FIELD::PHASE_DIR` and `FIELD::REFERENCE_DIR` may appear as rows-first `(nfields, 1, 2)` or CASA column-major `(nfields, 2, 1)`. Fresh converted MS via the CASA table adapter typically return `(nfields, 2, 1)`. Code touching these columns must normalize both shapes via the calibration runner helpers — do NOT hard-code `(nfields, 1, 2)` indexing.
+
 </important>
 
 <important if="you are using ThreadPoolExecutor or signal-handling code">
@@ -196,6 +247,13 @@ The live-observability-stack work lands across these services; tracking issues #
 <important if="you are reasoning about instrument geometry, data volumes, or observation cadence">
 
 See `CONTEXT.md` `## Instrument` and `## Pipeline stages and products` for antenna count, dish size, band/subband structure, integration time, tile geometry, and hourly-epoch mosaic definition (batch and sliding modes), all with `path::Symbol` citations. Use the glossary's vocabulary verbatim — *tile*, *hourly-epoch mosaic*, *Dec strip* (not "RA strip", not "daily mosaic", not "snapshot/frame"); see `docs/agents/domain.md`.
+
+Two non-obvious science facts:
+
+- **Sliding-window mosaic parameters describe product cadence, not beam overlap.** "Tiles per mosaic" and "stride" set how successive mosaic products are built from the tile stream — they do NOT describe how many tile beams overlap any given sky location. The latter follows beam geometry, drift spacing, and coadd weights.
+- **Per-position mosaic depth saturates after ~3 overlapping drift tiles** for compact-source variability science. Hour-scale windowed mosaics are the default science product; >1-hour / full-day coadds are diagnostic, not default science.
+
+`scripts/batch_pipeline.py` runs an early Dec-strip guard (`check_dec_strip` vs `--expected-dec`, default 16.1°) when a same-date MS is present. Pointing declination flows from HDF5/UVH5 into the MS during conversion; the batch driver reads Dec from the MS, not by reopening HDF5.
 
 </important>
 
