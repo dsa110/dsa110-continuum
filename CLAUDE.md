@@ -6,7 +6,7 @@ Verified working state: `scripts/run_pipeline.py` produces a calibrated image of
 
 ## Project map
 
-```
+```text
 dsa110_continuum/
   conversion/      HDF5 → MS (UVH5 subband grouping, phase centre, UVW reconstruction)
   calibration/     bandpass, gain cal, applycal, phaseshift, self-cal, presets
@@ -29,7 +29,7 @@ dsa110_continuum/
 
 ## Data flow
 
-```
+```text
 HDF5 (16 subbands × N timestamps)
   → [conversion/]   MS
   → [calibration/]  flagging + bandpass/gain solve + applycal
@@ -44,7 +44,7 @@ Science cadence: hourly-epoch mosaics of ~12 sequential tiles (~1 hour) along th
 
 Host-specific — workflows should use per-host roots rather than assuming a single one.
 
-```
+```text
 H17 / dsacamera:
   /data/incoming/                  raw HDF5 files
   /stage/dsa110-contimg/ms/        Measurement Sets
@@ -72,7 +72,7 @@ ALWAYS use the casa6 conda env: `/opt/miniforge/envs/casa6/bin/python`. It has n
 The editable install is unreliable (console-script entry points still point at the legacy `dsa110_contimg.*` namespace; see `pyproject.toml:150`). Set `PYTHONPATH=/workspace` when running scripts/tests from this workspace context.
 
 | Command | What it does |
-|---|---|
+| --- | --- |
 | `/opt/miniforge/envs/casa6/bin/python -m pytest tests/ -q` | Full suite (~1000 tests as of 2026-05; collection ~47 s, full run ~14 min — dominated by `test_integration_e2e.py` and `test_simulated_pipeline.py`) |
 | `/opt/miniforge/envs/casa6/bin/python -m pytest tests/test_X.py::test_Y -q` | Single test |
 | `ruff check dsa110_continuum/ scripts/ tests/` | Lint |
@@ -95,7 +95,9 @@ The editable install is unreliable (console-script entry points still point at t
 
 Pipeline DB: `dsa110 convert` queries the SQLite DB, NOT the filesystem. New dates must be indexed first:
 
-    dsa110 index add --start YYYY-MM-DD --end YYYY-MM-DD --directory /data/incoming
+```bash
+dsa110 index add --start YYYY-MM-DD --end YYYY-MM-DD --directory /data/incoming
+```
 
 </important>
 
@@ -104,7 +106,7 @@ Pipeline DB: `dsa110 convert` queries the SQLite DB, NOT the filesystem. New dat
 Fallback: system Python 3.12 with `PYTHONPATH=/workspace` mandatory.
 
 | Command | What it does |
-|---|---|
+| --- | --- |
 | `PYTHONPATH=/workspace python3 -m pytest tests/ -q` | Full suite (cloud-VM variant) |
 | `ruff check dsa110_continuum/ scripts/ tests/` | Lint |
 | `ruff format --check dsa110_continuum/ scripts/ tests/` | Format check |
@@ -116,10 +118,13 @@ All `casacore.tables` imports use `dsa110_continuum.adapters.casa_tables` — a 
 
 After installing `casatools` in a cloud VM, fix the bundled SQLite conflict:
 
-    rm ~/.local/lib/python3.12/site-packages/casatools/__casac__/lib/libsqlite3.so.0
-    ln -s /usr/lib/x86_64-linux-gnu/libsqlite3.so.0 ~/.local/lib/python3.12/site-packages/casatools/__casac__/lib/libsqlite3.so.0
+```bash
+rm ~/.local/lib/python3.12/site-packages/casatools/__casac__/lib/libsqlite3.so.0
+ln -s /usr/lib/x86_64-linux-gnu/libsqlite3.so.0 ~/.local/lib/python3.12/site-packages/casatools/__casac__/lib/libsqlite3.so.0
+```
 
 Cloud-only test failures (pre-existing, not bugs):
+
 - `test_ensure_calibration::test_fallback_full_sky_when_no_obs_dec` — needs VLA calibrator DB at `/data/dsa110-contimg/state/catalogs/vla_calibrators.sqlite3`.
 - `test_epoch_gaincal::test_wsclean_runs_when_flag_fraction_below_limit` — mock expects single `subprocess.run` but epoch gaincal makes two WSClean invocations.
 
@@ -290,3 +295,56 @@ Single-context. Glossary at repo-root `CONTEXT.md` (with `path::Symbol` citation
 ## Current focus
 
 Live observability stack — issues #48–#62 (`gh issue list --label needs-triage --state open` for the full set). See `docs/agents/issue-tracker.md` for gh-CLI conventions.
+
+<important if="you are implementing the VAST → DSA-110 methodology plan in outputs/pipeline-comparison-2026-05-14/vast_to_dsa110_implementation_plan.md">
+
+Full plan: `outputs/pipeline-comparison-2026-05-14/vast_to_dsa110_implementation_plan.md`.
+VAST reference codebase: `/data/radio-pipelines/askap-vast/` (read-only reference; do NOT modify it).
+
+### What the plan says to create vs. what already exists
+
+The plan was written before a full filesystem audit. Several files it describes as "new" already exist. Verify before writing:
+
+| Plan says | Actual state |
+| --- | --- |
+| Create `photometry/metrics.py` | Already exists (170 lines). Contains `calculate_eta_metric`, `calculate_v_metric`, `calculate_sigma_deviation`, `calculate_weighted_mean/variance/chi_squared`. The VAST-canonical η formula (`(N/(N-1)) * [mean(w·f²) − mean(w·f)²/mean(w)]`) is already implemented correctly at line 112. Do NOT recreate — extend or consolidate. |
+| Create `photometry/association.py` | Does NOT exist. This is a genuine gap. |
+| "All-pairs Vs/m absent" (G4) | `multi_epoch.py::calc_two_epoch_pair_metrics()` (line 548) already computes all N(N-1)/2 pairs using a double loop, and `get_most_significant_pair()` (line 618) selects the max-|Vs| pair above a threshold. This matches VAST's `pairs.py` + `finalise.py` logic. G4 is already solved — do NOT re-implement. |
+| Two duplicate metric definitions (G2) | Three independent definitions exist: `photometry/metrics.py`, `photometry/variability.py`, and `lightcurves/metrics.py`. The plan is correct that consolidation is needed, but it underestimated the count. The canonical formulas in `photometry/metrics.py` are correct; the task is to make `variability.py` and `lightcurves/metrics.py` import from there. |
+
+### Correct phase 1 scope
+
+`photometry/metrics.py` already has the right η formula. Phase 1 is a **consolidation**, not a creation:
+
+1. Add `vs_metric(flux_a, flux_b, err_a, err_b)` and `m_metric(flux_a, flux_b)` to `photometry/metrics.py` (they are currently only in `photometry/variability.py`).
+2. Make `photometry/variability.py::calculate_vs_metric` and `calculate_m_metric` thin wrappers that import from `photometry/metrics.py`.
+3. Make `lightcurves/metrics.py::compute_source_metrics` use `photometry/metrics.py` formulas.
+4. Write `tests/test_metrics_canonical.py` against the consolidated module.
+
+Do NOT skip to writing a new `photometry/metrics.py` — read the existing file first.
+
+### Phase 2 starting point
+
+`photometry/multi_epoch.py` already has VAST-style dataclasses (`WeightedPositionStats`, `FluxAggregateStats`, `NewSourceMetrics`, `MultiEpochSourceStats`) and helper functions (`calc_weighted_average_position`, `calc_flux_aggregates`, `calc_new_source_significance`, `compute_multi_epoch_stats`). The gap is that none of these are called during `batch_pipeline.py` execution — they exist but are orphaned.
+
+When creating `photometry/association.py`, it does NOT need to re-implement position averaging or new-source significance — those are in `multi_epoch.py`. The association module's job is purely: given two sets of sky positions, return a mapping from detection → source_id with d2d and dr.
+
+### Phase 3 starting point
+
+`photometry/multi_epoch.py::calc_new_source_significance()` already computes `new_high_sigma` and `is_new` (lines 387–453). The only work in Phase 3 is wiring it into `batch_pipeline.py` and writing results to the DB.
+
+### DB schema pattern
+
+All existing SQLite tables in this repo are created inline via `CREATE TABLE IF NOT EXISTS` inside the module that owns the data (see `calibration/jobs.py`, `calibration/qa.py`, `photometry/ese_detection.py`). Follow this pattern: create the `measurements` and `new_sources` tables inside `photometry/association.py` itself, not in a separate schema file.
+
+### Threshold differences from VAST
+
+DSA-110 uses `min_abs_vs = 4.3` (in `get_most_significant_pair`) vs VAST's default `min_vs = 3.0`. Before changing thresholds, read `docs/reference/photometry-and-ese.md` and `docs/reference/vast-crossref.md` — the ESE scoring system sets its own operating point independent of these pair-level filters.
+
+### Testing
+
+Before running: `PYTHONPATH=/data/dsa110-continuum /opt/miniforge/envs/casa6/bin/python -m pytest tests/test_variability_metrics.py tests/test_lightcurves.py -v` to establish a baseline for the affected tests. Any refactoring in Phase 1 must leave these green.
+
+New tests go under `tests/` at the repo root. Use `numpy` arrays and synthetic scalars — do NOT require real FITS files for unit tests. The existing `test_variability_metrics.py` and `test_lightcurves.py` show the correct style.
+
+</important>

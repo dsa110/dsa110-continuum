@@ -6,7 +6,7 @@ Generated: 2026-05-14
 
 The DSA-110 continuum imaging pipeline is a production-grade radio astronomy data processing system for the Deep Synoptic Array at Owens Valley Radio Observatory. It processes raw HDF5 visibility data through six sequential stages to produce science-ready light curves for detecting variable and transient compact radio sources, especially Extreme Scattering Events (ESEs).
 
-The codebase shows strong domain specialization, robust orchestration, clean acyclic architecture, excellent documentation, and science-safe engineering practices.
+The codebase shows strong domain specialization, robust orchestration, a stage-oriented architecture with verified import-cycle hotspots, excellent documentation, and science-safe engineering practices.
 
 Overall code health: 7.2/10.
 
@@ -15,6 +15,17 @@ Overall code health: 7.2/10.
 - Testability: 7/10
 - Complexity: 6/10
 - Documentation: 8/10
+
+### Verification Notes
+
+Re-scan performed on 2026-05-14 using filesystem inventory, `rg`, line counts, and a static AST import graph. Scope was repository code/docs only; no full test suite or production pipeline run was performed.
+
+Verified inventory:
+
+- 22 top-level package directories under `dsa110_continuum/`, excluding `__pycache__`.
+- 35 Python entry-point scripts under `scripts/`.
+- Static AST import scan: 309 Python modules, 530 internal import edges, 9 module-level strongly connected components (SCCs).
+- Top-level package scan: one SCC spanning `calibration`, `catalog`, `conversion`, `imaging`, `mosaic`, `photometry`, `pointing`, `qa`, and `visualization`.
 
 ## 1. Code Structure
 
@@ -240,9 +251,9 @@ Operational constraints:
 
 Overall coupling score: 6/10.
 
-Architecture has zero circular dependencies; dependency flow is acyclic. Main risk is critical hubs with high fan-in.
+Architecture is stage-oriented, but static import coupling is not acyclic. A 2026-05-14 AST scan found 9 module-level SCCs and one top-level SCC spanning `calibration`, `catalog`, `conversion`, `imaging`, `mosaic`, `photometry`, `pointing`, `qa`, and `visualization`. Main risks are critical hubs with high fan-in plus import cycles that make refactors harder to reason about.
 
-Critical hubs:
+Critical hubs from the original framework analysis:
 
 | Module | Fan-in | Fan-out | Risk |
 |---|---:|---:|---|
@@ -261,11 +272,12 @@ Change impact:
 
 Recommended dependency work:
 
-1. Add strong integration tests around `casa_service.py`.
-2. Extract field-direction utilities from `runner.py`.
-3. Decouple sky model seeding from `calibration/model.py`.
-4. Add dependency injection for CASA service access.
-5. Create a calibration facade only if it reduces fan-in without hiding science-critical invariants.
+1. Add a reproducible import graph / SCC check before making architecture claims.
+2. Add strong integration tests around `casa_service.py`.
+3. Extract field-direction utilities from `runner.py`.
+4. Decouple sky model seeding from `calibration/model.py`.
+5. Add dependency injection for CASA service access.
+6. Create a calibration facade only if it reduces fan-in without hiding science-critical invariants.
 
 ## 7. Code Health
 
@@ -290,8 +302,8 @@ Dimension scores:
 
 ### Main Health Hotspots
 
-1. `dsa110_continuum/calibration/calibration.py` is a monolithic module around 2600 lines.
-2. `dsa110_continuum/calibration/flagging.py` is large and mixes preflight, RFI flagging, bad-pol detection, and recovery logic.
+1. `dsa110_continuum/calibration/calibration.py` is a monolithic module: 2996 lines at re-scan.
+2. `dsa110_continuum/calibration/flagging.py` is large: 2662 lines at re-scan; it mixes preflight, RFI flagging, bad-pol detection, and recovery logic.
 3. `dsa110_continuum/photometry/ese_detection.py` has duplicate imports.
 4. `dsa110_continuum/conversion/conversion_orchestrator.py` has defensive import stubs that obscure import failure behavior.
 5. `dsa110_continuum/imaging/cli_imaging.py` has deferred imports and fallback complexity.
@@ -336,7 +348,8 @@ Symptom if missing: EveryBeam selects the wrong beam model; primary beam errors 
 
 Known issues:
 
-- `mosaic/wsclean_mosaic.py` was reported to use arithmetic mean for RA in at least one path; RA wrap requires circular mean.
+- Visibility-domain mosaic paths still use arithmetic mean for RA in at least two places: `dsa110_continuum/mosaic/wsclean_mosaic.py::compute_mean_meridian()` and `dsa110_continuum/mosaic/jobs_wsclean.py`. RA wrap requires circular mean via `arctan2(mean(sin(RA)), mean(cos(RA)))`.
+- Image-domain mosaic paths already contain RA-wrap-safe circular mean handling in `dsa110_continuum/mosaic/builder.py` and `scripts/mosaic_day.py`; reuse that pattern for the visibility-domain fix.
 - Legacy compatibility with `dsa110_contimg` remains present by design.
 - Cloud environments do not fully match H17 production data/tooling.
 
@@ -408,6 +421,7 @@ High priority:
 - Extract flagging strategy modules.
 - Strengthen tests around `casa_service.py` and `runner.py`.
 - Add tests for FIELD direction column shapes.
+- Fix RA circular mean in visibility-domain mosaic phase-center selection (`mosaic/wsclean_mosaic.py`, `mosaic/jobs_wsclean.py`) and add a regression test where `[359, 0, 1]` centers near `0`, not `120`.
 
 Medium priority:
 
@@ -415,6 +429,7 @@ Medium priority:
 - Formalize optional acceleration contracts.
 - Add validation contracts for calibration table borrowing.
 - Decouple sky model seeding from high-coupling modules.
+- Add a reproducible import graph / SCC check and document current cycles.
 
 Low priority:
 
@@ -426,7 +441,7 @@ Low priority:
 
 This workspace contains a production-grade, domain-specialized radio astronomy imaging pipeline with:
 
-- 18 main modules.
+- 22 top-level package directories under `dsa110_continuum/`, excluding `__pycache__`.
 - 35 entry point scripts.
 - Six-stage data flow from HDF5 to science light curves.
 - Seven major external integrations.
@@ -434,7 +449,7 @@ This workspace contains a production-grade, domain-specialized radio astronomy i
 - Twenty-plus domain-specific scientific patterns.
 - Three critical silent-failure guards.
 - Broad test coverage and strong documentation.
-- Clean acyclic dependency flow with moderate coupling.
+- Stage-oriented dependency flow with moderate coupling and verified import-cycle hotspots.
 - Code health around 7.2/10, with maintainability and complexity as the main improvement areas.
 
 The most important mental model is:
