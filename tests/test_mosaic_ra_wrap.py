@@ -19,12 +19,15 @@ import pytest
 from astropy.io import fits
 from astropy.wcs import WCS
 
-# Import directly from the submodule to avoid the mosaic/__init__.py chain
-# which requires dsa110_contimg (H17-only) decorators via jobs.py etc.
+# Import directly from the submodule to avoid the mosaic/__init__.py chain,
+# which pulls in the legacy dsa110_contimg.workflow.dagster validator that
+# requires /dev/shm/dsa110-contimg/ writable at module-load time.
 import importlib.util, sys
+from pathlib import Path
+_BUILDER_PATH = Path(__file__).resolve().parents[1] / "dsa110_continuum" / "mosaic" / "builder.py"
 _spec = importlib.util.spec_from_file_location(
     "dsa110_continuum.mosaic.builder",
-    "/home/user/workspace/dsa110-continuum/dsa110_continuum/mosaic/builder.py",
+    str(_BUILDER_PATH),
 )
 _mod = importlib.util.module_from_spec(_spec)
 sys.modules["dsa110_continuum.mosaic.builder"] = _mod

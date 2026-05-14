@@ -1,9 +1,15 @@
 # tests/test_simulated_pipeline.py
+import os
 import numpy as np
 import pytest
 import tempfile
 from pathlib import Path
 from dsa110_continuum.simulation.harness import SimulationHarness
+
+# Importing dsa110_continuum.mosaic.* triggers the legacy
+# dsa110_contimg.workflow.dagster validator at module-load time, which
+# requires /dev/shm/dsa110-contimg/ writable by the current user.
+_DEVSHM_DSA110_WRITABLE = os.access("/dev/shm/dsa110-contimg", os.W_OK)
 
 
 class TestGainCorruption:
@@ -278,6 +284,11 @@ class TestSimulatedImaging:
 
 
 class TestSimulatedMosaic:
+    pytestmark = pytest.mark.skipif(
+        not _DEVSHM_DSA110_WRITABLE,
+        reason="Requires /dev/shm/dsa110-contimg/ writable: legacy dsa110_contimg.workflow.dagster validator runs at import time",
+    )
+
     @pytest.fixture
     def two_tile_fits(self, tmp_path):
         """Two minimal synthetic FITS tiles with overlapping footprints."""

@@ -137,10 +137,9 @@ Fix when blocked: either (a) make the directory writable for your user, or (b) b
 
 <important if="you are debugging test failures or interpreting suite results">
 
-Known-fragile tests (as of 2026-05; verified by full-suite run):
+Environment-dependent tests:
 
-- `tests/test_mosaic_ra_wrap.py` — collection error. Loads `dsa110_continuum/mosaic/builder.py` via `importlib.util.spec_from_file_location` with a hard-coded `/home/user/workspace/...` path (only valid on the Cursor Cloud VM). Move the path to `pathlib.Path(__file__).resolve().parents[1] / "dsa110_continuum/mosaic/builder.py"` to restore portability.
-- `tests/test_simulated_pipeline.py::TestSimulatedMosaic` — three tests fail when `/dev/shm/dsa110-contimg/` is unwritable; root cause is the legacy validator described in the mosaic block above. Fail count is also order-sensitive (1/3 standalone, 3/3 in the full suite) because Python's failed-import caching differs across paths into the same module.
+- `tests/test_simulated_pipeline.py::TestSimulatedMosaic` — class-level `skipif` skips all 3 tests when `/dev/shm/dsa110-contimg/` isn't writable by the current user. The tests would otherwise hit the legacy import-time validator described in the mosaic block above. If you need them to run, get write access to that directory (e.g., as the host's pipeline service user).
 
 </important>
 
