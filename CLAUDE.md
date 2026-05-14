@@ -73,7 +73,7 @@ The editable install is unreliable (console-script entry points still point at t
 
 | Command | What it does |
 |---|---|
-| `/opt/miniforge/envs/casa6/bin/python -m pytest tests/ -q` | Full suite (~1000 tests as of 2026-05; collection ~47 s) |
+| `/opt/miniforge/envs/casa6/bin/python -m pytest tests/ -q` | Full suite (~1000 tests as of 2026-05; collection ~47 s, full run ~14 min — dominated by `test_integration_e2e.py` and `test_simulated_pipeline.py`) |
 | `/opt/miniforge/envs/casa6/bin/python -m pytest tests/test_X.py::test_Y -q` | Single test |
 | `ruff check dsa110_continuum/ scripts/ tests/` | Lint |
 | `ruff check --fix dsa110_continuum/ scripts/ tests/` | Auto-fix safe issues |
@@ -124,6 +124,23 @@ Cloud-only test failures (pre-existing, not bugs):
 - `test_epoch_gaincal::test_wsclean_runs_when_flag_fraction_below_limit` — mock expects single `subprocess.run` but epoch gaincal makes two WSClean invocations.
 
 Telescope data paths (`/data/incoming/`, `/stage/dsa110-contimg/ms/`) do not exist on the cloud VM. Tests/scripts use mocks or skip gracefully.
+
+</important>
+
+<important if="you are importing, testing, or running anything under `dsa110_continuum.mosaic.*`">
+
+The mosaic subsystem requires `/dev/shm/dsa110-contimg/` to be writable by the current user **at import time**. `dsa110_continuum/mosaic/__init__.py` → `mosaic/pipeline.py` → `mosaic/science_jobs.py` reaches into the legacy `dsa110_contimg.workflow.dagster.definitions`, which calls `_validate_pipeline_prerequisites()` on module load — a hard requirement, not lazy. Symptom: `RuntimeError: Pipeline validation failed: [DIR] /dev/shm/dsa110-contimg: Not writable`, raised the moment the import chain is touched (including by pure-Python WCS tests).
+
+Fix when blocked: either (a) make the directory writable for your user, or (b) bypass the import chain by loading `dsa110_continuum.mosaic.builder` directly with `importlib.util.spec_from_file_location` — but if you do (b), resolve the path relative to `__file__`, NEVER hard-code an absolute path.
+
+</important>
+
+<important if="you are debugging test failures or interpreting suite results">
+
+Known-fragile tests (as of 2026-05; verified by full-suite run):
+
+- `tests/test_mosaic_ra_wrap.py` — collection error. Loads `dsa110_continuum/mosaic/builder.py` via `importlib.util.spec_from_file_location` with a hard-coded `/home/user/workspace/...` path (only valid on the Cursor Cloud VM). Move the path to `pathlib.Path(__file__).resolve().parents[1] / "dsa110_continuum/mosaic/builder.py"` to restore portability.
+- `tests/test_simulated_pipeline.py::TestSimulatedMosaic` — three tests fail when `/dev/shm/dsa110-contimg/` is unwritable; root cause is the legacy validator described in the mosaic block above. Fail count is also order-sensitive (1/3 standalone, 3/3 in the full suite) because Python's failed-import caching differs across paths into the same module.
 
 </important>
 
