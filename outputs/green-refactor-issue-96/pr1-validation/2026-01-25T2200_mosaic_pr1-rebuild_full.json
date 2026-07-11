@@ -1,0 +1,22 @@
+{
+  "artifact": "/data/dsa110-continuum/outputs/green-refactor-issue-96/pr1-validation/2026-01-25T2200_mosaic_pr1-rebuild_full.png",
+  "source_fits": "/data/dsa110-continuum/outputs/green-refactor-issue-96/pr1-validation/2026-01-25T2200_mosaic.fits",
+  "source_sha256": "91d2b03e900325f8ab890e1b6ad88bc90ef7e33456c47bae86be31a548009392",
+  "source_fits_mtime_utc": "2026-07-10T05:56:10.780991+00:00",
+  "rendered_at_utc": "2026-07-10T15:51:07.938962+00:00",
+  "shape": [
+    2706,
+    11552
+  ],
+  "display": {
+    "stretch": "asinh",
+    "percentiles": [
+      0.5,
+      99.5
+    ],
+    "vmin_jy_per_beam": -0.21744169905781746,
+    "vmax_jy_per_beam": 0.22252689115703056
+  },
+  "robust_rms_jy_per_beam": 0.008921016381038498,
+  "note": "This PNG is rendered directly from the PR1 validation rebuild FITS; it is not a baseline visual-QA artifact."
+}\n

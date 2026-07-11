@@ -1,0 +1,22 @@
+{
+  "artifact": "2026-01-25T2200_mosaic_rfi-rebuild_full.png",
+  "source_fits": "/stage/dsa110-contimg/images/mosaic_2026-01-25/2026-01-25T2200_mosaic.fits",
+  "source_sha256": "1ebd0713e57ebf33b781cafc737dfbe735f8eb0817e1fbf95b594dfbf4afb930",
+  "source_fits_mtime_utc": "2026-07-10T20:03:50.701302+00:00",
+  "rendered_at_utc": "2026-07-10T21:41:24.302318+00:00",
+  "shape": [
+    2706,
+    11552
+  ],
+  "display": {
+    "stretch": "asinh",
+    "percentiles": [
+      0.5,
+      99.5
+    ],
+    "vmin_jy_per_beam": -0.043073944170027974,
+    "vmax_jy_per_beam": 0.04532187303528183
+  },
+  "robust_rms_jy_per_beam": 0.005096185135049745,
+  "note": "Rendered directly from the 2026-07-10 RFI-cleaned rebuild FITS on /stage; not a baseline visual-QA artifact."
+}

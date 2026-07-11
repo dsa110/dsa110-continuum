@@ -1,0 +1,57 @@
+2026-07-09 21:49:10,991 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.916895 from DATE-OBS'.
+2026-07-09 21:49:11,066 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.920473 from DATE-OBS'.
+2026-07-09 21:49:11,126 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.924052 from DATE-OBS'.
+2026-07-09 21:49:11,193 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.927632 from DATE-OBS'.
+2026-07-09 21:49:11,259 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.931211 from DATE-OBS'.
+2026-07-09 21:49:11,300 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.934789 from DATE-OBS'.
+2026-07-09 21:49:11,362 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.942987 from DATE-OBS'.
+2026-07-09 21:49:11,425 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.946567 from DATE-OBS'.
+2026-07-09 21:49:11,483 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.950146 from DATE-OBS'.
+2026-07-09 21:49:11,542 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.953725 from DATE-OBS'.
+2026-07-09 21:49:11,607 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.957304 from DATE-OBS'.
+2026-07-09 21:49:11,632 INFO Common WCS: RA 334.99-354.24 deg, Dec 13.87-18.38 deg, 11552x2706 px (center RA=344.62)
+2026-07-09 21:49:14,147 INFO Reprojecting 2026-01-25T22:00:18-image-pb.fits ...
+2026-07-09 21:49:15,316 INFO   PB source: image/image-pb ratio
+2026-07-09 21:49:16,339 INFO   Sault weights: sigma_flat=0.004259, floor(PB<20%) zeroed 843490 px
+2026-07-09 21:49:16,377 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.916895 from DATE-OBS'.
+2026-07-09 21:57:25,525 INFO Reprojecting 2026-01-25T22:05:28-image-pb.fits ...
+2026-07-09 21:57:26,044 INFO   PB source: image/image-pb ratio
+2026-07-09 21:57:26,729 INFO   Sault weights: sigma_flat=0.004213, floor(PB<20%) zeroed 843610 px
+2026-07-09 21:57:26,764 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.920473 from DATE-OBS'.
+2026-07-09 22:05:23,487 INFO Reprojecting 2026-01-25T22:10:37-image-pb.fits ...
+2026-07-09 22:05:23,953 INFO   PB source: image/image-pb ratio
+2026-07-09 22:05:24,546 INFO   Sault weights: sigma_flat=0.005107, floor(PB<20%) zeroed 843601 px
+2026-07-09 22:05:24,573 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.924052 from DATE-OBS'.
+2026-07-09 22:13:16,652 INFO Reprojecting 2026-01-25T22:15:46-image-pb.fits ...
+2026-07-09 22:13:17,216 INFO   PB source: image/image-pb ratio
+2026-07-09 22:13:17,838 INFO   Sault weights: sigma_flat=0.01103, floor(PB<20%) zeroed 843436 px
+2026-07-09 22:13:17,864 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.927632 from DATE-OBS'.
+2026-07-09 22:20:30,151 INFO Reprojecting 2026-01-25T22:20:55-image-pb.fits ...
+2026-07-09 22:20:30,867 INFO   PB source: image/image-pb ratio
+2026-07-09 22:20:31,170 INFO   Sault weights: sigma_flat=0.009124, floor(PB<20%) zeroed 843407 px
+2026-07-09 22:20:31,215 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.931211 from DATE-OBS'.
+2026-07-09 22:25:20,437 INFO Reprojecting 2026-01-25T22:26:05-image-pb.fits ...
+2026-07-09 22:25:20,612 INFO   PB source: image/image-pb ratio
+2026-07-09 22:25:20,719 INFO   Sault weights: sigma_flat=0.1902, floor(PB<20%) zeroed 843508 px
+2026-07-09 22:25:20,758 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.934789 from DATE-OBS'.
+2026-07-09 22:30:10,308 INFO Reprojecting 2026-01-25T22:36:08-image-pb.fits ...
+2026-07-09 22:30:10,896 INFO   PB source: image/image-pb ratio
+2026-07-09 22:30:11,009 INFO   Sault weights: sigma_flat=0.01014, floor(PB<20%) zeroed 843688 px
+2026-07-09 22:30:11,030 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.942987 from DATE-OBS'.
+2026-07-09 22:35:10,093 INFO Reprojecting 2026-01-25T22:43:02-image-pb.fits ...
+2026-07-09 22:35:10,274 INFO   PB source: image/image-pb ratio
+2026-07-09 22:35:10,398 INFO   Sault weights: sigma_flat=0.005554, floor(PB<20%) zeroed 843584 px
+2026-07-09 22:35:10,412 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.946567 from DATE-OBS'.
+2026-07-09 22:40:13,678 INFO Reprojecting 2026-01-25T22:48:11-image-pb.fits ...
+2026-07-09 22:40:13,860 INFO   PB source: image/image-pb ratio
+2026-07-09 22:40:13,971 INFO   Sault weights: sigma_flat=0.006686, floor(PB<20%) zeroed 843355 px
+2026-07-09 22:40:14,010 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.950146 from DATE-OBS'.
+2026-07-09 22:45:17,357 INFO Reprojecting 2026-01-25T22:53:20-image-pb.fits ...
+2026-07-09 22:45:17,569 INFO   PB source: image/image-pb ratio
+2026-07-09 22:45:17,699 INFO   Sault weights: sigma_flat=0.01892, floor(PB<20%) zeroed 843296 px
+2026-07-09 22:45:17,729 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.953725 from DATE-OBS'.
+2026-07-09 22:50:21,736 INFO Reprojecting 2026-01-25T22:58:30-image-pb.fits ...
+2026-07-09 22:50:22,010 INFO   PB source: image/image-pb ratio
+2026-07-09 22:50:22,162 INFO   Sault weights: sigma_flat=0.04798, floor(PB<20%) zeroed 842829 px
+2026-07-09 22:50:22,180 WARNING FITSFixedWarning: 'datfix' made the change 'Set MJD-OBS to 61065.957304 from DATE-OBS'.
+2026-07-09 22:56:50,817 INFO Epoch weight map written: /data/dsa110-continuum/outputs/green-refactor-issue-96/pr1-validation/2026-01-25T2200_mosaic.weights.fits

@@ -1,0 +1,22 @@
+{
+  "artifact": "2026-01-25T2200_mosaic_rfi-rebuild_weight.png",
+  "source_fits": "/stage/dsa110-contimg/images/mosaic_2026-01-25/2026-01-25T2200_mosaic.weights.fits",
+  "source_sha256": "cc6c3a4af00af4595ec4baaec8ae2a7c18601d7a83da805293e5164cd4b4bd20",
+  "source_fits_mtime_utc": "2026-07-10T19:48:58.117552+00:00",
+  "rendered_at_utc": "2026-07-10T21:41:56.649609+00:00",
+  "shape": [
+    2706,
+    11552
+  ],
+  "display": {
+    "stretch": "linear",
+    "percentiles": [
+      0.5,
+      99.5
+    ],
+    "vmin_jy_per_beam": 0.0,
+    "vmax_jy_per_beam": 154602.708359375
+  },
+  "robust_rms_jy_per_beam": 11507.145243603514,
+  "note": "Sault weight map for the 2026-07-10 RFI-cleaned rebuild."
+}
