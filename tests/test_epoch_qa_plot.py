@@ -17,6 +17,7 @@ def _dummy_result(qa_result: str = "PASS") -> EpochQAResult:
         completeness_gate="PASS",
         rms_gate="PASS",
         qa_result=qa_result,
+        n_covered=18,
     )
 
 

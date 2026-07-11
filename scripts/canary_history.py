@@ -122,6 +122,7 @@ def _measure(fits_path: str, nvss_db: str) -> dict:
         "median_ratio": result.median_ratio,
         "n_recovered": result.n_recovered,
         "n_catalog": result.n_catalog,
+        "n_covered": result.n_covered,
         "rms_mjy": result.mosaic_rms_mjy,
         "ratio_gate": result.ratio_gate,
         "completeness_gate": result.completeness_gate,

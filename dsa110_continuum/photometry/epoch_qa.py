@@ -2,7 +2,13 @@
 
 Three independent gates must all pass for an epoch to be QA-PASS:
   1. Flux scale:        median DSA/NVSS ratio in [0.8, 1.2]
-  2. Detection compl.:  >= 60% of NVSS sources >= 50 mJy recovered above 5-sigma local RMS
+  2. Detection compl.:  >= 60% of *covered* NVSS sources >= 50 mJy recovered
+                        above 5-sigma local RMS.  "Covered" means the source
+                        lands on a finite mosaic pixel: the footprint query is
+                        a rectangular RA/Dec bounding box, but the mosaic
+                        support is a rounded strip (~67% of the box for the
+                        2026-01-25T2200 epoch), so sources on blank pixels
+                        were never observed and must not count as misses.
   3. Noise floor:       median mosaic RMS <= 18.6 mJy/beam
 
 Design decisions are documented in docs/plans/2026-03-09-phase0-qa-infrastructure.md.
@@ -56,6 +62,7 @@ class EpochQAResult:
     completeness_gate: _GateResult
     rms_gate: _GateResult
     qa_result: _GateResult          # PASS only if all non-SKIP gates pass
+    n_covered: int = 0              # catalog sources landing on finite pixels
     ratios: list[float] | None = None  # per-source DSA/NVSS ratios (for plotting)
 
     def to_dict(self) -> dict:
@@ -191,6 +198,7 @@ def measure_epoch_qa(
     # --- Measure each source ---
     ratios: list[float] = []
     n_recovered = 0
+    n_covered = 0
 
     for ra, dec, cat_flux_mjy in catalog:
         try:
@@ -200,6 +208,13 @@ def measure_epoch_qa(
             continue
         if not (2 <= cy < ny - 2 and 2 <= cx < nx - 2):
             continue
+        # The bounding-box catalog query includes sky the mosaic never
+        # observed (blank strip ends, coverage gaps).  A source on a
+        # non-finite pixel cannot be recovered at any image quality, so it
+        # is excluded from the completeness denominator.
+        if not np.isfinite(data[cy, cx]):
+            continue
+        n_covered += 1
 
         local = _local_rms(data, cy, cx)
         peak = _peak_in_box(data, cy, cx, half=1)
@@ -213,7 +228,7 @@ def measure_epoch_qa(
 
     # --- Gate evaluation ---
     median_ratio = float(np.median(ratios)) if ratios else float("nan")
-    completeness_frac = n_recovered / n_catalog if n_catalog > 0 else 0.0
+    completeness_frac = n_recovered / n_covered if n_covered > 0 else 0.0
 
     # Gate 1: flux scale
     if np.isnan(median_ratio) or len(ratios) < QA_MIN_RATIO_DETECTIONS:
@@ -223,8 +238,8 @@ def measure_epoch_qa(
     else:
         ratio_gate = "FAIL"
 
-    # Gate 2: detection completeness
-    if n_catalog < QA_MIN_CATALOG_SOURCES:
+    # Gate 2: detection completeness (over covered sources only)
+    if n_covered < QA_MIN_CATALOG_SOURCES:
         completeness_gate: _GateResult = "SKIP"
     elif completeness_frac >= QA_COMPLETENESS_MIN:
         completeness_gate = "PASS"
@@ -244,6 +259,7 @@ def measure_epoch_qa(
 
     return EpochQAResult(
         n_catalog=n_catalog,
+        n_covered=n_covered,
         n_recovered=n_recovered,
         completeness_frac=round(completeness_frac, 4),
         median_ratio=round(median_ratio, 4) if not np.isnan(median_ratio) else float("nan"),

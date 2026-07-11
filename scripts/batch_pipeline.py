@@ -88,7 +88,7 @@ QA_SUMMARY_CSV = os.environ.get(
 )
 QA_CSV_FIELDS = [
     "date", "epoch_utc", "mosaic_path",
-    "n_catalog", "n_recovered", "completeness_frac",
+    "n_catalog", "n_covered", "n_recovered", "completeness_frac",
     "median_ratio", "ratio_gate", "completeness_gate",
     "rms_gate", "mosaic_rms_mjy",
     "qa_result", "gaincal_used",

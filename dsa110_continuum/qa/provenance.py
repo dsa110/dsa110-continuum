@@ -196,6 +196,7 @@ class RunManifest:
             try:
                 rec["rms_mjy"] = epoch_qa.mosaic_rms_mjy
                 rec["completeness_frac"] = epoch_qa.completeness_frac
+                rec["n_covered"] = epoch_qa.n_covered
             except AttributeError:
                 pass
         self.epochs.append(rec)
