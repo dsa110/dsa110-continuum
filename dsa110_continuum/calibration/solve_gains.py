@@ -185,21 +185,19 @@ def solve_prebandpass_phase(
     # - If combining across fields: use the full selection string to maximize SNR
     # - Otherwise: use the peak field (closest to calibrator) if provided, otherwise parse from range
     #   The peak field is the one with maximum PB-weighted flux (closest to calibrator position)
-    if combine_fields:
+    fallback_to_range = peak_field_idx is None and "~" in str(cal_field)
+    use_combine_fields = combine_fields or fallback_to_range
+    if use_combine_fields:
         field_selector = str(cal_field)
+    elif peak_field_idx is not None:
+        field_selector = str(peak_field_idx)
     else:
-        if peak_field_idx is not None:
-            field_selector = str(peak_field_idx)
-        elif "~" in str(cal_field):
-            # Fallback: use first field in range (should be peak when peak_idx=0)
-            field_selector = str(cal_field).split("~")[0]
-        else:
-            field_selector = str(cal_field)
+        field_selector = str(cal_field)
     logger.debug(
         f"Using field selector '{field_selector}' for pre-bandpass phase solve"
         + (
             f" (combined from range {cal_field})"
-            if combine_fields
+            if use_combine_fields
             else f" (peak field: {field_selector})"
         )
     )
@@ -207,7 +205,7 @@ def solve_prebandpass_phase(
     # Combine across scans, fields, and SPWs when requested
     # Combining SPWs improves SNR by using all 16 subbands simultaneously
     comb_parts = ["scan"]
-    if combine_fields:
+    if use_combine_fields:
         comb_parts.append("field")
     if combine_spw:
         comb_parts.append("spw")
@@ -567,21 +565,19 @@ def solve_gains(
     # - If combining across fields: use the full selection string to maximize SNR
     # - Otherwise: use the peak field (closest to calibrator) if provided, otherwise parse from range
     #   The peak field is the one with maximum PB-weighted flux (closest to calibrator position)
-    if combine_fields:
+    fallback_to_range = peak_field_idx is None and "~" in str(cal_field)
+    use_combine_fields = combine_fields or fallback_to_range
+    if use_combine_fields:
         field_selector = str(cal_field)
+    elif peak_field_idx is not None:
+        field_selector = str(peak_field_idx)
     else:
-        if peak_field_idx is not None:
-            field_selector = str(peak_field_idx)
-        elif "~" in str(cal_field):
-            # Fallback: use first field in range (should be peak when peak_idx=0)
-            field_selector = str(cal_field).split("~")[0]
-        else:
-            field_selector = str(cal_field)
+        field_selector = str(cal_field)
     logger.debug(
         f"Using field selector '{field_selector}' for gain calibration"
         + (
             f" (combined from range {cal_field})"
-            if combine_fields
+            if use_combine_fields
             else f" (peak field: {field_selector})"
         )
     )
@@ -593,7 +589,7 @@ def solve_gains(
     gaintable.extend(bptables)
 
     # Combine across scans and fields when requested; otherwise do not combine
-    comb = "scan,field" if combine_fields else ""
+    comb = "scan,field" if use_combine_fields else ""
 
     # CRITICAL FIX: Determine spwmap if tables were created with combine_spw=True
     # When combine_spw is used, the table has solutions only for SPW=0 (aggregate).
