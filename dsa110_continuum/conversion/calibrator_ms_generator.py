@@ -439,48 +439,45 @@ class CalibratorMSGenerator:
         ms_paths = []
 
         for group in groups:
-            if isinstance(group, str):
-                # Group representative timestamp from select_groups_by_position
-                timestamp = group
-            else:
-                # SubbandGroup object or raw file list
-                files = group.files if hasattr(group, "files") else group
-                if not files:
-                    continue
-                timestamp = Path(files[0]).stem.rsplit("_sb", 1)[0]
-
-            # Check if already exists
-            ms_path = self.output_dir / f"{timestamp}.ms"
-            if skip_existing and ms_path.exists():
-                logger.info("Skipping existing MS: %s", ms_path)
-                ms_paths.append(ms_path)
-                continue
-
-            # Convert using time-based API
-            end_ts = (Time(timestamp, format="isot") + 2 * u.minute).isot
-
             try:
-                convert_subband_groups_to_ms(
+                if isinstance(group, str):
+                    timestamp = group
+                else:
+                    files = group.files if hasattr(group, "files") else group
+                    if not files:
+                        continue
+                    timestamp = Path(files[0]).stem.rsplit("_sb", 1)[0]
+
+                ms_path = self.output_dir / f"{timestamp}.ms"
+                if skip_existing and ms_path.exists():
+                    logger.info("Skipping existing MS: %s", ms_path)
+                    ms_paths.append(ms_path)
+                    continue
+
+                end_ts = (Time(timestamp, format="isot") + 2 * u.minute).isot
+                result = convert_subband_groups_to_ms(
                     input_dir=str(self.input_dir),
                     output_dir=str(self.output_dir),
                     start_time=timestamp,
                     end_time=end_ts,
-                    skip_existing=False,
+                    skip_existing=skip_existing,
                 )
 
-                # Find the created MS
-                pattern = f"{timestamp}*.ms"
-                created = sorted(
-                    self.output_dir.glob(pattern),
-                    key=lambda p: p.stat().st_mtime,
-                    reverse=True,
-                )
-                if created:
-                    ms_paths.append(created[0])
-                    logger.info("Created MS: %s", created[0])
+                for group_id in result["converted"]:
+                    actual_ms_path = self.output_dir / f"{group_id}.ms"
+                    if actual_ms_path not in ms_paths:
+                        ms_paths.append(actual_ms_path)
+                        logger.info("Conversion result MS: %s", actual_ms_path)
+
+                if skip_existing:
+                    for group_id in result["skipped"]:
+                        actual_ms_path = self.output_dir / f"{group_id}.ms"
+                        if actual_ms_path.exists() and actual_ms_path not in ms_paths:
+                            ms_paths.append(actual_ms_path)
+                            logger.info("Existing conversion result MS: %s", actual_ms_path)
 
             except Exception as exc:
-                logger.error("Failed to convert group %s: %s", timestamp, exc)
+                logger.error("Failed to convert group %r: %s", group, exc)
 
         return ms_paths
 
