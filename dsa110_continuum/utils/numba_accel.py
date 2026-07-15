@@ -63,7 +63,7 @@ except ImportError:
 
 
 # =============================================================================
-# Angular Separation (Haversine formula)
+# Angular Separation (spherical law of cosines)
 # =============================================================================
 
 
@@ -74,10 +74,14 @@ def angular_separation_jit(
     ra2: np.ndarray,
     dec2: np.ndarray,
 ) -> np.ndarray:
-    """Compute angular separation using Haversine formula (JIT-compiled).
+    """Compute angular separation using the spherical law of cosines (JIT-compiled).
 
         This is significantly faster than astropy's angular_separation for
         large arrays due to JIT compilation and avoiding Python overhead.
+
+        Unlike the haversine form, arccos conditioning imposes a ~2.1e-8 rad
+        (4.3 mas) floor on the smallest resolvable separations — negligible
+        for this pipeline's arcsecond-level cross-matching.
 
     Parameters
     ----------
@@ -95,7 +99,6 @@ def angular_separation_jit(
         array_like
         Angular separation in radians
     """
-    # Haversine formula for angular separation
     sin_dec1 = np.sin(dec1)
     sin_dec2 = np.sin(dec2)
     cos_dec1 = np.cos(dec1)

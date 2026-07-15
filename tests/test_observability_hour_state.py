@@ -135,7 +135,10 @@ def test_qa_thumb_url_uses_epoch_token():
     )
 
 
-def test_sync_mosaic_thumb_copies_png_into_static_root(tmp_path: Path):
+def test_sync_mosaic_thumb_copies_png_into_static_root(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(
+        "dsa110_continuum.observability.mosaic_preview.webapp_build_dir", lambda: None
+    )
     campaign = tmp_path / "campaign"
     preview_dir = campaign / "previews"
     preview_dir.mkdir(parents=True)
@@ -250,6 +253,23 @@ class TestUtcHourBinSelection:
         state = collect_hour_state(_tmp_config(tmp_path, date="2026-07-13", hour=5))
 
         assert state["campaign"]["log"]["path"].endswith("batch_run_h5_b.log")
+
+    def test_campaign_log_glob_rejects_other_hours_sharing_digit_prefix(
+        self, tmp_path, monkeypatch
+    ):
+        _no_processes(monkeypatch)
+        campaign = tmp_path / "campaign"
+        campaign.mkdir()
+        own = campaign / "batch_run_h1_a.log"
+        other = campaign / "batch_run_h11_b.log"
+        own.write_text("own\n")
+        other.write_text("other\n")
+        os.utime(own, (1_000, 1_000))
+        os.utime(other, (2_000, 2_000))
+
+        state = collect_hour_state(_tmp_config(tmp_path, date="2026-07-13", hour=1))
+
+        assert state["campaign"]["log"]["path"].endswith("batch_run_h1_a.log")
 
 
 class TestCampaignStateMachine:

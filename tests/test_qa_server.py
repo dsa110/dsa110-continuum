@@ -561,6 +561,24 @@ class TestDashboardAndHealth:
         assert parsed.tzinfo is not None
 
 
+class TestFindCsv:
+    """Criterion: find_csv's contract is the newest matching table (docstring);
+    newest means max mtime, not lexicographically last."""
+
+    def test_returns_newest_by_mtime_not_lexicographic(self, tmp_path: Path):
+        config = _make_config(tmp_path)
+        directory = config.products / "2026-01-25"
+        directory.mkdir(parents=True)
+        newer_lex_first = directory / "2026-01-25T0200_a_phot.csv"
+        older_lex_last = directory / "2026-01-25T0200_z_phot.csv"
+        newer_lex_first.write_text("x\n")
+        older_lex_last.write_text("x\n")
+        os.utime(older_lex_last, (1_000, 1_000))
+        os.utime(newer_lex_first, (2_000, 2_000))
+
+        assert qa_server.find_csv(config, "2026-01-25", "T0200") == newer_lex_first
+
+
 class TestCampaignStatusLogSelection:
     """Criterion: an epoch's status may only adopt campaign logs whose filename
     hour equals the requested hour (padded or unpadded form); hour 1 must never

@@ -88,8 +88,8 @@ def find_csv(config: DashboardConfig, date: str, epoch: str) -> Path | None:
     directory = config.products / date
     if not directory.is_dir():
         return None
-    matches = sorted(directory.glob(f"*{epoch}*phot.csv"))
-    return matches[-1] if matches else None
+    matches = list(directory.glob(f"*{epoch}*phot.csv"))
+    return max(matches, key=lambda path: path.stat().st_mtime) if matches else None
 
 
 def cal_tables(config: DashboardConfig) -> set[str]:

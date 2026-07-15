@@ -169,9 +169,9 @@ def calculate_m_metric(flux_a: float, flux_b: float) -> float:
 def calculate_v_metric(fluxes: np.ndarray) -> float:
     """Calculate V metric (coefficient of variation).
 
-        The V metric is the fractional variability: std / mean.
-        This is already implemented in DSA-110's variability_stats table,
-        but provided here for completeness.
+        The V metric is the fractional variability: std / mean, using the
+        sample standard deviation (ddof=1) per the VAST convention.
+        Delegates to the canonical photometry/metrics.py implementation.
 
     Parameters
     ----------
@@ -183,18 +183,9 @@ def calculate_v_metric(fluxes: np.ndarray) -> float:
         float
         V metric value
     """
-    if len(fluxes) == 0:
-        return 0.0
+    from dsa110_continuum.photometry.metrics import calculate_v_metric as canonical_v_metric
 
-    valid_fluxes = fluxes[np.isfinite(fluxes)]
-    if len(valid_fluxes) < 2:
-        return 0.0
-
-    mean_flux = np.mean(valid_fluxes)
-    if mean_flux == 0:
-        return 0.0
-
-    return float(np.std(valid_fluxes) / mean_flux)
+    return canonical_v_metric(np.asarray(fluxes, dtype=float))
 
 
 def calculate_sigma_deviation(

@@ -19,36 +19,20 @@ import pandas as pd
 from astropy import units as u
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
-
-try:
-    from dsa110_continuum.catalog.multiwavelength import (
-        check_all_services,
-        check_atnf,
-        check_first,
-        check_gaia,
-        check_nvss,
-        check_pulsarscraper,
-        check_simbad,
-    )
-    from dsa110_continuum.photometry.variability import (
-        calculate_eta_metric,
-        calculate_m_metric,
-        calculate_vs_metric,
-    )
-except ImportError:
-    # Fallback
-    def check_all_services(*args, **kwargs):
-        return {}
-
-    def calculate_eta_metric(*args, **kwargs):
-        return 0.0
-
-    def calculate_vs_metric(*args, **kwargs):
-        return 0.0
-
-    def calculate_m_metric(*args, **kwargs):
-        return 0.0
-
+from dsa110_continuum.catalog.multiwavelength import (
+    check_all_services,
+    check_atnf,
+    check_first,
+    check_gaia,
+    check_nvss,
+    check_pulsarscraper,
+    check_simbad,
+)
+from dsa110_continuum.photometry.variability import (
+    calculate_eta_metric,
+    calculate_m_metric,
+    calculate_vs_metric,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -594,6 +578,7 @@ class Source:
             return {}
 
         # Transpose to (n_epochs, n_neighbors)
+        neighbor_fluxes = np.array(neighbor_flux_matrix).T
         neighbor_errors = np.array(neighbor_error_matrix).T
 
         # 3. Calculate Relative Flux

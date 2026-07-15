@@ -284,6 +284,13 @@ def compute_and_set_uvw(uvdata, pt_dec: u.Quantity) -> None:
                 float(tel_latlonalt[2].to(u.m).value),
             )
 
+    if tel_latlonalt is None:
+        raise ValueError(
+            "compute_and_set_uvw: UVData object exposes no telescope location "
+            "(telescope_location_lat_lon_alt or telescope.location_lat_lon_alt); "
+            "cannot reconstruct UVW coordinates."
+        )
+
     tel_frame = getattr(uvdata, "_telescope_location", None)
     tel_frame = getattr(tel_frame, "frame", None)
 
@@ -343,12 +350,14 @@ def compute_and_set_uvw(uvdata, pt_dec: u.Quantity) -> None:
             app_ra_unique[i] = float(new_app_ra[0])
             app_dec_unique[i] = float(new_app_dec[0])
             frame_pa_unique[i] = float(new_frame_pa[0])
-        except (ValueError, IndexError, TypeError):
-            # ValueError: coordinate transformation failures
-            # IndexError: array access issues, TypeError: type conversion
-            app_ra_unique[i] = float(ra_icrs.to_value(u.rad))
-            app_dec_unique[i] = float(dec_icrs.to_value(u.rad))
-            frame_pa_unique[i] = 0.0
+        except (ValueError, IndexError, TypeError) as exc:
+            raise ValueError(
+                f"compute_and_set_uvw: pyuvdata apparent-coordinate computation "
+                f"failed for time index {i} ({type(exc).__name__}: {exc}). "
+                "Refusing to fall back to frame_pa=0: UVWs would silently carry "
+                "an uncorrected ICRS<->apparent sky rotation (~2 arcmin at 2026 "
+                "epochs)."
+            ) from exc
 
     app_ra_all = app_ra_unique[uinvert]
     app_dec_all = app_dec_unique[uinvert]

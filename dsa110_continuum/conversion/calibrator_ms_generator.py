@@ -47,6 +47,11 @@ logger = logging.getLogger(__name__)
 DEFAULT_DB_PATH = Path("/data/dsa110-contimg/state/db/pipeline.sqlite3")
 DEFAULT_VLA_CATALOG = Path("/data/dsa110-contimg/state/catalogs/vla_calibrators.sqlite3")
 
+# Mean sidereal day = 86164.0905 s. In drift scan the same RA transits once
+# per sidereal day, so transit-time scoping can only disambiguate adjacent
+# transits if the tolerance stays below half this period.
+SIDEREAL_DAY_MINUTES = 86164.0905 / 60.0
+
 
 @dataclass
 class CalibratorInfo:
@@ -351,11 +356,23 @@ class CalibratorMSGenerator:
         ------
         ValueError
             If ``transit_time`` is given and no positionally matched group
-            falls within the tolerance.
+            falls within the tolerance, or if ``max_transit_offset_minutes``
+            is not in ``(0, SIDEREAL_DAY_MINUTES / 2)`` — beyond half a
+            sidereal day the scoping can silently accept groups from an
+            adjacent transit date.
         """
         from dsa110_continuum.database.hdf5_index import (
             select_hdf5_groups_by_position,
         )
+
+        if transit_time is not None and not (
+            0 < max_transit_offset_minutes < SIDEREAL_DAY_MINUTES / 2
+        ):
+            raise ValueError(
+                f"max_transit_offset_minutes={max_transit_offset_minutes:.1f} must be in "
+                f"(0, {SIDEREAL_DAY_MINUTES / 2:.1f}) min; beyond half a sidereal day the "
+                f"scoping cannot distinguish adjacent transit dates."
+            )
 
         # The legacy selector caps to n_groups BEFORE we can time-scope, so
         # wrong-date candidates could crowd out the requested date. When
@@ -406,7 +423,8 @@ class CalibratorMSGenerator:
         Parameters
         ----------
         groups : Sequence
-            List of SubbandGroup objects or file lists
+            List of group timestamp strings (as returned by
+            ``select_groups_by_position``), SubbandGroup objects, or file lists
         skip_existing : bool
             Skip conversion if MS already exists
 
@@ -421,14 +439,15 @@ class CalibratorMSGenerator:
         ms_paths = []
 
         for group in groups:
-            # Handle both SubbandGroup objects and raw file lists
-            files = group.files if hasattr(group, "files") else group
-            if not files:
-                continue
-
-            # Extract timestamp from first file
-            first_file = Path(files[0])
-            timestamp = first_file.stem.rsplit("_sb", 1)[0]
+            if isinstance(group, str):
+                # Group representative timestamp from select_groups_by_position
+                timestamp = group
+            else:
+                # SubbandGroup object or raw file list
+                files = group.files if hasattr(group, "files") else group
+                if not files:
+                    continue
+                timestamp = Path(files[0]).stem.rsplit("_sb", 1)[0]
 
             # Check if already exists
             ms_path = self.output_dir / f"{timestamp}.ms"

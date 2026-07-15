@@ -148,6 +148,12 @@ def _disk_status(paths: tuple[Path, ...]) -> dict:
     return disks
 
 
+def campaign_hour_logs(directory: Path, hour: int) -> list[Path]:
+    """Campaign logs whose filename hour equals `hour` (padded or unpadded form)."""
+    pattern = re.compile(rf"batch_run_h0?{hour}(?!\d)")
+    return sorted(path for path in directory.glob("batch_run_h*.log") if pattern.match(path.name))
+
+
 def collect_hour_state(config: HourStateConfig | None = None) -> dict:
     """Return a bounded, read-only snapshot of one hourly-epoch campaign."""
     config = config or HourStateConfig()
@@ -166,8 +172,7 @@ def collect_hour_state(config: HourStateConfig | None = None) -> dict:
     )
     logs = list(product_dir.glob("run_*.log")) if product_dir.is_dir() else []
     if config.campaign_outputs.is_dir():
-        logs.extend(config.campaign_outputs.glob(f"batch_run_h{config.hour:02d}*.log"))
-        logs.extend(config.campaign_outputs.glob(f"batch_run_h{config.hour}*.log"))
+        logs.extend(campaign_hour_logs(config.campaign_outputs, config.hour))
     latest_log = _latest(list(dict.fromkeys(logs)))
 
     state = {
