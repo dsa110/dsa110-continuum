@@ -72,6 +72,8 @@ def detect_and_flag_bad_polarizations(
         - 'total_flagged_after': Overall flagged fraction after action
         - 'action_taken': Whether any flags were applied
         - 'detection_method': 'phase_table' or 'ms_coherence'
+        - 'amplitude_imbalanced_antennas': Antennas skipped by the MS fallback
+          because their receptor amplitudes differ by at least 2x
 
     """
     import logging
@@ -87,6 +89,7 @@ def detect_and_flag_bad_polarizations(
         "total_flagged_after": 0.0,
         "action_taken": False,
         "detection_method": "unknown",
+        "amplitude_imbalanced_antennas": [],
     }
 
     # Method 1: Analyze phase calibration table if provided
@@ -298,7 +301,11 @@ def _detect_bad_pols_from_ms_coherence(
     """Detect bad polarizations from MS coherence analysis.
 
     Less reliable than calibration table analysis, but useful when no
-    calibration table is available. Uses coherence ratio between polarizations.
+    calibration table is available. Coherence is computed independently for
+    each baseline before taking the median across baselines. This avoids
+    cancellation between legitimate baseline-dependent sky phases. The fallback
+    only assigns a receptor when amplitudes agree within 2x and at least one
+    receptor has coherence of 0.5 or greater; otherwise a phase table is required.
 
     Parameters
     ----------
@@ -326,6 +333,8 @@ def _detect_bad_pols_from_ms_coherence(
 
     # Use looser coherence ratio threshold - this detection is less reliable
     coherence_ratio_threshold = 2.0  # One pol 2x less coherent
+    amplitude_ratio_threshold = 2.0
+    min_reliable_coherence = 0.5
 
     try:
         with casatables.table(ms_path, readonly=True) as tb:
@@ -336,11 +345,11 @@ def _detect_bad_pols_from_ms_coherence(
 
             ant1 = tb.getcol("ANTENNA1")
             ant2 = tb.getcol("ANTENNA2")
-            data = tb.getcol("DATA")  # shape: (n_rows, n_chan, n_pol)
+            data = tb.getcol("DATA")  # shape: (n_rows, n_pol, n_chan)
             flags = tb.getcol("FLAG")
 
             # Get number of polarizations
-            n_pol = data.shape[2]
+            n_pol = data.shape[1]
             if n_pol < 2:
                 logger.warning("MS has only one polarization, skipping bad pol detection")
                 return bad_polarizations
@@ -357,6 +366,7 @@ def _detect_bad_pols_from_ms_coherence(
                 mask = ((ant1 == ant_id) | (ant2 == ant_id)) & cross_mask
                 ant_data = data[mask]
                 ant_flags = flags[mask]
+                partners = np.where(ant1[mask] == ant_id, ant2[mask], ant1[mask])
 
                 if ant_data.size == 0:
                     continue
@@ -364,25 +374,32 @@ def _detect_bad_pols_from_ms_coherence(
                 # Compute coherence for each polarization
                 pol_stats = []
                 for pol in range(n_pol):
-                    pol_data = ant_data[:, :, pol]
-                    pol_flags = ant_flags[:, :, pol]
+                    baseline_coherences = []
+                    valid_amplitudes = []
+                    n_valid = 0
+                    for partner in np.unique(partners):
+                        baseline_mask = partners == partner
+                        pol_data = ant_data[baseline_mask, pol, :]
+                        valid_data = pol_data[~ant_flags[baseline_mask, pol, :]]
+                        amplitudes = np.abs(valid_data)
+                        nonzero = amplitudes > 0
+                        if not np.any(nonzero):
+                            continue
 
-                    # Use only unflagged data
-                    valid_mask = ~pol_flags
-                    if valid_mask.sum() == 0:
+                        unit_phasors = valid_data[nonzero] / amplitudes[nonzero]
+                        baseline_coherences.append(float(np.abs(np.mean(unit_phasors))))
+                        valid_amplitudes.append(amplitudes[nonzero])
+                        n_valid += int(nonzero.sum())
+
+                    if not baseline_coherences:
                         pol_stats.append({"coherence": 0, "n_valid": 0})
                         continue
 
-                    # Compute phase coherence: ratio of vector average to scalar average
-                    complex_data = pol_data[valid_mask]
-                    vector_avg = np.abs(np.mean(complex_data))
-                    scalar_avg = np.mean(np.abs(complex_data))
-                    coherence = vector_avg / scalar_avg if scalar_avg > 0 else 0
-
                     pol_stats.append(
                         {
-                            "coherence": float(coherence),
-                            "n_valid": int(valid_mask.sum()),
+                            "coherence": float(np.median(baseline_coherences)),
+                            "median_amplitude": float(np.median(np.concatenate(valid_amplitudes))),
+                            "n_valid": n_valid,
                         }
                     )
 
@@ -392,6 +409,32 @@ def _detect_bad_pols_from_ms_coherence(
                 if len(pol_stats) >= 2:
                     coh0 = pol_stats[0].get("coherence", 1.0)
                     coh1 = pol_stats[1].get("coherence", 1.0)
+                    amp0 = pol_stats[0].get("median_amplitude", 0.0)
+                    amp1 = pol_stats[1].get("median_amplitude", 0.0)
+
+                    min_amplitude = min(amp0, amp1)
+                    amplitude_ratio = (
+                        max(amp0, amp1) / min_amplitude if min_amplitude > 0 else np.inf
+                    )
+                    if amplitude_ratio >= amplitude_ratio_threshold:
+                        result.setdefault("amplitude_imbalanced_antennas", []).append(int(ant_id))
+                        logger.warning(
+                            "Antenna %s has %.2fx receptor amplitude imbalance; "
+                            "skipping MS-coherence labeling and requiring a phase table",
+                            ant_id,
+                            amplitude_ratio,
+                        )
+                        continue
+
+                    if max(coh0, coh1) < min_reliable_coherence:
+                        logger.debug(
+                            "Antenna %s has no reliably coherent receptor "
+                            "(XX=%.3f, YY=%.3f); skipping MS-coherence labeling",
+                            ant_id,
+                            coh0,
+                            coh1,
+                        )
+                        continue
 
                     if coh0 > 0 and coh1 > 0:
                         coh_ratio = coh0 / coh1

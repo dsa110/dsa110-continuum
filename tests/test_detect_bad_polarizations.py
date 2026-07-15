@@ -19,7 +19,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-
+import pytest
 from dsa110_continuum.calibration.flagging import detect_and_flag_bad_polarizations
 
 
@@ -33,10 +33,10 @@ def _baseline_pairs(n_ant: int) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _coherent_visibilities(
-    n_rows: int, n_chan: int = 4, n_pol: int = 2
+    n_rows: int, n_chan: int = 16, n_pol: int = 2
 ) -> np.ndarray:
     """Phase-aligned unit-amplitude visibilities — both pols perfectly coherent."""
-    return np.ones((n_rows, n_chan, n_pol), dtype=complex)
+    return np.ones((n_rows, n_pol, n_chan), dtype=complex)
 
 
 class _MockMSTable:
@@ -118,7 +118,7 @@ def test_one_antenna_with_decoherent_xx_pol_is_detected(tmp_path):
     ms_path = str(tmp_path / "fake.ms")
     n_ant = 8
     bad_ant = 3
-    n_chan = 4
+    n_chan = 16
 
     ant1, ant2 = _baseline_pairs(n_ant=n_ant)
     n_rows = len(ant1)
@@ -127,7 +127,7 @@ def test_one_antenna_with_decoherent_xx_pol_is_detected(tmp_path):
     rng = np.random.default_rng(seed=42)
     bad_rows_mask = (ant1 == bad_ant) | (ant2 == bad_ant)
     random_phases = rng.uniform(-np.pi, np.pi, size=(int(bad_rows_mask.sum()), n_chan))
-    data[bad_rows_mask, :, 0] = np.exp(1j * random_phases)
+    data[bad_rows_mask, 0, :] = np.exp(1j * random_phases)
 
     flags = np.zeros(data.shape, dtype=bool)
 
@@ -150,7 +150,7 @@ def test_one_antenna_with_decoherent_xx_pol_is_detected(tmp_path):
     assert result["detection_method"] == "ms_coherence"
 
 
-def _bad_xx_dataset(n_ant: int = 8, bad_ant: int = 3, n_chan: int = 4, seed: int = 42):
+def _bad_xx_dataset(n_ant: int = 8, bad_ant: int = 3, n_chan: int = 16, seed: int = 42):
     """Build the canonical 'one decoherent XX pol on bad_ant' fixture used by T2/T3."""
     ant1, ant2 = _baseline_pairs(n_ant=n_ant)
     n_rows = len(ant1)
@@ -158,7 +158,7 @@ def _bad_xx_dataset(n_ant: int = 8, bad_ant: int = 3, n_chan: int = 4, seed: int
     rng = np.random.default_rng(seed=seed)
     bad_rows_mask = (ant1 == bad_ant) | (ant2 == bad_ant)
     random_phases = rng.uniform(-np.pi, np.pi, size=(int(bad_rows_mask.sum()), n_chan))
-    data[bad_rows_mask, :, 0] = np.exp(1j * random_phases)
+    data[bad_rows_mask, 0, :] = np.exp(1j * random_phases)
     flags = np.zeros(data.shape, dtype=bool)
     return ant1, ant2, data, flags, bad_ant
 
@@ -229,7 +229,7 @@ def test_one_antenna_with_decoherent_yy_pol_is_detected(tmp_path):
     ms_path = str(tmp_path / "fake.ms")
     n_ant = 8
     bad_ant = 5
-    n_chan = 4
+    n_chan = 16
 
     ant1, ant2 = _baseline_pairs(n_ant=n_ant)
     n_rows = len(ant1)
@@ -238,7 +238,7 @@ def test_one_antenna_with_decoherent_yy_pol_is_detected(tmp_path):
     rng = np.random.default_rng(seed=7)
     bad_rows_mask = (ant1 == bad_ant) | (ant2 == bad_ant)
     random_phases = rng.uniform(-np.pi, np.pi, size=(int(bad_rows_mask.sum()), n_chan))
-    data[bad_rows_mask, :, 1] = np.exp(1j * random_phases)  # pol 1 = YY
+    data[bad_rows_mask, 1, :] = np.exp(1j * random_phases)  # pol 1 = YY
 
     flags = np.zeros(data.shape, dtype=bool)
 
@@ -256,6 +256,37 @@ def test_one_antenna_with_decoherent_yy_pol_is_detected(tmp_path):
     assert ant_id == bad_ant
     assert pol_idx == 1
     assert pol_name == "YY"
+
+
+@pytest.mark.parametrize("amplitude_ratio", [2.0, 3.0, 10.0])
+def test_baseline_coherence_preserves_bad_pol_label_with_amplitude_imbalance(
+    tmp_path, amplitude_ratio
+):
+    """Amplitude-imbalanced MS fallback must abstain instead of inverting labels."""
+    ms_path = str(tmp_path / "fake.ms")
+    n_ant = 8
+    bad_ant = 3
+    n_chan = 64
+    ant1, ant2 = _baseline_pairs(n_ant=n_ant)
+    bad_rows = (ant1 == bad_ant) | (ant2 == bad_ant)
+
+    rng = np.random.default_rng(seed=28)
+    baseline_phases = rng.uniform(-np.pi, np.pi, size=len(ant1))
+    data = np.exp(1j * baseline_phases[:, None, None]) * np.ones(
+        (len(ant1), 2, n_chan), dtype=complex
+    )
+    random_phases = rng.uniform(-np.pi, np.pi, size=(int(bad_rows.sum()), n_chan))
+    data[bad_rows, 0, :] = amplitude_ratio * np.exp(1j * random_phases)
+    flags = np.zeros(data.shape, dtype=bool)
+
+    with _patch_ms_table(ant1, ant2, data, flags), patch(
+        "dsa110_continuum.calibration.flagging.flag_summary",
+        return_value={"total_fraction_flagged": 0.0},
+    ):
+        result = detect_and_flag_bad_polarizations(ms_path, dry_run=True, phase_table=None)
+
+    assert result["bad_polarizations"] == []
+    assert result["amplitude_imbalanced_antennas"] == [bad_ant]
 
 
 # --------------------------------------------------------------------------------------
