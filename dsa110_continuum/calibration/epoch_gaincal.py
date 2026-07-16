@@ -3,7 +3,7 @@
 Public API
 ----------
 select_calibration_tile_from_ms(epoch_ms_paths) -> str
-    Return the MS path (from the two central tiles) with the most catalog sources.
+    Return the epoch MS with the strongest catalog calibration target.
 
 calibrate_epoch(epoch_ms_paths, bp_table, work_dir, ...) -> EpochGaincalResult
     Full 5-step catalog-bootstrap + self-cal gain solve. Returns a structured
@@ -116,18 +116,44 @@ def _read_ms_phase_center(ms_path: str) -> tuple[float, float]:
     return median_ra, median_dec
 
 
+def _find_vla_calibrator_in_ms(
+    ms_path: str,
+    *,
+    search_radius_deg: float,
+) -> tuple[str, float, float]:
+    """Return ``(name, flux_jy, separation_deg)`` for the best VLA calibrator."""
+    from dsa110_continuum.calibration.selection import select_bandpass_from_catalog
+
+    _, _, _, cal_info, _ = select_bandpass_from_catalog(
+        ms_path,
+        search_radius_deg=search_radius_deg,
+    )
+    name, cal_ra_deg, cal_dec_deg, flux_jy = cal_info
+    tile_ra_deg, tile_dec_deg = _read_ms_phase_center(ms_path)
+    tile_ra = np.radians(tile_ra_deg)
+    tile_dec = np.radians(tile_dec_deg)
+    cal_ra = np.radians(cal_ra_deg)
+    cal_dec = np.radians(cal_dec_deg)
+    cos_sep = (
+        np.sin(tile_dec) * np.sin(cal_dec)
+        + np.cos(tile_dec) * np.cos(cal_dec) * np.cos(tile_ra - cal_ra)
+    )
+    separation_deg = float(np.degrees(np.arccos(np.clip(cos_sep, -1.0, 1.0))))
+    return str(name), float(flux_jy), separation_deg
+
+
 def select_calibration_tile_from_ms(
     epoch_ms_paths: list[str],
     *,
     min_flux_mjy: float = SKYMODEL_MIN_FLUX_MJY,
     source_radius_deg: float = SOURCE_QUERY_RADIUS_DEG,
 ) -> str:
-    """Return the central tile MS with the most bright catalog sources.
+    """Return the epoch MS with the strongest catalog calibration target.
 
-    Checks the two tiles nearest the centre of the sorted list and returns
-    the MS path whose pointing has more catalog sources above *min_flux_mjy*
-    within *source_radius_deg*.  Optimised for MOSAIC_TILE_COUNT (12) tiles
-    but gracefully handles any count >= 2.
+    All tiles are checked for VLA calibrators first. The highest-flux match
+    wins, with angular proximity to the tile midpoint as the tiebreaker. If
+    the VLA catalog is unavailable or no calibrator is present, all tiles are
+    ranked by their bright-source counts.
 
     Parameters
     ----------
@@ -152,37 +178,74 @@ def select_calibration_tile_from_ms(
     if n < 2:
         raise ValueError(f"Need at least 2 MS paths for tile selection, got {n}")
 
-    # Pick the two tiles nearest the centre of the list
-    mid = n // 2
-    center_indices = [mid - 1, mid]
+    calibrator_search_radius_deg = max(1.0, source_radius_deg)
+    best_calibrator_ms: str | None = None
+    best_calibrator_score: tuple[float, float] | None = None
+
+    for idx, ms in enumerate(epoch_ms_paths):
+        try:
+            name, flux_jy, separation_deg = _find_vla_calibrator_in_ms(
+                ms,
+                search_radius_deg=calibrator_search_radius_deg,
+            )
+        except (
+            FileNotFoundError,
+            KeyError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            log.debug("No VLA calibrator match for tile %d (%s): %s", idx, ms, exc)
+            continue
+
+        score = (flux_jy, -separation_deg)
+        log.info(
+            "Tile %d (%s): VLA calibrator %s, %.2f Jy, %.3f deg from midpoint",
+            idx,
+            Path(ms).stem,
+            name,
+            flux_jy,
+            separation_deg,
+        )
+        if best_calibrator_score is None or score > best_calibrator_score:
+            best_calibrator_score = score
+            best_calibrator_ms = ms
+
+    if best_calibrator_ms is not None:
+        log.info(
+            "Selected calibration tile %s from VLA calibrator ranking",
+            Path(best_calibrator_ms).stem,
+        )
+        return best_calibrator_ms
+
     best_ms: str | None = None
     best_count = -1
 
-    for idx in center_indices:
-        ms = epoch_ms_paths[idx]
+    for idx, ms in enumerate(epoch_ms_paths):
         try:
             ra, dec = _read_ms_phase_center(ms)
-            n = count_bright_sources_in_tile(
+            source_count = count_bright_sources_in_tile(
                 ra,
                 dec,
                 min_flux_mjy=min_flux_mjy,
                 radius_deg=source_radius_deg,
             )
-            log.info("Tile %d (%s): %d catalog sources", idx, Path(ms).stem, n)
-            if n > best_count:
-                best_count = n
+            log.info("Tile %d (%s): %d catalog sources", idx, Path(ms).stem, source_count)
+            if source_count > best_count:
+                best_count = source_count
                 best_ms = ms
         except Exception as exc:
             log.warning("Cannot count sources for tile %d (%s): %s", idx, ms, exc)
 
     if best_ms is None:
-        # Both catalog queries failed (e.g. VLASS/RACS databases absent).
+        # All catalog queries failed (e.g. VLASS/NVSS databases absent).
         # Fall back to the geometrically central tile rather than a hardcoded
         # index that is only correct for MOSAIC_TILE_COUNT=12.
         fallback_idx = len(epoch_ms_paths) // 2
         best_ms = epoch_ms_paths[fallback_idx]
         log.warning(
-            "Source count failed for all candidate tiles — "
+            "Source count failed for all epoch tiles — "
             "defaulting to central tile index %d (%s)",
             fallback_idx,
             Path(best_ms).stem,
@@ -212,7 +275,7 @@ def calibrate_epoch(
 
     Workflow
     --------
-    1.  Select central tile (by catalog source count).
+    1.  Select the strongest calibration tile from the full epoch.
     2.  Phaseshift to median meridian (reuses existing meridian MS if present).
     1b. Pre-calibration RFI flagging (autocorr + AOFlagger/tfcrop+rflag).
     3.  Apply bandpass-only to CORRECTED_DATA.
@@ -268,7 +331,7 @@ def calibrate_epoch(
     work.mkdir(parents=True, exist_ok=True)
 
     try:
-        # ── 0. Select central tile ────────────────────────────────────────────
+        # ── 0. Select calibration tile ────────────────────────────────────────
         central_raw_ms = select_calibration_tile_from_ms(
             epoch_ms_paths,
             min_flux_mjy=min_flux_mjy,

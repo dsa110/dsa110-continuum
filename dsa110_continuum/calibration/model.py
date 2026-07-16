@@ -1526,7 +1526,7 @@ def count_bright_sources_in_tile(
                     all_sources.extend(sources_df.to_dict("records"))
                     break  # Use first catalog with results
 
-            except (ValueError, KeyError, RuntimeError) as e:
+            except (FileNotFoundError, ValueError, KeyError, RuntimeError) as e:
                 logger.debug(f"Error querying {catalog_type} catalog: {e}")
                 continue
 

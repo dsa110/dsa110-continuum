@@ -7,7 +7,7 @@ def test_select_calibration_tile_from_ms_picks_richer_tile():
     """Should return the MS whose central pointing has more catalog sources."""
     from dsa110_continuum.calibration.epoch_gaincal import select_calibration_tile_from_ms
 
-    # 12 tiles: centre pair is indices 5 (mid-1) and 6 (mid) where mid = 12//2 = 6
+    # The all-tile fallback should select index 6 because it has more sources.
     fake_paths = [f"/fake/tile_{i:02d}.ms" for i in range(12)]
 
     def fake_phase_center(ms_path):
@@ -19,6 +19,9 @@ def test_select_calibration_tile_from_ms_picks_richer_tile():
         return 8 if pointing_ra_deg == 60.0 else 3
 
     with patch(
+        "dsa110_continuum.calibration.epoch_gaincal._find_vla_calibrator_in_ms",
+        side_effect=RuntimeError("no VLA calibrator"),
+    ), patch(
         "dsa110_continuum.calibration.epoch_gaincal._read_ms_phase_center",
         side_effect=fake_phase_center,
     ), patch(
@@ -31,10 +34,10 @@ def test_select_calibration_tile_from_ms_picks_richer_tile():
 
 
 def test_select_calibration_tile_works_with_11_tiles():
-    """Should work with 11 tiles (centre pair is indices 4 and 5)."""
+    """Should rank every tile when an epoch has an odd tile count."""
     from dsa110_continuum.calibration.epoch_gaincal import select_calibration_tile_from_ms
 
-    # 11 tiles: mid = 11//2 = 5, centre pair is indices 4 and 5
+    # The all-tile fallback should select index 5 because it has more sources.
     fake_paths = [f"/fake/tile_{i:02d}.ms" for i in range(11)]
 
     def fake_phase_center(ms_path):
@@ -46,6 +49,9 @@ def test_select_calibration_tile_works_with_11_tiles():
         return 9 if pointing_ra_deg == 50.0 else 2
 
     with patch(
+        "dsa110_continuum.calibration.epoch_gaincal._find_vla_calibrator_in_ms",
+        side_effect=RuntimeError("no VLA calibrator"),
+    ), patch(
         "dsa110_continuum.calibration.epoch_gaincal._read_ms_phase_center",
         side_effect=fake_phase_center,
     ), patch(
@@ -66,13 +72,89 @@ def test_select_calibration_tile_raises_on_too_few():
         select_calibration_tile_from_ms(["/fake/a.ms"])
 
 
+def test_select_calibration_tile_prefers_bright_vla_calibrator_outside_center():
+    """A bright calibrator transit should beat the geometric center pair."""
+    from dsa110_continuum.calibration.epoch_gaincal import select_calibration_tile_from_ms
+
+    fake_paths = [f"/fake/tile_{i:02d}.ms" for i in range(12)]
+
+    def fake_calibrator_match(ms_path, **kwargs):
+        idx = int(Path(ms_path).stem.split("_")[1])
+        if idx == 2:
+            return ("2253+161", 12.66, 0.20)
+        if idx == 6:
+            return ("faint-cal", 1.0, 0.05)
+        raise RuntimeError("no calibrator")
+
+    with patch(
+        "dsa110_continuum.calibration.epoch_gaincal._find_vla_calibrator_in_ms",
+        side_effect=fake_calibrator_match,
+    ), patch(
+        "dsa110_continuum.calibration.epoch_gaincal.count_bright_sources_in_tile",
+    ) as source_count:
+        result = select_calibration_tile_from_ms(fake_paths)
+
+    assert result == "/fake/tile_02.ms"
+    source_count.assert_not_called()
+
+
+def test_select_calibration_tile_uses_nearest_tile_for_same_calibrator():
+    """When one calibrator spans tiles, select its closest tile midpoint."""
+    from dsa110_continuum.calibration.epoch_gaincal import select_calibration_tile_from_ms
+
+    fake_paths = [f"/fake/tile_{i:02d}.ms" for i in range(4)]
+
+    def fake_calibrator_match(ms_path, **kwargs):
+        idx = int(Path(ms_path).stem.split("_")[1])
+        separations = {1: 0.65, 2: 0.18}
+        if idx in separations:
+            return ("2253+161", 12.66, separations[idx])
+        raise RuntimeError("no calibrator")
+
+    with patch(
+        "dsa110_continuum.calibration.epoch_gaincal._find_vla_calibrator_in_ms",
+        side_effect=fake_calibrator_match,
+    ):
+        result = select_calibration_tile_from_ms(fake_paths)
+
+    assert result == "/fake/tile_02.ms"
+
+
+def test_select_calibration_tile_counts_all_tiles_without_vla_catalog():
+    """Catalog-count fallback must consider non-central tiles too."""
+    from dsa110_continuum.calibration.epoch_gaincal import select_calibration_tile_from_ms
+
+    fake_paths = [f"/fake/tile_{i:02d}.ms" for i in range(12)]
+
+    def fake_phase_center(ms_path):
+        idx = int(Path(ms_path).stem.split("_")[1])
+        return (float(idx), 16.1)
+
+    with patch(
+        "dsa110_continuum.calibration.epoch_gaincal._find_vla_calibrator_in_ms",
+        side_effect=FileNotFoundError("VLA catalog missing"),
+    ), patch(
+        "dsa110_continuum.calibration.epoch_gaincal._read_ms_phase_center",
+        side_effect=fake_phase_center,
+    ), patch(
+        "dsa110_continuum.calibration.epoch_gaincal.count_bright_sources_in_tile",
+        side_effect=lambda ra, dec, **kwargs: 20 if ra == 2.0 else 1,
+    ):
+        result = select_calibration_tile_from_ms(fake_paths)
+
+    assert result == "/fake/tile_02.ms"
+
+
 def test_select_calibration_tile_defaults_to_central_tile_on_failure():
-    """Falls back to n//2 (geometric centre) if source counting raises for both candidates."""
+    """Falls back to n//2 if source counting fails for every tile."""
     from dsa110_continuum.calibration.epoch_gaincal import select_calibration_tile_from_ms
 
     # 12 tiles: n//2 = 6
     fake_paths_12 = [f"/fake/tile_{i:02d}.ms" for i in range(12)]
     with patch(
+        "dsa110_continuum.calibration.epoch_gaincal._find_vla_calibrator_in_ms",
+        side_effect=RuntimeError("no VLA calibrator"),
+    ), patch(
         "dsa110_continuum.calibration.epoch_gaincal._read_ms_phase_center",
         side_effect=RuntimeError("casacore unavailable"),
     ):
@@ -82,11 +164,37 @@ def test_select_calibration_tile_defaults_to_central_tile_on_failure():
     # 6 tiles: n//2 = 3
     fake_paths_6 = [f"/fake/tile_{i:02d}.ms" for i in range(6)]
     with patch(
+        "dsa110_continuum.calibration.epoch_gaincal._find_vla_calibrator_in_ms",
+        side_effect=RuntimeError("no VLA calibrator"),
+    ), patch(
         "dsa110_continuum.calibration.epoch_gaincal._read_ms_phase_center",
         side_effect=RuntimeError("casacore unavailable"),
     ):
         result_6 = select_calibration_tile_from_ms(fake_paths_6)
     assert result_6 == "/fake/tile_03.ms"
+
+
+def test_count_bright_sources_falls_back_to_nvss_when_vlass_missing():
+    """A missing VLASS strip database must not prevent the NVSS query."""
+    import pandas as pd
+    from dsa110_continuum.calibration.model import count_bright_sources_in_tile
+
+    calls = []
+
+    def fake_query(*, catalog_type, **kwargs):
+        calls.append(catalog_type)
+        if catalog_type == "vlass":
+            raise FileNotFoundError("missing VLASS strip database")
+        return pd.DataFrame([{"ra_deg": 343.49, "dec_deg": 16.15}])
+
+    with patch(
+        "dsa110_continuum.calibration.catalogs.query_catalog_sources",
+        side_effect=fake_query,
+    ):
+        result = count_bright_sources_in_tile(343.49, 16.15)
+
+    assert result == 1
+    assert calls[:2] == ["vlass", "nvss"]
 
 
 def _make_exists_fn(meridian_ms: str, *, ap_table: str | None = None) -> object:
