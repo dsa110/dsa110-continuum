@@ -125,8 +125,9 @@ def _flag_fraction_excluding_dead_receptors(
     antenna_ids: Any,
     *,
     dead_threshold: float = 0.99,
+    excluded_receptors: set[tuple[int, int]] | None = None,
 ) -> dict[str, Any]:
-    """Compute caltable flag fraction after removing dead antenna receptors."""
+    """Compute flag fraction after removing independently known dead receptors."""
     import numpy as np
 
     flags = np.asarray(flags, dtype=bool)
@@ -139,18 +140,18 @@ def _flag_fraction_excluding_dead_receptors(
             f"antenna IDs for {flags.shape[0]} rows"
         )
 
-    # CASA polarization/receptor axes are always small (≤4); channel axes are
-    # always >4. Pick the cell axis whose size is ≤4 as the receptor axis.
-    cell_axes = flags.shape[1:]
-    receptor_axis_in_cell = min(
-        range(len(cell_axes)),
-        key=lambda idx: (cell_axes[idx] > 4, cell_axes[idx]),
-    )
-    receptor_axis = receptor_axis_in_cell + 1
+    receptor_axis = 1
     receptor_count = flags.shape[receptor_axis]
+    if receptor_count > 4:
+        raise ValueError(f"Expected receptor axis at index 1, found shape {flags.shape}")
 
     unique_antennas = sorted(set(antenna_ids.tolist()))
-    dead_receptors: list[tuple[int, int]] = []
+    candidate_receptors = {
+        (int(antenna_id), receptor_idx)
+        for antenna_id in unique_antennas
+        for receptor_idx in range(receptor_count)
+    }
+    dead_receptors = set(excluded_receptors or ()) & candidate_receptors
     working_flagged = 0
     working_total = 0
 
@@ -162,9 +163,10 @@ def _flag_fraction_excluding_dead_receptors(
             receptor_total = int(receptor_flags.size)
             receptor_flagged = int(np.sum(receptor_flags))
             receptor_fraction = receptor_flagged / receptor_total if receptor_total else 0.0
-            if receptor_fraction >= dead_threshold:
-                dead_receptors.append((int(antenna_id), receptor_idx))
-            else:
+            receptor = (int(antenna_id), receptor_idx)
+            if excluded_receptors is None and receptor_fraction >= dead_threshold:
+                dead_receptors.add(receptor)
+            if receptor not in dead_receptors:
                 working_flagged += receptor_flagged
                 working_total += receptor_total
 
@@ -176,6 +178,7 @@ def _flag_fraction_excluding_dead_receptors(
         "effective_flag_fraction": float(effective_flag_fraction),
         "dead_receptor_count": len(dead_receptors),
         "dead_antenna_count": len(dead_antennas),
+        "dead_receptors": sorted(dead_receptors),
         "working_receptor_count": len(unique_antennas) * receptor_count - len(dead_receptors),
         "working_flagged": int(working_flagged),
         "working_total": int(working_total),
