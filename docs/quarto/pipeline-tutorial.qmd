@@ -1,0 +1,224 @@
+---
+title: "Pipeline Tutorial"
+---
+
+> **Status**: Verified on H17 against the live Pipeline Console and current
+> `scripts/auto_pipeline.py` / `scripts/batch_pipeline.py` behavior (2026-07-17)
+> **See also**: [Pipeline Overview](pipeline-overview.qmd) |
+> [Epoch QA](epoch-qa.qmd) |
+> [Outputs and Artifacts](outputs-and-artifacts.qmd)
+
+This tutorial takes one observing date from slow-vis UVH5 files to hourly-epoch
+mosaics and forced-photometry products. Use the dashboard to understand state;
+use the commands when you need a reproducible or scripted run.
+
+::: {.callout-important}
+Run pipeline commands on H17 from `/data/dsa110-continuum` with the CASA 6
+Python environment. Do not use system `python3`.
+:::
+
+## 1. Open the Pipeline Console
+
+Open the [live Pipeline Console](https://dsa110-continuum.jakobtfaber.com/pipeline).
+Read-only monitoring is public. Launching or terminating work requires the
+operator-managed control token; the token is never stored in this repository.
+
+The coverage matrix has one row per observing date. Click a row to inspect it.
+
+![Pipeline coverage matrix. Each colored segment represents one stage; the
+numeric columns show raw completeness, converted Measurement Sets, calibration
+tables, science tiles, mosaics, photometry, and the final verdict.](images/pipeline-tutorial/01-coverage-matrix.png){width=100%}
+
+### Read the row before launching anything
+
+| Column | Interpretation |
+|---|---|
+| **Raw** | Complete 16-subband groups when indexing is current; otherwise the number of files awaiting index reconciliation |
+| **MS ready** | Converted base Measurement Sets divided by complete indexed groups |
+| **Cal** | Available bandpass (`B`) and gain (`G`) tables |
+| **Tiles** | Science images recorded by `.tile_checkpoint.json`, not the number of WSClean FITS byproducts |
+| **Fail** | Recorded tile failures; `q` marks entries at the quarantine threshold |
+| **Mosaics** | Hourly-epoch mosaics in the staging directory |
+| **Phot** | Forced-photometry CSVs that passed or explicitly overrode QA |
+| **Verdict** | `CLEAN`, `DEGRADED`, or `FAILED` from the run manifest |
+
+The ten stage segments are, in order: raw intake, indexing, conversion,
+flagging, calibration, imaging, mosaicking, QA, photometry, and archive.
+Green is complete, amber is partial, red is failed or blocked, and gray is
+waiting or unknown.
+
+## 2. Inspect the stage walkthrough
+
+Click the date. The walkthrough explains both the state and the evidence used
+to derive it.
+
+![Expanded walkthrough for 2026-07-15. Raw intake and indexing are complete,
+conversion is partial, imaging and mosaicking completed, and strict QA blocked
+photometry and archival.](images/pipeline-tutorial/02-stage-walkthrough.png){width=100%}
+
+The example above is intentionally not a successful science product:
+
+- 20 complete groups were indexed, but only 12 base MS products were present.
+- Those 12 MS products produced 12 science tiles and one hourly-epoch mosaic.
+- Gain calibration had too many flagged solutions, so the manifest was
+  `DEGRADED`.
+- Strict QA withheld forced photometry and blocked archival.
+
+Flagging is labelled **inferred** because the current pipeline does not persist
+a standalone flagging artifact. A tile reaching imaging proves that flagging
+ran, but it does not provide an independent flagging-quality verdict.
+
+## 3. Choose the appropriate run mode
+
+### Full flow: raw data to science products
+
+Use **Full flow · raw → science products** when the slow-vis UVH5 files are on
+H17 but indexing or conversion is incomplete. This runs
+`scripts/auto_pipeline.py`, which:
+
+1. indexes the date's files in the pipeline SQLite database;
+2. converts complete 16-subband groups that do not already have a base MS;
+3. launches the strict-QA science batch; and
+4. waits for the registered batch to finish.
+
+Indexing and conversion are idempotent: existing records and base MS products
+are skipped. Full flow is a real run and has no dry-run mode.
+
+![Full-flow control. The date and flow are validated, retry behavior is fixed,
+lenient QA is disabled, and the control token is required.](images/pipeline-tutorial/03-full-flow-control.png){width=100%}
+
+Equivalent CLI:
+
+```bash
+cd /data/dsa110-continuum
+PY=/opt/miniforge/envs/casa6/bin/python
+
+$PY scripts/auto_pipeline.py --date 2026-07-15
+```
+
+The final JSON line reports the intake counts, converted/skipped groups, run ID,
+and final batch status. An indexing or conversion failure prevents the science
+batch from starting.
+
+### Science batch: existing MS to products
+
+Use **Science batch · MS → products** when conversion is already complete or
+when you want a bounded rerun. Start with a dry run; it prints discovery,
+calibration-table selection, checkpoint, quarantine, and rebuild decisions
+without writing products.
+
+```bash
+cd /data/dsa110-continuum
+PY=/opt/miniforge/envs/casa6/bin/python
+
+$PY scripts/batch_pipeline.py \
+  --date 2026-07-15 \
+  --start-hour 11 --end-hour 12 \
+  --dry-run \
+  --quarantine-after-failures 3
+```
+
+If the plan is correct, remove `--dry-run` and use the production safety and
+parallelism settings:
+
+```bash
+$PY scripts/batch_pipeline.py \
+  --date 2026-07-15 \
+  --start-hour 11 --end-hour 12 \
+  --quarantine-after-failures 3 \
+  --tile-timeout 1800 \
+  --retry-failed \
+  --photometry-workers 4 \
+  --photometry-chunk-size 0
+```
+
+::: {.callout-warning}
+QA is strict by default. Do not add `--lenient-qa` to a production run: it is a
+diagnostic override that permits QA-failing fluxes to enter photometry output.
+If `--cal-date` is needed, pass a bare date such as `2026-07-15`, not a full
+timestamp.
+:::
+
+## 4. Monitor the job
+
+Dashboard-launched work appears in **Jobs** with its state and log tail. A CLI
+run writes the same operational evidence under the date's products directory.
+
+While a run is active, distinguish these outcomes:
+
+| State | Action |
+|---|---|
+| Conversion backlog decreases | Normal; refresh the date row |
+| Tile failure count increases | Read the failure stage and log before retrying |
+| A tile reaches three failures | It is quarantined on subsequent runs |
+| Gaincal reports `LOW_SNR` | Inspect calibrator selection and the manifest; do not loosen the 30% gate merely to force acceptance |
+| QA is `DEGRADED` | Open the gate reasons and mosaic; photometry/archive should remain blocked |
+| Run exits zero and QA is `CLEAN` | Continue to science-product inspection |
+
+Clear quarantine only after the underlying failure has been corrected. Clearing
+the counter does not repair the data or calibration.
+
+## 5. Inspect the science products
+
+Open the [Science page](https://dsa110-continuum.jakobtfaber.com/science) after
+the run. It shows hourly-epoch mosaics, QA state, image peak/RMS/dynamic range,
+forced-photometry summaries, and variability ranked across stacked epochs.
+
+![Science-products view with variability ranking, light curve, epoch mosaics,
+QA badges, and forced-photometry summary.](images/pipeline-tutorial/04-science-products.png){width=100%}
+
+For a selected date, verify all of the following:
+
+1. the mosaic has a valid weight companion;
+2. the QA badge is `PASS` / the run verdict is `CLEAN`;
+3. the RMS and dynamic range are plausible for that epoch;
+4. the forced-photometry CSV exists; and
+5. the median catalog flux ratio and completeness agree with the QA report.
+
+Do not infer science acceptance from a visually attractive mosaic alone. The QA
+gate combines flux scale, source recovery, and noise.
+
+## 6. Find the output files
+
+Staging products are written first:
+
+```text
+/stage/dsa110-contimg/images/mosaic_YYYY-MM-DD/
+  .tile_checkpoint.json
+  YYYY-MM-DDTHH:MM:SS-image-pb.fits
+  YYYY-MM-DDTHH00_mosaic.fits
+  YYYY-MM-DDTHH00_mosaic.weights.fits
+```
+
+Run evidence and accepted science products are under:
+
+```text
+/data/dsa110-proc/products/mosaics/YYYY-MM-DD/
+  run_<UTC>.log
+  YYYY-MM-DD_manifest.json
+  YYYY-MM-DD_run_summary.json
+  run_report.md
+  YYYY-MM-DDTHH00_mosaic.fits          # only when archive QA permits
+  YYYY-MM-DDTHH00_mosaic.weights.fits
+  YYYY-MM-DDTHH00_forced_phot.csv      # only when photometry QA permits
+```
+
+The manifest is the authoritative explanation of a degraded run. The tile
+checkpoint is the authoritative count of completed science tiles.
+
+## 7. Fast troubleshooting
+
+| Symptom | First check | Correct response |
+|---|---|---|
+| Raw files but no index | Raw and Index stage details | Run full flow for the date |
+| Indexed groups but MS backlog | Conversion stage | Let full flow convert missing complete groups |
+| No B/G tables | Calibration stage and manifest provenance | Allow the acquisition chain to generate or borrow validated, strip-compatible tables; never use unknown tables silently |
+| `CORRECTED_DATA` all zeros | Pipeline log | Treat as a hard calibration failure; do not fall back to raw `DATA` |
+| Repeated tile failure | Failure stage, log, checkpoint | Fix the cause, then retry or clear quarantine |
+| `LOW_SNR` gaincal | Selected calibrator tile and gain-table flag fraction | Verify tile/catalog selection before changing thresholds |
+| QA blocks photometry | Manifest gate reasons and mosaic card | Keep strict QA; diagnose flux scale, completeness, or RMS |
+| Mosaic exists but is not archived | Archive gate | Expected for QA `FAIL`; do not copy it into science products manually |
+
+For threshold definitions and diagnostic interpretation, continue to
+[Epoch QA](epoch-qa.qmd). For file schemas and artifact-level debugging, see
+[Outputs and Artifacts](outputs-and-artifacts.qmd).

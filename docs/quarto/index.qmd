@@ -3,9 +3,9 @@ title: "DSA-110 Continuum Pipeline"
 ---
 
 ::: {.callout-note}
-**Documentation status.** Pages reflect the repo state as of 2026-04-13.
-The site was rendered with Quarto 1.6.39 and all five pages validated
-successfully.
+**Documentation status.** The operator tutorial reflects the live H17 pipeline
+as of 2026-07-17. Older reference pages carry their own verification dates.
+The site is rendered with Quarto 1.6.39.
 :::
 
 This site documents the DSA-110 continuum imaging pipeline as it currently
@@ -23,6 +23,7 @@ extending or debugging it.
 
 | Page | What it covers |
 |------|---------------|
+| [Pipeline Tutorial](pipeline-tutorial.qmd) | Screenshot-guided workflow from slow-vis UVH5 intake through strict-QA science products |
 | [DSACamera Live Monitor](dsacamera-live-monitor.qmd) | Near-real-time incoming-file monitor generated from `dsacamera` |
 | [H17 Live Monitor](h17-live-monitor.qmd) | Near-real-time incoming-file monitor generated from `h17` |
 | [Agent Onboarding](agent-onboarding.qmd) | How a new AI tool or collaborator should acquire trustworthy pipeline context |
