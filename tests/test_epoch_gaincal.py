@@ -378,6 +378,9 @@ def test_wsclean_skipped_when_ms_heavily_flagged():
             return_value={"raw_fraction": 1 / 3, "effective_fraction": 0.07,
                           "baseline_valid": True},
         ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal._modeled_field_count",
+            return_value=(1, 1),
+        ), patch(
             "dsa110_continuum.calibration.casa_service.CASAService",
             return_value=mock_service,
         ), patch(
@@ -430,6 +433,9 @@ def test_wsclean_runs_when_flag_fraction_below_limit():
             return_value={"raw_fraction": 1 / 3, "effective_fraction": 0.07,
                           "baseline_valid": True},
         ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal._modeled_field_count",
+            return_value=(24, 24),
+        ), patch(
             "dsa110_continuum.calibration.casa_service.CASAService",
             return_value=mock_service,
         ), patch(
@@ -480,7 +486,7 @@ def test_direct_pass_skips_preconditioner():
             return_value=mock_sky,
         ), patch(
             "dsa110_continuum.calibration.epoch_gaincal.predict_from_skymodel_wsclean",
-        ), patch(
+        ) as mock_predict, patch(
             "dsa110_continuum.calibration.epoch_gaincal._ms_flag_fraction",
             return_value=0.25,
         ), patch(
@@ -492,13 +498,16 @@ def test_direct_pass_skips_preconditioner():
                  "baseline_valid": True},
             ],
         ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal._modeled_field_count",
+            return_value=(24, 24),
+        ), patch(
             "dsa110_continuum.calibration.casa_service.CASAService",
             return_value=mock_service,
         ), patch(
             "shutil.which", return_value="/usr/bin/wsclean",
         ), patch(
             "subprocess.run", return_value=wsclean_ok,
-        ), patch(
+        ) as mock_subprocess, patch(
             "os.path.exists", side_effect=_exists,
         ):
             result = calibrate_epoch(fake_paths, "/fake/bp.b", work_dir)
@@ -510,11 +519,11 @@ def test_direct_pass_skips_preconditioner():
     assert direct_call.kwargs["solint"] == "inf"
     assert "combine" not in direct_call.kwargs
     assert all(call.kwargs.get("solint") != "60s" for call in gaincal_calls)
-    assert ap_call.kwargs["gaintable"] == [
-        "/fake/bp.b",
-        str(Path(work_dir) / "tile_03.direct.p.G"),
-    ]
+    assert ap_call.kwargs["gaintable"] == ["/fake/bp.b"]
     assert ap_call.kwargs["calmode"] == "ap"
+    assert mock_predict.call_args_list[0].kwargs["field"] == "all"
+    image_cmd = mock_subprocess.call_args.args[0]
+    assert image_cmd[image_cmd.index("-field") + 1] == "all"
     assert result.status.value == "low_snr"
     assert "ap.G" in (result.reason or "")
 
@@ -678,7 +687,7 @@ def test_gaincal_returns_low_snr_when_p_table_heavily_flagged():
                           "baseline_valid": True},
         ), patch(
             "dsa110_continuum.calibration.epoch_gaincal._modeled_field_count",
-            return_value=(1, 24),
+            return_value=(1, 1),
         ), patch(
             "os.path.exists", side_effect=_exists,
         ):
@@ -693,5 +702,4 @@ def test_gaincal_returns_low_snr_when_p_table_heavily_flagged():
     assert "30%" in (result.reason or ""), (
         "result.reason must include the threshold so the manifest gate can quote it"
     )
-    assert "1/24 fields" in (result.reason or "")
     assert mock_service.gaincal.call_count == 1

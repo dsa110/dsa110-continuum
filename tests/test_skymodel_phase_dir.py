@@ -1,9 +1,13 @@
 """Regression tests for WSClean skymodel phase-center selection."""
 
 import numpy as np
+import pytest
 
 
-def test_predict_uses_dec_from_casa_column_major_phase_dir(tmp_path, monkeypatch):
+@pytest.mark.parametrize(("field", "expected_field"), [("0~1", "0,1"), (None, "all")])
+def test_predict_uses_dec_from_casa_column_major_phase_dir(
+    tmp_path, monkeypatch, field, expected_field
+):
     """CASA-backed PHASE_DIR shape should feed the correct Dec to WSClean."""
     from dsa110_continuum.adapters import casa_tables
     from dsa110_continuum.calibration import skymodels
@@ -69,13 +73,15 @@ def test_predict_uses_dec_from_casa_column_major_phase_dir(tmp_path, monkeypatch
     skymodels.predict_from_skymodel_wsclean(
         "fake.ms",
         FakeSkyModel(),
-        field="0~1",
+        field=field,
         wsclean_path="/bin/true",
         temp_dir=str(tmp_path),
         cleanup=False,
     )
 
     draw_cmd = next(cmd for cmd in commands if "-draw-model" in cmd)
+    predict_cmd = next(cmd for cmd in commands if "-predict" in cmd)
     centre_idx = draw_cmd.index("-draw-centre")
     assert draw_cmd[centre_idx + 1] == "12h0m0.000s"
     assert draw_cmd[centre_idx + 2] == "+22d0m0.000s"
+    assert predict_cmd[predict_cmd.index("-field") + 1] == expected_field

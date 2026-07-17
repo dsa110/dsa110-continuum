@@ -566,6 +566,7 @@ def process_ms(
         image_ms(
             ms_path=meridian_ms,
             imagename=imagename,
+            field="all",
             imsize=IMSIZE,
             cell_arcsec=CELL_ARCSEC,
             weighting=WEIGHTING,

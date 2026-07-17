@@ -358,7 +358,7 @@ def calibrate_epoch(
         BP receptor mask. If direct solving fails and multiple fields contain
         MODEL_DATA, try the 60s pre-conditioner once as a rescue.
     7.  Apply the selected chain, then WSClean quick image (-save-model).
-    8.  Amplitude+phase gaincal using the selected chain → ap.G.
+    8.  BP-referenced amplitude+phase gaincal → self-contained ap.G.
 
     Any exception causes an early return of None so callers can fall back to
     the static daily G table.
@@ -511,7 +511,13 @@ def calibrate_epoch(
                 "catalog sky model is empty (no bright sources within search radius)",
             )
         log.info("Epoch gaincal [%s]: sky model has %d components", stem, sky.Ncomponents)
-        predict_from_skymodel_wsclean(meridian_ms, sky)
+        predict_from_skymodel_wsclean(meridian_ms, sky, field="all")
+        modeled_fields, total_fields = _modeled_field_count(meridian_ms)
+        if modeled_fields != total_fields:
+            raise RuntimeError(
+                f"MODEL_DATA populated for {modeled_fields}/{total_fields} fields; "
+                "refusing partial epoch gain calibration"
+            )
 
         # ── 6. Direct phase-only gaincal ──────────────────────────────────────
         service = CASAService()
@@ -545,7 +551,6 @@ def calibrate_epoch(
             }
         log.info("Epoch gaincal [%s]: direct p.G %s", stem, _format_gain_flag_stats(direct_stats))
         if float(direct_stats["effective_fraction"]) > GAINCAL_FLAG_FRACTION_LIMIT:
-            modeled_fields, total_fields = _modeled_field_count(meridian_ms)
             if modeled_fields < 2:
                 reason = (
                     f"direct p.G {_format_gain_flag_stats(direct_stats)} exceeds "
@@ -656,20 +661,21 @@ def calibrate_epoch(
                 "skipping WSClean self-cal, re-predicting catalog model for ap solve",
                 stem, 100 * _flag_frac, 100 * _WSCLEAN_FLAG_FRACTION_LIMIT,
             )
-            predict_from_skymodel_wsclean(meridian_ms, sky)
+            predict_from_skymodel_wsclean(meridian_ms, sky, field="all")
         elif not wsclean_exec:
             log.warning(
                 "Epoch gaincal [%s]: wsclean not on PATH — "
                 "re-predicting catalog model for ap solve",
                 stem,
             )
-            predict_from_skymodel_wsclean(meridian_ms, sky)
+            predict_from_skymodel_wsclean(meridian_ms, sky, field="all")
         else:
             cmd = [
                 wsclean_exec,
                 "-niter", str(wsclean_niter),
                 "-auto-threshold", str(wsclean_threshold_sigma),
                 "-save-model-column", "MODEL_DATA",
+                "-field", "all",
                 "-name", wsclean_prefix,
                 "-size", "1024", "1024",
                 "-scale", "6arcsec",
@@ -687,7 +693,7 @@ def calibrate_epoch(
                     wsclean_result.returncode,
                     wsclean_result.stderr.decode("utf-8", errors="replace")[-500:],
                 )
-                predict_from_skymodel_wsclean(meridian_ms, sky)
+                predict_from_skymodel_wsclean(meridian_ms, sky, field="all")
 
         # ── 8. Amplitude+phase gaincal ────────────────────────────────────────
         log.info("Epoch gaincal [%s]: ap gaincal → %s", stem, Path(ap_table).name)
@@ -700,9 +706,8 @@ def calibrate_epoch(
             solint="inf",
             minsnr=3.0,
             gaintype="G",
-            gaintable=[bp_table, *_precond, p_table],
-            interp=["nearest", *_precond_interp, "linear"],
-            **( {"spwmap": [[], *_precond_spwmap, []]} if _precond_spwmap else {} ),
+            gaintable=[bp_table],
+            interp=["nearest"],
         )
         if not os.path.exists(ap_table):
             log.error("Epoch gaincal [%s]: ap solve produced no table", stem)

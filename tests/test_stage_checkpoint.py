@@ -184,6 +184,7 @@ class TestProcessMsSentinel:
         result = process_ms(ms_path, cfg, keep_intermediates=True)
         assert result.ok
         mock_image.assert_called_once()
+        assert mock_image.call_args.kwargs["field"] == "all"
 
     @mock.patch("mosaic_day.image_ms")
     @mock.patch("mosaic_day.apply_to_target", side_effect=RuntimeError("CASA crash"))

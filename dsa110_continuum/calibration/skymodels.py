@@ -632,9 +632,8 @@ def predict_from_skymodel_wsclean(
         pyradiosky SkyModel with multiple sources
     field : str or None
         Field selection string. If None or empty, defaults to all fields in the MS
-        (e.g., "0~23" for a 24-field MS). Used to determine which field's phase
-        center to use for the WSClean model image. For a range like "0~23", the
-        midpoint field's phase center is used.
+        (e.g., "0~23" for a 24-field MS). The selection is passed to WSClean, and
+        its midpoint field supplies the model-image phase center.
     wsclean_path : str, optional
         Path to wsclean executable. If None, uses Docker or searches PATH
     temp_dir : str, optional
@@ -664,6 +663,17 @@ def predict_from_skymodel_wsclean(
 
     if sky_model.Ncomponents == 0:
         raise ValueError("SkyModel is empty - cannot predict visibilities")
+
+    field_str = str(field).strip() if field is not None else ""
+    if not field_str:
+        wsclean_field = "all"
+    elif "~" in field_str:
+        start, end = (int(part) for part in field_str.split("~", maxsplit=1))
+        if end < start:
+            raise ValueError(f"Invalid field range: {field_str}")
+        wsclean_field = ",".join(str(field_id) for field_id in range(start, end + 1))
+    else:
+        wsclean_field = field_str
 
     # Ensure MODEL_DATA column exists
     try:
@@ -943,6 +953,8 @@ def predict_from_skymodel_wsclean(
                 [
                     "-predict",
                     "-reorder",  # Required for multi-SPW MS
+                    "-field",
+                    wsclean_field,
                     "-name",
                     model_prefix,
                     ms_path,
@@ -998,6 +1010,8 @@ def predict_from_skymodel_wsclean(
                 wsclean_exec,
                 "-predict",
                 "-reorder",  # Required for multi-SPW MS
+                "-field",
+                wsclean_field,
                 "-name",
                 model_prefix,
                 ms_path,
