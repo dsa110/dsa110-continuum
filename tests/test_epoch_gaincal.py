@@ -308,7 +308,7 @@ def test_process_ms_force_recal_calls_applycal_even_when_data_exists():
     import importlib
     import inspect
 
-    sys.path.insert(0, "/data/dsa110-continuum/scripts")
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
     md = importlib.import_module("mosaic_day")
     sig = inspect.signature(md.process_ms)
     assert "force_recal" in sig.parameters, "process_ms must accept force_recal"

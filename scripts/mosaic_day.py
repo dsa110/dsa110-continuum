@@ -426,6 +426,46 @@ def validate_window_params(window_tiles: int, stride_tiles: int) -> list[str]:
     return errors
 
 
+def _normalize_meridian_for_imaging(ms_path: str) -> None:
+    """Collapse an aligned, calibrated meridian MS to FIELD_ID 0."""
+    from astropy.coordinates import angular_separation
+
+    from dsa110_continuum.adapters.casa_tables import table
+    from dsa110_continuum.calibration.field_directions import extract_field_ra_dec
+    from dsa110_continuum.conversion.ms_utils import normalize_phaseshifted_ms_to_single_field
+
+    with table(f"{ms_path}::FIELD", readonly=True, ack=False) as field_table:
+        ra_rad, dec_rad = extract_field_ra_dec(field_table.getcol("PHASE_DIR"))
+
+    if len(ra_rad) == 0 or not np.all(np.isfinite(ra_rad)) or not np.all(np.isfinite(dec_rad)):
+        raise RuntimeError("FIELD::PHASE_DIR is empty or non-finite after phaseshift")
+
+    max_offset_arcsec = float(
+        np.degrees(np.max(angular_separation(ra_rad[0], dec_rad[0], ra_rad, dec_rad)))
+        * 3600.0
+    )
+    if max_offset_arcsec > 1.0:
+        raise RuntimeError(
+            f"FIELD phase centres differ by up to {max_offset_arcsec:.3f} arcsec after phaseshift"
+        )
+
+    normalize_phaseshifted_ms_to_single_field(
+        ms_path,
+        ra_deg=float(np.degrees(ra_rad[0])),
+        dec_deg=float(np.degrees(dec_rad[0])),
+    )
+    with table(ms_path, readonly=True, ack=False) as main_table:
+        field_ids = np.unique(main_table.getcol("FIELD_ID"))
+    if not np.array_equal(field_ids, np.array([0])):
+        raise RuntimeError(f"FIELD_ID normalization failed; found {field_ids.tolist()}")
+
+    log.info(
+        "Collapsed calibrated meridian MS to FIELD_ID=0 for PB imaging "
+        "(maximum pre-collapse offset %.3f arcsec)",
+        max_offset_arcsec,
+    )
+
+
 def process_ms(
     ms_path: str,
     cfg: TileConfig,
@@ -439,6 +479,14 @@ def process_ms(
     # With pbcor=True, WSClean produces {imagename}-image-pb.fits (primary-beam corrected)
     pbcor_fits = imagename + "-image-pb.fits"
     image_fits = imagename + "-image.fits"
+    sentinel = _applycal_sentinel_path(meridian_ms)
+
+    if force_recal and os.path.isdir(meridian_ms):
+        log.info("[%s] Removing derived meridian MS for forced recalibration", tag)
+        shutil.rmtree(meridian_ms)
+        for stale_sentinel in [sentinel, *glob.glob(f"{meridian_ms}.rfi_*_done")]:
+            if os.path.isfile(stale_sentinel):
+                os.remove(stale_sentinel)
 
     # Skip if already fully processed — unless force_recal requests a fresh run
     if not force_recal:
@@ -466,7 +514,6 @@ def process_ms(
                     log.warning("[%s] Could not remove %s: %s", tag, partial, e)
 
     # ── Step 1: Phaseshift ────────────────────────────────────────────────
-    sentinel = _applycal_sentinel_path(meridian_ms)
     if _ms_is_valid(meridian_ms):
         log.info("[%s] Meridian MS already exists", tag)
     else:
@@ -560,13 +607,19 @@ def process_ms(
     else:
         log.info("[%s] Calibration already applied (sentinel exists)", tag)
 
+    try:
+        _normalize_meridian_for_imaging(meridian_ms)
+    except Exception as e:
+        log.error("[%s] Field normalization failed: %s", tag, e)
+        return TileResult("failed", failed_stage="field_normalization", error=str(e))
+
     # ── Step 3: Image ──────────────────────────────────────────────────────
     log.info("[%s] Imaging with WSClean ...", tag)
     try:
         image_ms(
             ms_path=meridian_ms,
             imagename=imagename,
-            field="all",
+            field="0",
             imsize=IMSIZE,
             cell_arcsec=CELL_ARCSEC,
             weighting=WEIGHTING,
