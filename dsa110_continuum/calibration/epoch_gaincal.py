@@ -674,13 +674,13 @@ def calibrate_epoch(
                 wsclean_exec,
                 "-niter", str(wsclean_niter),
                 "-auto-threshold", str(wsclean_threshold_sigma),
-                "-save-model-column", "MODEL_DATA",
+                "-model-column", "MODEL_DATA",
+                "-update-model-required",
                 "-field", "all",
                 "-name", wsclean_prefix,
                 "-size", "1024", "1024",
                 "-scale", "6arcsec",
                 "-weight", "briggs", "0.5",
-                "-no-update-model-required",
                 meridian_ms,
             ]
             log.info("Epoch gaincal [%s]: WSClean self-cal imaging", stem)

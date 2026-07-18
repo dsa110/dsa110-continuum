@@ -524,6 +524,10 @@ def test_direct_pass_skips_preconditioner():
     assert mock_predict.call_args_list[0].kwargs["field"] == "all"
     image_cmd = mock_subprocess.call_args.args[0]
     assert image_cmd[image_cmd.index("-field") + 1] == "all"
+    assert image_cmd[image_cmd.index("-model-column") + 1] == "MODEL_DATA"
+    assert "-update-model-required" in image_cmd
+    assert "-save-model-column" not in image_cmd
+    assert "-no-update-model-required" not in image_cmd
     assert result.status.value == "low_snr"
     assert "ap.G" in (result.reason or "")
 
