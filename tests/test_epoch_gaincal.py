@@ -523,6 +523,8 @@ def test_direct_pass_skips_preconditioner():
     assert ap_call.kwargs["calmode"] == "ap"
     assert mock_predict.call_args_list[0].kwargs["field"] == "all"
     image_cmd = mock_subprocess.call_args.args[0]
+    assert "-reorder" in image_cmd
+    assert image_cmd[image_cmd.index("-mgain") + 1] == "0.8"
     assert image_cmd[image_cmd.index("-field") + 1] == "all"
     assert image_cmd[image_cmd.index("-model-column") + 1] == "MODEL_DATA"
     assert "-update-model-required" in image_cmd

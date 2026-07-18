@@ -672,6 +672,7 @@ def calibrate_epoch(
         else:
             cmd = [
                 wsclean_exec,
+                "-reorder",
                 "-niter", str(wsclean_niter),
                 "-auto-threshold", str(wsclean_threshold_sigma),
                 "-model-column", "MODEL_DATA",
@@ -681,17 +682,19 @@ def calibrate_epoch(
                 "-size", "1024", "1024",
                 "-scale", "6arcsec",
                 "-weight", "briggs", "0.5",
+                "-mgain", "0.8",
                 meridian_ms,
             ]
             log.info("Epoch gaincal [%s]: WSClean self-cal imaging", stem)
             wsclean_result = subprocess.run(cmd, capture_output=True, timeout=600)
             if wsclean_result.returncode != 0:
+                diagnostic = (wsclean_result.stdout or b"") + (wsclean_result.stderr or b"")
                 log.warning(
                     "Epoch gaincal [%s]: WSClean exited %d — "
                     "falling back to catalog MODEL_DATA for ap solve\n%s",
                     stem,
                     wsclean_result.returncode,
-                    wsclean_result.stderr.decode("utf-8", errors="replace")[-500:],
+                    diagnostic.decode("utf-8", errors="replace")[-500:],
                 )
                 predict_from_skymodel_wsclean(meridian_ms, sky, field="all")
 

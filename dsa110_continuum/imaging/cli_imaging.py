@@ -983,13 +983,15 @@ def image_ms(
     radius_deg = 0.5 * float(math.hypot(fov_x, fov_y))
 
     # Get phase center from MS (needed for mask generation and unified catalog seeding)
+    from dsa110_continuum.calibration.field_directions import extract_field_ra_dec
+
     ra0_deg = dec0_deg = None
     with casatables.table(f"{ms_path}::FIELD", readonly=True) as fld:
         try:
-            ph = fld.getcol("PHASE_DIR")[0]
-            ra0_deg = float(ph[0][0]) * (180.0 / np.pi)
-            dec0_deg = float(ph[0][1]) * (180.0 / np.pi)
-        except (KeyError, IndexError, TypeError):
+            field_ra_rad, field_dec_rad = extract_field_ra_dec(fld.getcol("PHASE_DIR"))
+            ra0_deg = float(np.degrees(field_ra_rad[0]))
+            dec0_deg = float(np.degrees(field_dec_rad[0]))
+        except (KeyError, IndexError, TypeError, ValueError):
             pass
     if ra0_deg is None or dec0_deg is None:
         LOG.warning("Could not determine phase center from MS FIELD table")
@@ -1003,10 +1005,6 @@ def image_ms(
         and calib_flux_jy > 0
     ):
         try:
-            with casatables.table(f"{ms_path}::FIELD", readonly=True) as fld:
-                ph = fld.getcol("PHASE_DIR")[0]
-                ra0_deg = float(ph[0][0]) * (180.0 / np.pi)
-                dec0_deg = float(ph[0][1]) * (180.0 / np.pi)
             # crude small-angle separation in deg
             d_ra = (float(calib_ra_deg) - ra0_deg) * np.cos(np.deg2rad(dec0_deg))
             d_dec = float(calib_dec_deg) - dec0_deg
