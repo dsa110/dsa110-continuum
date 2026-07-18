@@ -355,6 +355,7 @@ def test_sky_map_has_simulated_context_and_hover_tooltips(console):
     assert 'id="sky-tip" role="tooltip"' in page
     assert 'class="sky-source' in page
     assert "pointerover" in page and "focusin" in page
+    assert "very bright radio source" in page
 
 
 def test_antennas_json_source_preferred(console, tmp_path, monkeypatch):

@@ -2023,7 +2023,6 @@ svg .lbl.big{fill:#dfe6f2;font-size:10.5px}
         <span id="sky-note">—</span><span class="spacer"></span>
         <span class="legend">
           <span><i style="background:var(--sun)"></i>Sun</span>
-          <span><i style="background:var(--bad)"></i>A-team</span>
           <span><i style="background:var(--acc)"></i>calibrator</span>
           <span><i style="background:#aab6c9"></i>source</span>
           <span><i style="background:#b98760;box-shadow:0 0 6px #b98760"></i>Galactic plane</span>
@@ -2195,7 +2194,7 @@ function drawSky(){
     .join('')||'<span class="quiet">Nothing notable in the strip this hour.</span>'}
 
 const skyTip=$('sky-tip'),skyCanvas=document.querySelector('.skycanvas');
-const kindLabel={sun:'solar system',ateam:'A-team source',cal:'calibrator',src:'bright source',catalog:'catalog source'};
+const kindLabel={sun:'solar system',ateam:'very bright radio source',cal:'calibrator',src:'bright source',catalog:'catalog source'};
 const skySource=e=>e.target.closest?e.target.closest('.sky-source'):null;
 function placeSkyTip(source,event){
   const canvas=skyCanvas.getBoundingClientRect(),box=source.getBoundingClientRect();
