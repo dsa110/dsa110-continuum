@@ -37,15 +37,25 @@ Health checks: `systemctl status dsa110-dashboard`, `systemctl list-timers 'dsa1
 
 ## Worktree topology
 
-The dashboard service serves the `dashboard-production` branch from a dedicated worktree at
-`/data/dsa110-continuum-dashboard` (create once with
-`git -C /data/dsa110-continuum worktree add /data/dsa110-continuum-dashboard dashboard-production`).
-The unit's `DSA110_REPO_ROOT=/data/dsa110-continuum` keeps pipeline launches executing from the
-live checkout, which may sit on a different branch. Upgrade procedure:
+Both production services run `main` from the dedicated worktree at
+`/data/dsa110-continuum-production`. Agent work stays in separate worktrees and never changes the
+code used by a running service. Create the production worktree once with:
 
 ```bash
-git -C /data/dsa110-continuum-dashboard pull --ff-only
+git -C /data/dsa110-continuum worktree add /data/dsa110-continuum-production main
+```
+
+Deploy a new `main` revision explicitly from that worktree:
+
+```bash
+git -C /data/dsa110-continuum-production pull --ff-only
+sudo cp /data/dsa110-continuum-production/ops/systemd/dsa110-dashboard.service \
+        /data/dsa110-continuum-production/ops/systemd/dsa110-autopipeline.service \
+        /data/dsa110-continuum-production/ops/systemd/dsa110-autopipeline.timer \
+        /etc/systemd/system/
+sudo systemctl daemon-reload
 sudo systemctl restart dsa110-dashboard
+sudo systemctl restart dsa110-autopipeline.timer
 ```
 
 Per-artifact QA pages: `/artifacts/caltable/` (BP/G/K tables with acquisition provenance),
