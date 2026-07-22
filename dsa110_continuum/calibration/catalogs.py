@@ -1832,6 +1832,38 @@ def query_rax_sources(
         raise FileNotFoundError(error_msg)
 
 
+def _resolve_vlass_catalog_path(
+    dec_deg: float,
+    catalog_path: str | os.PathLike[str] | None = None,
+) -> Path | None:
+    if catalog_path:
+        explicit_path = Path(catalog_path)
+        if explicit_path.exists():
+            return explicit_path
+
+    dec_rounded = round(float(dec_deg), 1)
+    strip_name = f"vlass_dec{dec_rounded:+.1f}.sqlite3"
+    catalog_dirs = [
+        get_env_path("CONTIMG_BASE_DIR", default="/data/dsa110-contimg")
+        / "state/catalogs",
+        Path("/data/dsa110-contimg/state/catalogs"),
+        Path("/app/state/catalogs"),
+        Path.cwd() / "state/catalogs",
+    ]
+
+    for catalog_dir in catalog_dirs:
+        strip_path = catalog_dir / strip_name
+        if strip_path.exists():
+            return strip_path
+
+    for catalog_dir in catalog_dirs:
+        full_path = catalog_dir / "vlass_full.sqlite3"
+        if full_path.exists():
+            return full_path
+
+    return None
+
+
 def query_vlass_sources(
     ra_deg: float,
     dec_deg: float,
@@ -1871,39 +1903,7 @@ def query_vlass_sources(
     """
     import sqlite3
 
-    # Try SQLite first (much faster)
-    db_path = None
-
-    # 1. Explicit path provided
-    if catalog_path:
-        db_path = Path(catalog_path)
-        if not db_path.exists():
-            db_path = None
-
-    # 2. Auto-resolve based on declination strip
-    if db_path is None:
-        dec_rounded = round(float(dec_deg), 1)
-        db_name = f"vlass_dec{dec_rounded:+.1f}.sqlite3"
-
-        # Try standard locations
-        candidates = []
-
-        for root_str in ["/data/dsa110-contimg", "/app"]:
-            root_path = Path(root_str)
-            if root_path.exists():
-                candidates.append(root_path / "state" / "catalogs" / db_name)
-
-        candidates.append(Path.cwd() / "state" / "catalogs" / db_name)
-        candidates.append(
-            get_env_path("CONTIMG_BASE_DIR", default="/data/dsa110-contimg")
-            / "state/catalogs"
-            / db_name
-        )
-
-        for candidate in candidates:
-            if candidate.exists():
-                db_path = candidate
-                break
+    db_path = _resolve_vlass_catalog_path(dec_deg, catalog_path)
 
     # Query SQLite if available
     if db_path is not None:

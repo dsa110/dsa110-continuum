@@ -702,7 +702,7 @@ def _ensure_state_table_valid(ms_path: str) -> None:
 
 
 def normalize_phaseshifted_ms_to_single_field(ms_path: str, ra_deg: float, dec_deg: float) -> None:
-    """Normalize a phaseshift+concat MS so calibration can treat it as one field.
+    """Normalize an aligned phaseshift+concat MS to one field for imaging.
 
     CASA's multi-field workaround (phaseshift each field then concat) can produce
     an MS where concat offsets/renumbers FIELD_ID values (e.g., 0, 25..47). The
@@ -711,13 +711,14 @@ def normalize_phaseshifted_ms_to_single_field(ms_path: str, ra_deg: float, dec_d
     - Setting FIELD_ID=0 in the MAIN table (and key subtables when present)
     - Ensuring FIELD row 0 has the requested phase center
 
-    This is safe for calibration because the data have already been phaseshifted
-    to the target phase center; we are only normalizing metadata/IDs.
+    Call this only after per-field calibration: the data must already be
+    phaseshifted and calibrated at the common target phase center.
 
     Parameters
     ----------
     """
     import numpy as _np
+    from dsa110_continuum.calibration.field_directions import set_field_ra_dec
 
     _tb = None
     _use_casatools = False
@@ -741,8 +742,6 @@ def normalize_phaseshifted_ms_to_single_field(ms_path: str, ra_deg: float, dec_d
     try:
         ra_rad = float(_np.radians(ra_deg))
         dec_rad = float(_np.radians(dec_deg))
-        phase_dir_cell = _np.array([[ra_rad, dec_rad]], dtype=_np.float64)  # shape (1, 2)
-
         if _use_casatools:
             main = _tb()
             main.open(ms_path, nomodify=False)
@@ -757,8 +756,8 @@ def normalize_phaseshifted_ms_to_single_field(ms_path: str, ra_deg: float, dec_d
                 return
             for col in ("PHASE_DIR", "DELAY_DIR", "REFERENCE_DIR"):
                 if col in field_tb.colnames():
-                    cell = phase_dir_cell.reshape((1, 2))
-                    field_tb.putcell(col, 0, cell)
+                    directions = field_tb.getcol(col)
+                    field_tb.putcol(col, set_field_ra_dec(directions, ra_rad, dec_rad))
             field_tb.close()
         else:
             with _tb(ms_path, readonly=False) as main:
@@ -770,7 +769,8 @@ def normalize_phaseshifted_ms_to_single_field(ms_path: str, ra_deg: float, dec_d
                     return
                 for col in ("PHASE_DIR", "DELAY_DIR", "REFERENCE_DIR"):
                     if col in field_tb.colnames():
-                        field_tb.putcell(col, 0, phase_dir_cell)
+                        directions = field_tb.getcol(col)
+                        field_tb.putcol(col, set_field_ra_dec(directions, ra_rad, dec_rad))
 
         # Keep other common FIELD_ID-bearing subtables consistent when present.
         for subtable_name in ("POINTING", "SOURCE", "FLAG_CMD"):

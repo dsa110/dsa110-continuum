@@ -3,7 +3,7 @@
 Public API
 ----------
 select_calibration_tile_from_ms(epoch_ms_paths) -> str
-    Return the MS path (from the two central tiles) with the most catalog sources.
+    Return the epoch MS with the strongest catalog calibration target.
 
 calibrate_epoch(epoch_ms_paths, bp_table, work_dir, ...) -> EpochGaincalResult
     Full 5-step catalog-bootstrap + self-cal gain solve. Returns a structured
@@ -87,7 +87,7 @@ class EpochGaincalResult:
 
 
 _WSCLEAN_FLAG_FRACTION_LIMIT = 0.60  # skip WSClean self-cal if MS is more flagged than this
-GAINCAL_FLAG_FRACTION_LIMIT  = 0.30  # abort epoch gaincal if p.G table is more flagged than this
+GAINCAL_FLAG_FRACTION_LIMIT = 0.30  # abort epoch gaincal if p.G table is more flagged than this
 
 
 def _ms_flag_fraction(ms_path: str) -> float:
@@ -97,6 +97,79 @@ def _ms_flag_fraction(ms_path: str) -> float:
     with ct.table(ms_path, readonly=True, ack=False) as t:
         flags = t.getcol("FLAG")
     return float(flags.sum()) / flags.size
+
+
+def _gain_flag_fractions(candidate_table: str, bp_table: str) -> dict[str, object]:
+    """Return raw and BP-relative flag fractions for a candidate gain table."""
+    from dsa110_continuum.adapters import casa_tables as ct
+    from dsa110_continuum.calibration.solve_bandpass import (
+        _flag_fraction_excluding_dead_receptors,
+    )
+
+    with ct.table(candidate_table, readonly=True, ack=False) as table:
+        candidate_flags = table.getcol("FLAG")
+        candidate_antennas = table.getcol("ANTENNA1")
+    if np.asarray(candidate_flags).size == 0:
+        raise ValueError(f"Candidate gain table has no FLAG values: {candidate_table}")
+
+    raw_fraction = float(np.mean(candidate_flags))
+    try:
+        with ct.table(bp_table, readonly=True, ack=False) as table:
+            bp_flags = table.getcol("FLAG")
+            bp_antennas = table.getcol("ANTENNA1")
+        if np.asarray(bp_flags).size == 0:
+            raise ValueError(f"Bandpass table has no FLAG values: {bp_table}")
+        baseline = _flag_fraction_excluding_dead_receptors(bp_flags, bp_antennas)
+        effective = _flag_fraction_excluding_dead_receptors(
+            candidate_flags,
+            candidate_antennas,
+            excluded_receptors=set(baseline["dead_receptors"]),
+        )
+    except Exception as exc:
+        log.warning(
+            "Could not validate BP receptor baseline for %s (%s); using raw flag fraction",
+            candidate_table,
+            exc,
+        )
+        return {
+            "raw_fraction": raw_fraction,
+            "effective_fraction": raw_fraction,
+            "baseline_valid": False,
+            "baseline_dead_receptors": 0,
+        }
+
+    return {
+        "raw_fraction": raw_fraction,
+        "effective_fraction": effective["effective_flag_fraction"],
+        "baseline_valid": True,
+        "baseline_dead_receptors": baseline["dead_receptor_count"],
+        "working_flagged": effective["working_flagged"],
+        "working_total": effective["working_total"],
+    }
+
+
+def _modeled_field_count(ms_path: str) -> tuple[int, int]:
+    """Return modeled and total field counts using bounded MODEL_DATA samples."""
+    from dsa110_continuum.adapters import casa_tables as ct
+
+    with ct.table(ms_path, readonly=True, ack=False) as table:
+        field_ids = np.asarray(table.getcol("FIELD_ID"))
+        unique_fields = np.unique(field_ids)
+        modeled = 0
+        for field_id in unique_fields:
+            field_rows = np.flatnonzero(field_ids == field_id)
+            rows = field_rows[np.linspace(0, len(field_rows) - 1, min(8, len(field_rows))).astype(int)]
+            if any(np.any(np.abs(table.getcell("MODEL_DATA", int(row))) > 0) for row in rows):
+                modeled += 1
+    return modeled, len(unique_fields)
+
+
+def _format_gain_flag_stats(stats: dict[str, object]) -> str:
+    baseline = "BP-relative" if stats["baseline_valid"] else "raw fallback"
+    return (
+        f"raw {float(stats['raw_fraction']) * 100:.1f}%, "
+        f"{baseline} {float(stats['effective_fraction']) * 100:.1f}%"
+    )
 
 
 def _read_ms_phase_center(ms_path: str) -> tuple[float, float]:
@@ -116,18 +189,44 @@ def _read_ms_phase_center(ms_path: str) -> tuple[float, float]:
     return median_ra, median_dec
 
 
+def _find_vla_calibrator_in_ms(
+    ms_path: str,
+    *,
+    search_radius_deg: float,
+) -> tuple[str, float, float]:
+    """Return ``(name, flux_jy, separation_deg)`` for the best VLA calibrator."""
+    from dsa110_continuum.calibration.selection import select_bandpass_from_catalog
+
+    _, _, _, cal_info, _ = select_bandpass_from_catalog(
+        ms_path,
+        search_radius_deg=search_radius_deg,
+    )
+    name, cal_ra_deg, cal_dec_deg, flux_jy = cal_info
+    tile_ra_deg, tile_dec_deg = _read_ms_phase_center(ms_path)
+    tile_ra = np.radians(tile_ra_deg)
+    tile_dec = np.radians(tile_dec_deg)
+    cal_ra = np.radians(cal_ra_deg)
+    cal_dec = np.radians(cal_dec_deg)
+    cos_sep = (
+        np.sin(tile_dec) * np.sin(cal_dec)
+        + np.cos(tile_dec) * np.cos(cal_dec) * np.cos(tile_ra - cal_ra)
+    )
+    separation_deg = float(np.degrees(np.arccos(np.clip(cos_sep, -1.0, 1.0))))
+    return str(name), float(flux_jy), separation_deg
+
+
 def select_calibration_tile_from_ms(
     epoch_ms_paths: list[str],
     *,
     min_flux_mjy: float = SKYMODEL_MIN_FLUX_MJY,
     source_radius_deg: float = SOURCE_QUERY_RADIUS_DEG,
 ) -> str:
-    """Return the central tile MS with the most bright catalog sources.
+    """Return the epoch MS with the strongest catalog calibration target.
 
-    Checks the two tiles nearest the centre of the sorted list and returns
-    the MS path whose pointing has more catalog sources above *min_flux_mjy*
-    within *source_radius_deg*.  Optimised for MOSAIC_TILE_COUNT (12) tiles
-    but gracefully handles any count >= 2.
+    All tiles are checked for VLA calibrators first. The highest-flux match
+    wins, with angular proximity to the tile midpoint as the tiebreaker. If
+    the VLA catalog is unavailable or no calibrator is present, all tiles are
+    ranked by their bright-source counts.
 
     Parameters
     ----------
@@ -152,37 +251,74 @@ def select_calibration_tile_from_ms(
     if n < 2:
         raise ValueError(f"Need at least 2 MS paths for tile selection, got {n}")
 
-    # Pick the two tiles nearest the centre of the list
-    mid = n // 2
-    center_indices = [mid - 1, mid]
+    calibrator_search_radius_deg = max(1.0, source_radius_deg)
+    best_calibrator_ms: str | None = None
+    best_calibrator_score: tuple[float, float] | None = None
+
+    for idx, ms in enumerate(epoch_ms_paths):
+        try:
+            name, flux_jy, separation_deg = _find_vla_calibrator_in_ms(
+                ms,
+                search_radius_deg=calibrator_search_radius_deg,
+            )
+        except (
+            FileNotFoundError,
+            KeyError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            log.debug("No VLA calibrator match for tile %d (%s): %s", idx, ms, exc)
+            continue
+
+        score = (flux_jy, -separation_deg)
+        log.info(
+            "Tile %d (%s): VLA calibrator %s, %.2f Jy, %.3f deg from midpoint",
+            idx,
+            Path(ms).stem,
+            name,
+            flux_jy,
+            separation_deg,
+        )
+        if best_calibrator_score is None or score > best_calibrator_score:
+            best_calibrator_score = score
+            best_calibrator_ms = ms
+
+    if best_calibrator_ms is not None:
+        log.info(
+            "Selected calibration tile %s from VLA calibrator ranking",
+            Path(best_calibrator_ms).stem,
+        )
+        return best_calibrator_ms
+
     best_ms: str | None = None
     best_count = -1
 
-    for idx in center_indices:
-        ms = epoch_ms_paths[idx]
+    for idx, ms in enumerate(epoch_ms_paths):
         try:
             ra, dec = _read_ms_phase_center(ms)
-            n = count_bright_sources_in_tile(
+            source_count = count_bright_sources_in_tile(
                 ra,
                 dec,
                 min_flux_mjy=min_flux_mjy,
                 radius_deg=source_radius_deg,
             )
-            log.info("Tile %d (%s): %d catalog sources", idx, Path(ms).stem, n)
-            if n > best_count:
-                best_count = n
+            log.info("Tile %d (%s): %d catalog sources", idx, Path(ms).stem, source_count)
+            if source_count > best_count:
+                best_count = source_count
                 best_ms = ms
         except Exception as exc:
             log.warning("Cannot count sources for tile %d (%s): %s", idx, ms, exc)
 
     if best_ms is None:
-        # Both catalog queries failed (e.g. VLASS/RACS databases absent).
+        # All catalog queries failed (e.g. VLASS/NVSS databases absent).
         # Fall back to the geometrically central tile rather than a hardcoded
         # index that is only correct for MOSAIC_TILE_COUNT=12.
         fallback_idx = len(epoch_ms_paths) // 2
         best_ms = epoch_ms_paths[fallback_idx]
         log.warning(
-            "Source count failed for all candidate tiles — "
+            "Source count failed for all epoch tiles — "
             "defaulting to central tile index %d (%s)",
             fallback_idx,
             Path(best_ms).stem,
@@ -212,18 +348,17 @@ def calibrate_epoch(
 
     Workflow
     --------
-    1.  Select central tile (by catalog source count).
+    1.  Select the strongest calibration tile from the full epoch.
     2.  Phaseshift to median meridian (reuses existing meridian MS if present).
     1b. Pre-calibration RFI flagging (autocorr + AOFlagger/tfcrop+rflag).
     3.  Apply bandpass-only to CORRECTED_DATA.
     4.  Populate MODEL_DATA from unified catalog (FIRST+RACS+NVSS+VLASS).
-    5b. Pre-conditioner phase solve: calmode='p', solint='60s', combine='spw'
-        → precond.G.  Tracks short-term phase drift across the full bandwidth
-        to prevent vector decorrelation in the long inf-interval solves below.
-    6.  Phase-only gaincal (solint='inf', gaintable=[bp, precond]) → epoch_p.G.
-    7.  Apply BP + precond + p.G, then WSClean quick image (-save-model).
-    8.  Amplitude+phase gaincal (solint='inf', gaintable=[bp, precond, p.G])
-        → epoch_ap.G  ← returned.
+    6.  Direct phase-only gaincal (solint='inf', gaintable=[bp]) → direct.p.G.
+    6b. Gate on newly failed receptors relative to the independently measured
+        BP receptor mask. If direct solving fails and multiple fields contain
+        MODEL_DATA, try the 60s pre-conditioner once as a rescue.
+    7.  Apply the selected chain, then WSClean quick image (-save-model).
+    8.  BP-referenced amplitude+phase gaincal → self-contained ap.G.
 
     Any exception causes an early return of None so callers can fall back to
     the static daily G table.
@@ -268,7 +403,7 @@ def calibrate_epoch(
     work.mkdir(parents=True, exist_ok=True)
 
     try:
-        # ── 0. Select central tile ────────────────────────────────────────────
+        # ── 0. Select calibration tile ────────────────────────────────────────
         central_raw_ms = select_calibration_tile_from_ms(
             epoch_ms_paths,
             min_flux_mjy=min_flux_mjy,
@@ -276,15 +411,40 @@ def calibrate_epoch(
         )
         stem = Path(central_raw_ms).stem
         meridian_ms   = str(work / f"{stem}_meridian.ms")
-        precond_table = str(work / f"{stem}.precond.G")
-        p_table       = str(work / f"{stem}.p.G")
-        ap_table      = str(work / f"{stem}.ap.G")
+        precond_table = str(work / f"{stem}.direct_first.precond.G")
+        direct_p_table = str(work / f"{stem}.direct.p.G")
+        rescue_p_table = str(work / f"{stem}.precond_rescue.p.G")
+        ap_table = str(work / f"{stem}.direct_first.ap.G")
         wsclean_prefix = str(work / f"{stem}_model")
 
         # Return cached result if the ap.G table already exists
         if os.path.exists(ap_table):
-            log.info("Epoch gaincal [%s]: cached ap.G found — reusing %s", stem, ap_table)
-            return EpochGaincalResult(ap_table, EpochGaincalStatus.SOLVED, "cached ap.G reused")
+            try:
+                cached_stats = _gain_flag_fractions(ap_table, bp_table)
+                if float(cached_stats["effective_fraction"]) <= GAINCAL_FLAG_FRACTION_LIMIT:
+                    log.info(
+                        "Epoch gaincal [%s]: validated cached ap.G — reusing %s",
+                        stem,
+                        ap_table,
+                    )
+                    return EpochGaincalResult(
+                        ap_table, EpochGaincalStatus.SOLVED, "validated cached ap.G reused"
+                    )
+                log.warning(
+                    "Epoch gaincal [%s]: cached ap.G fails gate (%s) — recomputing",
+                    stem,
+                    _format_gain_flag_stats(cached_stats),
+                )
+            except Exception as exc:
+                log.warning(
+                    "Epoch gaincal [%s]: cached ap.G is unreadable (%s) — recomputing",
+                    stem,
+                    exc,
+                )
+            if os.path.isdir(ap_table):
+                shutil.rmtree(ap_table)
+            else:
+                os.remove(ap_table)
 
         # ── 1. Phaseshift to median meridian ──────────────────────────────────
         if not os.path.exists(meridian_ms):
@@ -351,87 +511,21 @@ def calibrate_epoch(
                 "catalog sky model is empty (no bright sources within search radius)",
             )
         log.info("Epoch gaincal [%s]: sky model has %d components", stem, sky.Ncomponents)
-        predict_from_skymodel_wsclean(meridian_ms, sky)
+        predict_from_skymodel_wsclean(meridian_ms, sky, field="all")
+        modeled_fields, total_fields = _modeled_field_count(meridian_ms)
+        if modeled_fields != total_fields:
+            raise RuntimeError(
+                f"MODEL_DATA populated for {modeled_fields}/{total_fields} fields; "
+                "refusing partial epoch gain calibration"
+            )
 
-        # ── 5b. Short-timescale pre-conditioner phase solve ───────────────────
-        # Problem: the main solint='inf' gaincal integrates the full ~4-5 minute
-        # drift-scan window into a single solution. When the ionosphere or instrument
-        # phase drifts within that window, the vector sum of visibilities decorrelates
-        # — amplitudes shrink and the solver flags the solution (SNR < 3.0). This is
-        # the dominant failure mode observed on Feb 15 (faint distributed sky model).
-        #
-        # Fix: solve a frequency-independent phase per antenna at 60s intervals
-        # (combine='spw' averages all 16 subbands, boosting per-interval SNR ~4×).
-        # The resulting table is passed as a prior into the main gaincal so it only
-        # needs to account for slow residual amplitude drifts rather than fast phases.
-        #
-        # This is the "narrow scope" adaptation of the NRAO-recommended pre-bandpass
-        # phase solve (see dsa110-contimg runner.py STEP 3.5). If an automated script
-        # is ever added to re-derive the daily bandpass table, this SPW-combined
-        # pre-solve should also be inserted before that bandpass solve.
+        # ── 6. Direct phase-only gaincal ──────────────────────────────────────
         service = CASAService()
-        log.info("Epoch gaincal [%s]: pre-conditioner phase solve (60s, combine='spw')", stem)
-        try:
-            service.gaincal(
-                vis=meridian_ms,
-                caltable=precond_table,
-                field="",
-                refant=refant,
-                calmode="p",
-                solint="60s",
-                combine="spw",
-                minsnr=3.0,
-                gaintype="G",
-                gaintable=[bp_table],
-                interp=["nearest"],
-            )
-            if os.path.exists(precond_table):
-                log.info(
-                    "Epoch gaincal [%s]: pre-conditioner solve SUCCESS → %s",
-                    stem, Path(precond_table).name,
-                )
-            else:
-                log.warning(
-                    "Epoch gaincal [%s]: pre-conditioner produced no table — "
-                    "proceeding without it (expect lower epoch gaincal SNR)",
-                    stem,
-                )
-        except Exception as _precond_err:
-            log.warning(
-                "Epoch gaincal [%s]: pre-conditioner solve failed (%s) — continuing",
-                stem, _precond_err,
-            )
-
-        # Build the optional precond chain used in all downstream gaintable lists.
-        # If the step above failed or produced no table, these lists are empty and
-        # the remaining solves behave exactly as before the pre-conditioner was added.
-        #
-        # spwmap note: combine='spw' produces a table with only SPW 0.  Without an
-        # explicit spwmap, CASA flags SPWs 1-15 in every subsequent gaincal and
-        # applycal that includes the precond table.  We derive the SPW count from the
-        # MS and provide spwmap=[0,0,...,0] so CASA re-uses the SPW-0 solution for
-        # all 16 subbands instead of flagging them.
-        _precond = [precond_table] if os.path.exists(precond_table) else []
-        _precond_interp = ["linear"] * len(_precond)
-        if _precond:
-            try:
-                from dsa110_continuum.adapters import casa_tables as _ct2
-                with _ct2.table(f"{meridian_ms}::SPECTRAL_WINDOW",
-                                readonly=True, ack=False) as _tspw:
-                    _n_spw = _tspw.nrows()
-                _precond_spwmap: list[list[int]] = [[0] * _n_spw]
-            except Exception as _spw_err:
-                log.warning(
-                    "Epoch gaincal [%s]: could not determine SPW count for precond "
-                    "spwmap (%s) — SPWs 1+ may be flagged in downstream solves",
-                    stem, _spw_err,
-                )
-                _precond_spwmap = []
-        else:
-            _precond_spwmap = []
-
-        # ── 6. Phase-only gaincal ─────────────────────────────────────────────
-        log.info("Epoch gaincal [%s]: phase-only gaincal → %s", stem, Path(p_table).name)
+        p_table = direct_p_table
+        _precond: list[str] = []
+        _precond_interp: list[str] = []
+        _precond_spwmap: list[list[int]] = []
+        log.info("Epoch gaincal [%s]: direct phase-only gaincal → %s", stem, Path(p_table).name)
         service.gaincal(
             vis=meridian_ms,
             caltable=p_table,
@@ -441,54 +535,106 @@ def calibrate_epoch(
             solint="inf",
             minsnr=3.0,
             gaintype="G",
-            gaintable=[bp_table, *_precond],
-            interp=["nearest", *_precond_interp],
-            **( {"spwmap": [[], *_precond_spwmap]} if _precond_spwmap else {} ),
+            gaintable=[bp_table],
+            interp=["nearest"],
         )
-        if not os.path.exists(p_table):
-            log.error("Epoch gaincal [%s]: phase-only solve produced no table", stem)
-            return EpochGaincalResult(
-                None,
-                EpochGaincalStatus.SOLVER_NO_TABLE,
-                "phase-only gaincal produced no table (likely all solutions flagged at minsnr=3.0)",
-            )
+        # ── 6b. Independent receptor gate and bounded rescue ──────────────────
+        if os.path.exists(p_table):
+            direct_stats = _gain_flag_fractions(p_table, bp_table)
+        else:
+            log.warning("Epoch gaincal [%s]: direct phase-only solve produced no table", stem)
+            direct_stats = {
+                "raw_fraction": 1.0,
+                "effective_fraction": 1.0,
+                "baseline_valid": False,
+                "baseline_dead_receptors": 0,
+            }
+        log.info("Epoch gaincal [%s]: direct p.G %s", stem, _format_gain_flag_stats(direct_stats))
+        if float(direct_stats["effective_fraction"]) > GAINCAL_FLAG_FRACTION_LIMIT:
+            if modeled_fields < 2:
+                reason = (
+                    f"direct p.G {_format_gain_flag_stats(direct_stats)} exceeds "
+                    f"{GAINCAL_FLAG_FRACTION_LIMIT * 100:.0f}% limit; MODEL_DATA present in "
+                    f"{modeled_fields}/{total_fields} fields, so 60s rescue cannot span fields"
+                )
+                return EpochGaincalResult(None, EpochGaincalStatus.LOW_SNR, reason)
 
-        # ── 6b. Flag-fraction monitor on p.G table ────────────────────────────
-        # Read the CASA FLAG column from the cal table directly.  CASA often
-        # pre-allocates rows but sets FLAG=True for solutions that failed the
-        # SNR gate (minsnr=3.0).  A high flagged fraction means the sky model
-        # was too faint to support reliable gain solutions; applying a noisy
-        # ap.G table would actively worsen the bandpass calibration already
-        # applied in Step 3.  Return None so the batch pipeline falls back to
-        # BP-only, which is the correct survey-pipeline behaviour for faint fields.
-        try:
-            import casatools as _cto
-            _tb = _cto.table()
-            _tb.open(p_table)
-            _p_flags = _tb.getcol("FLAG")   # shape: (n_pol, n_spw, n_rows) — booleans
-            _tb.close()
-            _p_flag_frac = float(_p_flags.sum()) / float(_p_flags.size)
             log.info(
-                "Epoch gaincal [%s]: p.G flagged fraction = %.1f%%",
-                stem, _p_flag_frac * 100,
+                "Epoch gaincal [%s]: direct gate failed; trying 60s pre-conditioner rescue",
+                stem,
             )
-            if _p_flag_frac > GAINCAL_FLAG_FRACTION_LIMIT:
-                _reason = (
-                    f"p.G flagged {_p_flag_frac * 100:.1f}% of solutions "
-                    f"(limit {GAINCAL_FLAG_FRACTION_LIMIT * 100:.0f}%) — "
-                    f"SNR too low for reliable gain cal"
+            try:
+                service.gaincal(
+                    vis=meridian_ms,
+                    caltable=precond_table,
+                    field="",
+                    refant=refant,
+                    calmode="p",
+                    solint="60s",
+                    combine="spw",
+                    minsnr=3.0,
+                    gaintype="G",
+                    gaintable=[bp_table],
+                    interp=["nearest"],
                 )
-                log.warning(
-                    "Epoch gaincal [%s]: %s. Returning None; pipeline will apply bandpass-only.",
-                    stem, _reason,
+            except Exception as exc:
+                reason = (
+                    f"direct p.G {_format_gain_flag_stats(direct_stats)} exceeds "
+                    f"{GAINCAL_FLAG_FRACTION_LIMIT * 100:.0f}% limit; rescue failed: {exc}"
                 )
-                return EpochGaincalResult(None, EpochGaincalStatus.LOW_SNR, _reason)
-        except Exception as _frac_err:
-            log.warning(
-                "Epoch gaincal [%s]: could not read p.G flag fraction (%s) — "
-                "proceeding with ap solve",
-                stem, _frac_err,
+                return EpochGaincalResult(None, EpochGaincalStatus.LOW_SNR, reason)
+            if not os.path.exists(precond_table):
+                reason = (
+                    f"direct p.G {_format_gain_flag_stats(direct_stats)} exceeds "
+                    f"{GAINCAL_FLAG_FRACTION_LIMIT * 100:.0f}% limit; rescue produced no table"
+                )
+                return EpochGaincalResult(None, EpochGaincalStatus.LOW_SNR, reason)
+
+            from dsa110_continuum.adapters import casa_tables as _ct2
+
+            with _ct2.table(
+                f"{meridian_ms}::SPECTRAL_WINDOW", readonly=True, ack=False
+            ) as _tspw:
+                _n_spw = _tspw.nrows()
+            _precond = [precond_table]
+            _precond_interp = ["linear"]
+            _precond_spwmap = [[0] * _n_spw]
+            service.gaincal(
+                vis=meridian_ms,
+                caltable=rescue_p_table,
+                field="",
+                refant=refant,
+                calmode="p",
+                solint="inf",
+                minsnr=3.0,
+                gaintype="G",
+                gaintable=[bp_table, precond_table],
+                interp=["nearest", "linear"],
+                spwmap=[[], *_precond_spwmap],
             )
+            if not os.path.exists(rescue_p_table):
+                return EpochGaincalResult(
+                    None,
+                    EpochGaincalStatus.LOW_SNR,
+                    "pre-conditioner rescue phase solve produced no table",
+                )
+            rescue_stats = _gain_flag_fractions(rescue_p_table, bp_table)
+            log.info(
+                "Epoch gaincal [%s]: rescue p.G %s",
+                stem,
+                _format_gain_flag_stats(rescue_stats),
+            )
+            rescue_fraction = float(rescue_stats["effective_fraction"])
+            if (
+                rescue_fraction > GAINCAL_FLAG_FRACTION_LIMIT
+                or rescue_fraction >= float(direct_stats["effective_fraction"])
+            ):
+                reason = (
+                    f"rescue p.G {_format_gain_flag_stats(rescue_stats)} did not strictly improve "
+                    f"and pass the {GAINCAL_FLAG_FRACTION_LIMIT * 100:.0f}% limit"
+                )
+                return EpochGaincalResult(None, EpochGaincalStatus.LOW_SNR, reason)
+            p_table = rescue_p_table
 
         # Apply BP + precond (if present) + p.G before WSClean imaging
         apply_to_target(
@@ -515,38 +661,42 @@ def calibrate_epoch(
                 "skipping WSClean self-cal, re-predicting catalog model for ap solve",
                 stem, 100 * _flag_frac, 100 * _WSCLEAN_FLAG_FRACTION_LIMIT,
             )
-            predict_from_skymodel_wsclean(meridian_ms, sky)
+            predict_from_skymodel_wsclean(meridian_ms, sky, field="all")
         elif not wsclean_exec:
             log.warning(
                 "Epoch gaincal [%s]: wsclean not on PATH — "
                 "re-predicting catalog model for ap solve",
                 stem,
             )
-            predict_from_skymodel_wsclean(meridian_ms, sky)
+            predict_from_skymodel_wsclean(meridian_ms, sky, field="all")
         else:
             cmd = [
                 wsclean_exec,
+                "-reorder",
                 "-niter", str(wsclean_niter),
                 "-auto-threshold", str(wsclean_threshold_sigma),
-                "-save-model-column", "MODEL_DATA",
+                "-model-column", "MODEL_DATA",
+                "-update-model-required",
+                "-field", "all",
                 "-name", wsclean_prefix,
                 "-size", "1024", "1024",
                 "-scale", "6arcsec",
                 "-weight", "briggs", "0.5",
-                "-no-update-model-required",
+                "-mgain", "0.8",
                 meridian_ms,
             ]
             log.info("Epoch gaincal [%s]: WSClean self-cal imaging", stem)
             wsclean_result = subprocess.run(cmd, capture_output=True, timeout=600)
             if wsclean_result.returncode != 0:
+                diagnostic = (wsclean_result.stdout or b"") + (wsclean_result.stderr or b"")
                 log.warning(
                     "Epoch gaincal [%s]: WSClean exited %d — "
                     "falling back to catalog MODEL_DATA for ap solve\n%s",
                     stem,
                     wsclean_result.returncode,
-                    wsclean_result.stderr.decode("utf-8", errors="replace")[-500:],
+                    diagnostic.decode("utf-8", errors="replace")[-500:],
                 )
-                predict_from_skymodel_wsclean(meridian_ms, sky)
+                predict_from_skymodel_wsclean(meridian_ms, sky, field="all")
 
         # ── 8. Amplitude+phase gaincal ────────────────────────────────────────
         log.info("Epoch gaincal [%s]: ap gaincal → %s", stem, Path(ap_table).name)
@@ -559,9 +709,8 @@ def calibrate_epoch(
             solint="inf",
             minsnr=3.0,
             gaintype="G",
-            gaintable=[bp_table, *_precond, p_table],
-            interp=["nearest", *_precond_interp, "linear"],
-            **( {"spwmap": [[], *_precond_spwmap, []]} if _precond_spwmap else {} ),
+            gaintable=[bp_table],
+            interp=["nearest"],
         )
         if not os.path.exists(ap_table):
             log.error("Epoch gaincal [%s]: ap solve produced no table", stem)
@@ -570,6 +719,15 @@ def calibrate_epoch(
                 EpochGaincalStatus.SOLVER_NO_TABLE,
                 "amplitude+phase gaincal produced no table (likely all solutions flagged at minsnr=3.0)",
             )
+
+        ap_stats = _gain_flag_fractions(ap_table, bp_table)
+        log.info("Epoch gaincal [%s]: ap.G %s", stem, _format_gain_flag_stats(ap_stats))
+        if float(ap_stats["effective_fraction"]) > GAINCAL_FLAG_FRACTION_LIMIT:
+            reason = (
+                f"ap.G {_format_gain_flag_stats(ap_stats)} exceeds "
+                f"{GAINCAL_FLAG_FRACTION_LIMIT * 100:.0f}% limit"
+            )
+            return EpochGaincalResult(None, EpochGaincalStatus.LOW_SNR, reason)
 
         log.info("Epoch gaincal [%s]: SUCCESS → %s", stem, ap_table)
         return EpochGaincalResult(ap_table, EpochGaincalStatus.SOLVED, None)

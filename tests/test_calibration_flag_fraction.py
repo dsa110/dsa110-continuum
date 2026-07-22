@@ -95,3 +95,30 @@ class TestFlagFractionExcludingDeadReceptors:
         assert result["effective_flag_fraction"] == pytest.approx(expected_fraction)
         assert result["working_flagged"] == flagged_per_partial_receptor
         assert result["working_total"] == N_ANTENNAS * N_RECEPTORS * total_per_receptor
+
+    def test_gain_table_singleton_channel_keeps_receptor_axis(self):
+        antenna_ids = np.arange(4)
+        flags = np.zeros((4, 2, 1), dtype=bool)
+        flags[1, 0, 0] = True
+
+        result = _flag_fraction_excluding_dead_receptors(flags, antenna_ids)
+
+        assert result["dead_receptors"] == [(1, 0)]
+        assert result["working_receptor_count"] == 7
+
+    def test_independent_exclusions_do_not_hide_new_candidate_failure(self):
+        antenna_ids = np.arange(4)
+        flags = np.zeros((4, 2, 1), dtype=bool)
+        flags[0, 0, 0] = True
+        flags[1, 1, 0] = True
+
+        result = _flag_fraction_excluding_dead_receptors(
+            flags,
+            antenna_ids,
+            excluded_receptors={(0, 0)},
+        )
+
+        assert result["dead_receptors"] == [(0, 0)]
+        assert result["working_flagged"] == 1
+        assert result["working_total"] == 7
+        assert result["effective_flag_fraction"] == pytest.approx(1 / 7)

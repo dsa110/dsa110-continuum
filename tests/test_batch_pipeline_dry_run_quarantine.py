@@ -15,10 +15,44 @@ import json
 import sqlite3
 import sys
 from pathlib import Path
+from unittest import mock
 
 # scripts/ on sys.path so we can import batch_pipeline helpers
 _REPO_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "scripts"))
+
+
+def test_tile_retry_does_not_force_recalibrate_collapsed_ms(monkeypatch):
+    import batch_pipeline as bp
+
+    submitted_force_flags = []
+    results = [
+        {"status": "failed", "failed_stage": "imaging", "error": "first failure"},
+        {"status": "imaged"},
+    ]
+
+    class FakeFuture:
+        def result(self, timeout):
+            return results.pop(0)
+
+    class FakePool:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def submit(self, function, *args):
+            submitted_force_flags.append(args[-1])
+            return FakeFuture()
+
+    monkeypatch.setattr(bp, "ProcessPoolExecutor", lambda max_workers: FakePool())
+    monkeypatch.setattr(bp.time, "sleep", mock.Mock())
+
+    result = bp.process_tile_safe({}, "/ms/tile.ms", True, 30, True, force_recal=True)
+
+    assert result.ok
+    assert submitted_force_flags == [True, False]
 
 
 # ─── _compute_quarantine_set ────────────────────────────────────────────────

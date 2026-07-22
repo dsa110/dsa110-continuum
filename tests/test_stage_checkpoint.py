@@ -9,10 +9,16 @@ from pathlib import Path
 from unittest import mock
 
 import numpy as np
+import pytest
 from astropy.io import fits
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 from mosaic_day import TileConfig, _applycal_sentinel_path, _fits_is_valid
+
+
+@pytest.fixture(autouse=True)
+def _mock_field_normalization(monkeypatch):
+    monkeypatch.setattr("mosaic_day._normalize_meridian_for_imaging", mock.Mock())
 
 # ── Sentinel path helpers ────────────────────────────────────────────────────
 
@@ -126,6 +132,38 @@ class TestProcessMsSentinel:
     @mock.patch("mosaic_day.image_ms")
     @mock.patch("mosaic_day.apply_to_target")
     @mock.patch("mosaic_day.phaseshift_ms")
+    @mock.patch(
+        "dsa110_continuum.validation.image_validator.validate_image_quality",
+        return_value=(True, []),
+    )
+    def test_force_recal_rebuilds_collapsed_meridian(
+        self, _mock_qa, mock_phaseshift, _mock_applycal, mock_image, tmp_path
+    ):
+        from mosaic_day import process_ms
+
+        cfg = _make_cfg(tmp_path)
+        ms_path = os.path.join(cfg.ms_dir, "2026-01-25T21:17:33.ms")
+        meridian = ms_path.replace(".ms", "_meridian.ms")
+        _make_valid_ms(ms_path)
+        _make_valid_ms(meridian)
+        Path(_applycal_sentinel_path(meridian)).write_text("applycal completed\n")
+
+        def fake_phaseshift(**kwargs):
+            _make_valid_ms(kwargs["output_ms"])
+
+        mock_phaseshift.side_effect = fake_phaseshift
+        mock_image.side_effect = lambda **kwargs: _write_valid_fits(
+            kwargs["imagename"] + "-image.fits"
+        )
+
+        result = process_ms(ms_path, cfg, keep_intermediates=True, force_recal=True)
+
+        assert result.ok
+        mock_phaseshift.assert_called_once()
+
+    @mock.patch("mosaic_day.image_ms")
+    @mock.patch("mosaic_day.apply_to_target")
+    @mock.patch("mosaic_day.phaseshift_ms")
     @mock.patch("dsa110_continuum.validation.image_validator.validate_image_quality", return_value=(True, []))
     def test_skips_applycal_when_sentinel_exists(
         self, _mock_qa, mock_phaseshift, mock_applycal, mock_image, tmp_path
@@ -184,6 +222,7 @@ class TestProcessMsSentinel:
         result = process_ms(ms_path, cfg, keep_intermediates=True)
         assert result.ok
         mock_image.assert_called_once()
+        assert mock_image.call_args.kwargs["field"] == "0"
 
     @mock.patch("mosaic_day.image_ms")
     @mock.patch("mosaic_day.apply_to_target", side_effect=RuntimeError("CASA crash"))

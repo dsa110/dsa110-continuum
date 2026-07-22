@@ -7,7 +7,7 @@ def test_select_calibration_tile_from_ms_picks_richer_tile():
     """Should return the MS whose central pointing has more catalog sources."""
     from dsa110_continuum.calibration.epoch_gaincal import select_calibration_tile_from_ms
 
-    # 12 tiles: centre pair is indices 5 (mid-1) and 6 (mid) where mid = 12//2 = 6
+    # The all-tile fallback should select index 6 because it has more sources.
     fake_paths = [f"/fake/tile_{i:02d}.ms" for i in range(12)]
 
     def fake_phase_center(ms_path):
@@ -19,6 +19,9 @@ def test_select_calibration_tile_from_ms_picks_richer_tile():
         return 8 if pointing_ra_deg == 60.0 else 3
 
     with patch(
+        "dsa110_continuum.calibration.epoch_gaincal._find_vla_calibrator_in_ms",
+        side_effect=RuntimeError("no VLA calibrator"),
+    ), patch(
         "dsa110_continuum.calibration.epoch_gaincal._read_ms_phase_center",
         side_effect=fake_phase_center,
     ), patch(
@@ -31,10 +34,10 @@ def test_select_calibration_tile_from_ms_picks_richer_tile():
 
 
 def test_select_calibration_tile_works_with_11_tiles():
-    """Should work with 11 tiles (centre pair is indices 4 and 5)."""
+    """Should rank every tile when an epoch has an odd tile count."""
     from dsa110_continuum.calibration.epoch_gaincal import select_calibration_tile_from_ms
 
-    # 11 tiles: mid = 11//2 = 5, centre pair is indices 4 and 5
+    # The all-tile fallback should select index 5 because it has more sources.
     fake_paths = [f"/fake/tile_{i:02d}.ms" for i in range(11)]
 
     def fake_phase_center(ms_path):
@@ -46,6 +49,9 @@ def test_select_calibration_tile_works_with_11_tiles():
         return 9 if pointing_ra_deg == 50.0 else 2
 
     with patch(
+        "dsa110_continuum.calibration.epoch_gaincal._find_vla_calibrator_in_ms",
+        side_effect=RuntimeError("no VLA calibrator"),
+    ), patch(
         "dsa110_continuum.calibration.epoch_gaincal._read_ms_phase_center",
         side_effect=fake_phase_center,
     ), patch(
@@ -66,13 +72,89 @@ def test_select_calibration_tile_raises_on_too_few():
         select_calibration_tile_from_ms(["/fake/a.ms"])
 
 
+def test_select_calibration_tile_prefers_bright_vla_calibrator_outside_center():
+    """A bright calibrator transit should beat the geometric center pair."""
+    from dsa110_continuum.calibration.epoch_gaincal import select_calibration_tile_from_ms
+
+    fake_paths = [f"/fake/tile_{i:02d}.ms" for i in range(12)]
+
+    def fake_calibrator_match(ms_path, **kwargs):
+        idx = int(Path(ms_path).stem.split("_")[1])
+        if idx == 2:
+            return ("2253+161", 12.66, 0.20)
+        if idx == 6:
+            return ("faint-cal", 1.0, 0.05)
+        raise RuntimeError("no calibrator")
+
+    with patch(
+        "dsa110_continuum.calibration.epoch_gaincal._find_vla_calibrator_in_ms",
+        side_effect=fake_calibrator_match,
+    ), patch(
+        "dsa110_continuum.calibration.epoch_gaincal.count_bright_sources_in_tile",
+    ) as source_count:
+        result = select_calibration_tile_from_ms(fake_paths)
+
+    assert result == "/fake/tile_02.ms"
+    source_count.assert_not_called()
+
+
+def test_select_calibration_tile_uses_nearest_tile_for_same_calibrator():
+    """When one calibrator spans tiles, select its closest tile midpoint."""
+    from dsa110_continuum.calibration.epoch_gaincal import select_calibration_tile_from_ms
+
+    fake_paths = [f"/fake/tile_{i:02d}.ms" for i in range(4)]
+
+    def fake_calibrator_match(ms_path, **kwargs):
+        idx = int(Path(ms_path).stem.split("_")[1])
+        separations = {1: 0.65, 2: 0.18}
+        if idx in separations:
+            return ("2253+161", 12.66, separations[idx])
+        raise RuntimeError("no calibrator")
+
+    with patch(
+        "dsa110_continuum.calibration.epoch_gaincal._find_vla_calibrator_in_ms",
+        side_effect=fake_calibrator_match,
+    ):
+        result = select_calibration_tile_from_ms(fake_paths)
+
+    assert result == "/fake/tile_02.ms"
+
+
+def test_select_calibration_tile_counts_all_tiles_without_vla_catalog():
+    """Catalog-count fallback must consider non-central tiles too."""
+    from dsa110_continuum.calibration.epoch_gaincal import select_calibration_tile_from_ms
+
+    fake_paths = [f"/fake/tile_{i:02d}.ms" for i in range(12)]
+
+    def fake_phase_center(ms_path):
+        idx = int(Path(ms_path).stem.split("_")[1])
+        return (float(idx), 16.1)
+
+    with patch(
+        "dsa110_continuum.calibration.epoch_gaincal._find_vla_calibrator_in_ms",
+        side_effect=FileNotFoundError("VLA catalog missing"),
+    ), patch(
+        "dsa110_continuum.calibration.epoch_gaincal._read_ms_phase_center",
+        side_effect=fake_phase_center,
+    ), patch(
+        "dsa110_continuum.calibration.epoch_gaincal.count_bright_sources_in_tile",
+        side_effect=lambda ra, dec, **kwargs: 20 if ra == 2.0 else 1,
+    ):
+        result = select_calibration_tile_from_ms(fake_paths)
+
+    assert result == "/fake/tile_02.ms"
+
+
 def test_select_calibration_tile_defaults_to_central_tile_on_failure():
-    """Falls back to n//2 (geometric centre) if source counting raises for both candidates."""
+    """Falls back to n//2 if source counting fails for every tile."""
     from dsa110_continuum.calibration.epoch_gaincal import select_calibration_tile_from_ms
 
     # 12 tiles: n//2 = 6
     fake_paths_12 = [f"/fake/tile_{i:02d}.ms" for i in range(12)]
     with patch(
+        "dsa110_continuum.calibration.epoch_gaincal._find_vla_calibrator_in_ms",
+        side_effect=RuntimeError("no VLA calibrator"),
+    ), patch(
         "dsa110_continuum.calibration.epoch_gaincal._read_ms_phase_center",
         side_effect=RuntimeError("casacore unavailable"),
     ):
@@ -82,11 +164,37 @@ def test_select_calibration_tile_defaults_to_central_tile_on_failure():
     # 6 tiles: n//2 = 3
     fake_paths_6 = [f"/fake/tile_{i:02d}.ms" for i in range(6)]
     with patch(
+        "dsa110_continuum.calibration.epoch_gaincal._find_vla_calibrator_in_ms",
+        side_effect=RuntimeError("no VLA calibrator"),
+    ), patch(
         "dsa110_continuum.calibration.epoch_gaincal._read_ms_phase_center",
         side_effect=RuntimeError("casacore unavailable"),
     ):
         result_6 = select_calibration_tile_from_ms(fake_paths_6)
     assert result_6 == "/fake/tile_03.ms"
+
+
+def test_count_bright_sources_falls_back_to_nvss_when_vlass_missing():
+    """A missing VLASS strip database must not prevent the NVSS query."""
+    import pandas as pd
+    from dsa110_continuum.calibration.model import count_bright_sources_in_tile
+
+    calls = []
+
+    def fake_query(*, catalog_type, **kwargs):
+        calls.append(catalog_type)
+        if catalog_type == "vlass":
+            raise FileNotFoundError("missing VLASS strip database")
+        return pd.DataFrame([{"ra_deg": 343.49, "dec_deg": 16.15}])
+
+    with patch(
+        "dsa110_continuum.calibration.catalogs.query_catalog_sources",
+        side_effect=fake_query,
+    ):
+        result = count_bright_sources_in_tile(343.49, 16.15)
+
+    assert result == 1
+    assert calls[:2] == ["vlass", "nvss"]
 
 
 def _make_exists_fn(meridian_ms: str, *, ap_table: str | None = None) -> object:
@@ -117,7 +225,7 @@ def test_calibrate_epoch_returns_exception_status_on_predict_failure():
 
     with tempfile.TemporaryDirectory() as work_dir:
         meridian_ms = str(Path(work_dir) / "tile_05_meridian.ms")
-        ap_table   = str(Path(work_dir) / "tile_05.ap.G")
+        ap_table   = str(Path(work_dir) / "tile_05.direct_first.ap.G")
         with patch(
             "dsa110_continuum.calibration.epoch_gaincal.select_calibration_tile_from_ms",
             return_value="/fake/tile_05.ms",
@@ -167,7 +275,7 @@ def test_calibrate_epoch_returns_low_snr_on_empty_sky_model():
 
     with tempfile.TemporaryDirectory() as work_dir:
         meridian_ms = str(Path(work_dir) / "tile_05_meridian.ms")
-        ap_table   = str(Path(work_dir) / "tile_05.ap.G")
+        ap_table   = str(Path(work_dir) / "tile_05.direct_first.ap.G")
         with patch(
             "dsa110_continuum.calibration.epoch_gaincal.select_calibration_tile_from_ms",
             return_value="/fake/tile_05.ms",
@@ -200,7 +308,7 @@ def test_process_ms_force_recal_calls_applycal_even_when_data_exists():
     import importlib
     import inspect
 
-    sys.path.insert(0, "/data/dsa110-continuum/scripts")
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
     md = importlib.import_module("mosaic_day")
     sig = inspect.signature(md.process_ms)
     assert "force_recal" in sig.parameters, "process_ms must accept force_recal"
@@ -246,7 +354,7 @@ def test_wsclean_skipped_when_ms_heavily_flagged():
 
     with tempfile.TemporaryDirectory() as work_dir:
         meridian_ms = str(Path(work_dir) / "tile_03_meridian.ms")
-        ap_table   = str(Path(work_dir) / "tile_03.ap.G")
+        ap_table   = str(Path(work_dir) / "tile_03.direct_first.ap.G")
         with patch(
             "dsa110_continuum.calibration.epoch_gaincal.select_calibration_tile_from_ms",
             return_value="/fake/tile_03.ms",
@@ -265,6 +373,13 @@ def test_wsclean_skipped_when_ms_heavily_flagged():
         ) as mock_predict, patch(
             "dsa110_continuum.calibration.epoch_gaincal._ms_flag_fraction",
             return_value=0.72,  # above 60% threshold
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal._gain_flag_fractions",
+            return_value={"raw_fraction": 1 / 3, "effective_fraction": 0.07,
+                          "baseline_valid": True},
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal._modeled_field_count",
+            return_value=(1, 1),
         ), patch(
             "dsa110_continuum.calibration.casa_service.CASAService",
             return_value=mock_service,
@@ -294,7 +409,7 @@ def test_wsclean_runs_when_flag_fraction_below_limit():
 
     with tempfile.TemporaryDirectory() as work_dir:
         meridian_ms = str(Path(work_dir) / "tile_03_meridian.ms")
-        ap_table   = str(Path(work_dir) / "tile_03.ap.G")
+        ap_table   = str(Path(work_dir) / "tile_03.direct_first.ap.G")
         with patch(
             "dsa110_continuum.calibration.epoch_gaincal.select_calibration_tile_from_ms",
             return_value="/fake/tile_03.ms",
@@ -314,6 +429,13 @@ def test_wsclean_runs_when_flag_fraction_below_limit():
             "dsa110_continuum.calibration.epoch_gaincal._ms_flag_fraction",
             return_value=0.32,  # well below 60% threshold
         ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal._gain_flag_fractions",
+            return_value={"raw_fraction": 1 / 3, "effective_fraction": 0.07,
+                          "baseline_valid": True},
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal._modeled_field_count",
+            return_value=(24, 24),
+        ), patch(
             "dsa110_continuum.calibration.casa_service.CASAService",
             return_value=mock_service,
         ), patch(
@@ -329,8 +451,8 @@ def test_wsclean_runs_when_flag_fraction_below_limit():
     assert "wsclean" in mock_subprocess.call_args[0][0][0]
 
 
-def test_preconditioner_table_threaded_into_downstream_solves():
-    """precond.G must appear in gaintable of p.G and ap.G solves when it succeeds."""
+def test_direct_pass_skips_preconditioner():
+    """A BP-relative direct pass skips rescue, while a bad ap.G still fails."""
     import tempfile
     from dsa110_continuum.calibration.epoch_gaincal import calibrate_epoch
 
@@ -342,97 +464,96 @@ def test_preconditioner_table_threaded_into_downstream_solves():
     wsclean_ok.returncode = 0
 
     with tempfile.TemporaryDirectory() as work_dir:
-        meridian_ms    = str(Path(work_dir) / "tile_03_meridian.ms")
-        precond_table  = str(Path(work_dir) / "tile_03.precond.G")
-        ap_table       = str(Path(work_dir) / "tile_03.ap.G")
+        ap_table       = str(Path(work_dir) / "tile_03.direct_first.ap.G")
 
         # os.path.exists: False for ap_table (no cache), True for everything else
-        # (meridian MS, precond table, p table all "exist" after their solves)
+        # until the ap solve has run; intermediate tables exist after their solves.
+        def _exists(p: str) -> bool:
+            return str(p) != ap_table or mock_service.gaincal.call_count >= 2
+
+        with patch(
+            "dsa110_continuum.calibration.epoch_gaincal.select_calibration_tile_from_ms",
+            return_value="/fake/tile_03.ms",
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal.phaseshift_ms",
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal.apply_to_target",
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal._read_ms_phase_center",
+            return_value=(44.89, 16.08),
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal.make_unified_skymodel",
+            return_value=mock_sky,
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal.predict_from_skymodel_wsclean",
+        ) as mock_predict, patch(
+            "dsa110_continuum.calibration.epoch_gaincal._ms_flag_fraction",
+            return_value=0.25,
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal._gain_flag_fractions",
+            side_effect=[
+                {"raw_fraction": 1 / 3, "effective_fraction": 0.07,
+                 "baseline_valid": True},
+                {"raw_fraction": 0.5, "effective_fraction": 0.5,
+                 "baseline_valid": True},
+            ],
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal._modeled_field_count",
+            return_value=(24, 24),
+        ), patch(
+            "dsa110_continuum.calibration.casa_service.CASAService",
+            return_value=mock_service,
+        ), patch(
+            "shutil.which", return_value="/usr/bin/wsclean",
+        ), patch(
+            "subprocess.run", return_value=wsclean_ok,
+        ) as mock_subprocess, patch(
+            "os.path.exists", side_effect=_exists,
+        ):
+            result = calibrate_epoch(fake_paths, "/fake/bp.b", work_dir)
+
+    gaincal_calls = mock_service.gaincal.call_args_list
+    assert len(gaincal_calls) == 2
+    direct_call, ap_call = gaincal_calls
+    assert direct_call.kwargs["gaintable"] == ["/fake/bp.b"]
+    assert direct_call.kwargs["solint"] == "inf"
+    assert "combine" not in direct_call.kwargs
+    assert all(call.kwargs.get("solint") != "60s" for call in gaincal_calls)
+    assert ap_call.kwargs["gaintable"] == ["/fake/bp.b"]
+    assert ap_call.kwargs["calmode"] == "ap"
+    assert mock_predict.call_args_list[0].kwargs["field"] == "all"
+    image_cmd = mock_subprocess.call_args.args[0]
+    assert "-reorder" in image_cmd
+    assert image_cmd[image_cmd.index("-mgain") + 1] == "0.8"
+    assert image_cmd[image_cmd.index("-field") + 1] == "all"
+    assert image_cmd[image_cmd.index("-model-column") + 1] == "MODEL_DATA"
+    assert "-update-model-required" in image_cmd
+    assert "-save-model-column" not in image_cmd
+    assert "-no-update-model-required" not in image_cmd
+    assert result.status.value == "low_snr"
+    assert "ap.G" in (result.reason or "")
+
+
+def test_rescue_must_strictly_improve_direct_fraction():
+    """An equal-quality rescue must remain LOW_SNR and never reach ap.G."""
+    import tempfile
+    from dsa110_continuum.calibration.epoch_gaincal import calibrate_epoch
+
+    fake_paths = [f"/fake/tile_{i:02d}.ms" for i in range(6)]
+    mock_sky = MagicMock()
+    mock_sky.Ncomponents = 5
+    mock_service = MagicMock()
+    with tempfile.TemporaryDirectory() as work_dir:
+        ap_table      = str(Path(work_dir) / "tile_03.direct_first.ap.G")
+
         def _exists(p: str) -> bool:
             return str(p) != ap_table
 
-        with patch(
-            "dsa110_continuum.calibration.epoch_gaincal.select_calibration_tile_from_ms",
-            return_value="/fake/tile_03.ms",
-        ), patch(
-            "dsa110_continuum.calibration.epoch_gaincal.phaseshift_ms",
-        ), patch(
-            "dsa110_continuum.calibration.epoch_gaincal.apply_to_target",
-        ), patch(
-            "dsa110_continuum.calibration.epoch_gaincal._read_ms_phase_center",
-            return_value=(44.89, 16.08),
-        ), patch(
-            "dsa110_continuum.calibration.epoch_gaincal.make_unified_skymodel",
-            return_value=mock_sky,
-        ), patch(
-            "dsa110_continuum.calibration.epoch_gaincal.predict_from_skymodel_wsclean",
-        ), patch(
-            "dsa110_continuum.calibration.epoch_gaincal._ms_flag_fraction",
-            return_value=0.25,
-        ), patch(
-            "dsa110_continuum.calibration.casa_service.CASAService",
-            return_value=mock_service,
-        ), patch(
-            "shutil.which", return_value="/usr/bin/wsclean",
-        ), patch(
-            "subprocess.run", return_value=wsclean_ok,
-        ), patch(
-            "os.path.exists", side_effect=_exists,
-        ):
-            calibrate_epoch(fake_paths, "/fake/bp.b", work_dir)
-
-    gaincal_calls = mock_service.gaincal.call_args_list
-    assert len(gaincal_calls) == 3, f"expected 3 gaincal calls, got {len(gaincal_calls)}"
-
-    precond_call, p_call, ap_call = gaincal_calls
-
-    # Pre-conditioner solve
-    assert precond_call.kwargs["solint"] == "60s"
-    assert precond_call.kwargs["combine"] == "spw"
-    assert precond_call.kwargs["calmode"] == "p"
-    assert precond_call.kwargs["gaintable"] == ["/fake/bp.b"]
-
-    # p.G solve must include precond table
-    assert precond_table in p_call.kwargs["gaintable"], \
-        "precond table must be in p.G gaintable"
-    assert "/fake/bp.b" in p_call.kwargs["gaintable"]
-    assert p_call.kwargs["solint"] == "inf"
-
-    # ap.G solve must include both precond table and p table
-    ap_gt = ap_call.kwargs["gaintable"]
-    assert precond_table in ap_gt, "precond table must be in ap.G gaintable"
-    assert "/fake/bp.b" in ap_gt
-    assert ap_call.kwargs["calmode"] == "ap"
-
-
-def test_preconditioner_failure_does_not_abort_epoch_gaincal():
-    """If precond solve fails entirely, the main p.G and ap.G solves must still run."""
-    import tempfile
-    from dsa110_continuum.calibration.epoch_gaincal import calibrate_epoch
-
-    fake_paths = [f"/fake/tile_{i:02d}.ms" for i in range(6)]
-    mock_sky = MagicMock()
-    mock_sky.Ncomponents = 5
-    mock_service = MagicMock()
-    # Make the first gaincal call (precond) raise; subsequent calls succeed
-    call_count = {"n": 0}
-    def _gaincal_side_effect(**kw):
-        call_count["n"] += 1
-        if call_count["n"] == 1:
-            raise RuntimeError("CASA unavailable for precond")
-    mock_service.gaincal.side_effect = _gaincal_side_effect
-    wsclean_ok = MagicMock()
-    wsclean_ok.returncode = 0
-
-    with tempfile.TemporaryDirectory() as work_dir:
-        meridian_ms   = str(Path(work_dir) / "tile_03_meridian.ms")
-        ap_table      = str(Path(work_dir) / "tile_03.ap.G")
-        p_table       = str(Path(work_dir) / "tile_03.p.G")
-        precond_table = str(Path(work_dir) / "tile_03.precond.G")
-
-        def _exists(p: str) -> bool:
-            # ap and precond tables never exist; meridian MS and p table exist
-            return str(p) not in (ap_table, precond_table)
+        table = MagicMock()
+        table.__enter__.return_value = table
+        table.__exit__.return_value = False
+        table.colnames.return_value = ["MODEL_DATA"]
+        table.nrows.return_value = 16
 
         with patch(
             "dsa110_continuum.calibration.epoch_gaincal.select_calibration_tile_from_ms",
@@ -450,27 +571,32 @@ def test_preconditioner_failure_does_not_abort_epoch_gaincal():
         ), patch(
             "dsa110_continuum.calibration.epoch_gaincal.predict_from_skymodel_wsclean",
         ), patch(
-            "dsa110_continuum.calibration.epoch_gaincal._ms_flag_fraction",
-            return_value=0.25,
-        ), patch(
             "dsa110_continuum.calibration.casa_service.CASAService",
             return_value=mock_service,
         ), patch(
-            "shutil.which", return_value="/usr/bin/wsclean",
+            "dsa110_continuum.calibration.epoch_gaincal._gain_flag_fractions",
+            side_effect=[
+                {"raw_fraction": 0.4, "effective_fraction": 0.4,
+                 "baseline_valid": True},
+                {"raw_fraction": 0.4, "effective_fraction": 0.4,
+                 "baseline_valid": True},
+            ],
         ), patch(
-            "subprocess.run", return_value=wsclean_ok,
+            "dsa110_continuum.calibration.epoch_gaincal._modeled_field_count",
+            return_value=(24, 24),
+        ), patch(
+            "dsa110_continuum.adapters.casa_tables.table",
+            return_value=table,
         ), patch(
             "os.path.exists", side_effect=_exists,
         ):
-            calibrate_epoch(fake_paths, "/fake/bp.b", work_dir)
+            result = calibrate_epoch(fake_paths, "/fake/bp.b", work_dir)
 
-    # All three gaincal calls attempted despite the first raising
     assert mock_service.gaincal.call_count == 3
-
-    # p.G and ap.G gaintables must NOT include the precond table (it doesn't exist)
-    _, p_call, ap_call = mock_service.gaincal.call_args_list
-    assert precond_table not in p_call.kwargs["gaintable"]
-    assert precond_table not in ap_call.kwargs["gaintable"]
+    assert result.status.value == "low_snr"
+    assert result.g_table is None
+    assert "did not strictly improve" in (result.reason or "")
+    assert all(call.kwargs.get("calmode") != "ap" for call in mock_service.gaincal.call_args_list)
 
 
 def test_epoch_gaincal_forwards_selected_rfi_mode():
@@ -486,7 +612,7 @@ def test_epoch_gaincal_forwards_selected_rfi_mode():
 
     with tempfile.TemporaryDirectory() as work_dir:
         meridian_ms = str(Path(work_dir) / "tile_03_meridian.ms")
-        ap_table   = str(Path(work_dir) / "tile_03.ap.G")
+        ap_table   = str(Path(work_dir) / "tile_03.direct_first.ap.G")
         with patch(
             "dsa110_continuum.calibration.epoch_gaincal.select_calibration_tile_from_ms",
             return_value="/fake/tile_03.ms",
@@ -527,7 +653,6 @@ def test_gaincal_returns_low_snr_when_p_table_heavily_flagged():
     the manifest records the operational reason (not a code-path fall-back).
     """
     import tempfile
-    import numpy as np
     from dsa110_continuum.calibration.epoch_gaincal import (
         EpochGaincalStatus,
         calibrate_epoch,
@@ -538,17 +663,8 @@ def test_gaincal_returns_low_snr_when_p_table_heavily_flagged():
     mock_sky.Ncomponents = 5
     mock_service = MagicMock()
 
-    # Build a mock casatools.table() that returns a FLAG array that is 35% True.
-    flags_35pct = np.zeros((2, 1, 100), dtype=bool)
-    flags_35pct[:, :, :35] = True   # 35 of 100 rows flagged per pol/spw
-
-    mock_tb = MagicMock()
-    mock_tb.getcol.return_value = flags_35pct
-
     with tempfile.TemporaryDirectory() as work_dir:
-        meridian_ms = str(Path(work_dir) / "tile_03_meridian.ms")
-        ap_table    = str(Path(work_dir) / "tile_03.ap.G")
-        p_table     = str(Path(work_dir) / "tile_03.p.G")
+        ap_table    = str(Path(work_dir) / "tile_03.direct_first.ap.G")
 
         def _exists(p: str) -> bool:
             return str(p) not in (ap_table,)   # p.G "exists" after the solve
@@ -569,19 +685,19 @@ def test_gaincal_returns_low_snr_when_p_table_heavily_flagged():
         ), patch(
             "dsa110_continuum.calibration.epoch_gaincal.predict_from_skymodel_wsclean",
         ), patch(
-            "dsa110_continuum.calibration.epoch_gaincal._ms_flag_fraction",
-            return_value=0.25,
-        ), patch(
             "dsa110_continuum.calibration.casa_service.CASAService",
             return_value=mock_service,
         ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal._gain_flag_fractions",
+            return_value={"raw_fraction": 0.35, "effective_fraction": 0.35,
+                          "baseline_valid": True},
+        ), patch(
+            "dsa110_continuum.calibration.epoch_gaincal._modeled_field_count",
+            return_value=(1, 1),
+        ), patch(
             "os.path.exists", side_effect=_exists,
         ):
-            import sys as _sys
-            mock_casatools = MagicMock()
-            mock_casatools.table.return_value = mock_tb
-            with patch.dict(_sys.modules, {"casatools": mock_casatools}):
-                result = calibrate_epoch(fake_paths, "/fake/bp.b", work_dir)
+            result = calibrate_epoch(fake_paths, "/fake/bp.b", work_dir)
 
     assert result.g_table is None, (
         "calibrate_epoch() must return g_table=None when p.G flagged fraction > 30%"
@@ -592,3 +708,4 @@ def test_gaincal_returns_low_snr_when_p_table_heavily_flagged():
     assert "30%" in (result.reason or ""), (
         "result.reason must include the threshold so the manifest gate can quote it"
     )
+    assert mock_service.gaincal.call_count == 1

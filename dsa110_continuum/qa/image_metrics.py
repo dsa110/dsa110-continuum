@@ -16,7 +16,12 @@ def _maybe_to_gpu(array: np.ndarray, *, min_elements: int = 1_000_000):
         min_elements=settings.gpu.min_array_size,
     )
     if is_gpu and array.size >= min_elements:
-        return xp.asarray(array), xp, True
+        try:
+            backend_array = xp.asarray(array)
+            xp.asnumpy(xp.abs(backend_array.ravel()[:1]))
+            return backend_array, xp, True
+        except Exception:
+            return array, np, False
     return array, np, False
 
 

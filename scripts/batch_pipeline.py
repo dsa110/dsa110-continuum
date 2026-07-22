@@ -1126,9 +1126,9 @@ def process_tile_safe(
     import mosaic_day as _md
     tag = Path(ms_path).stem
 
-    def _attempt() -> _md.TileResult:
+    def _attempt(attempt_force_recal: bool) -> _md.TileResult:
         with ProcessPoolExecutor(max_workers=1) as pool:
-            fut = pool.submit(_run_process_ms, ms_path, cfg_dict, keep, force_recal)
+            fut = pool.submit(_run_process_ms, ms_path, cfg_dict, keep, attempt_force_recal)
             try:
                 result_dict = fut.result(timeout=timeout_sec)
                 return _md.TileResult.from_dict(result_dict)
@@ -1139,11 +1139,11 @@ def process_tile_safe(
                 return _md.TileResult("failed", failed_stage="timeout",
                                       error=f"exceeded {timeout_sec}s")
 
-    result = _attempt()
+    result = _attempt(force_recal)
     if not result.ok and retry:
         log.warning("[%s] First attempt failed — waiting 60s then retrying once", tag)
         time.sleep(60)
-        result = _attempt()
+        result = _attempt(False)
         if not result.ok:
             log.error("[%s] Retry also failed — skipping tile", tag)
     return result
