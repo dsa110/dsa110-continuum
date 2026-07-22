@@ -1844,11 +1844,11 @@ def _resolve_vlass_catalog_path(
     dec_rounded = round(float(dec_deg), 1)
     strip_name = f"vlass_dec{dec_rounded:+.1f}.sqlite3"
     catalog_dirs = [
+        get_env_path("CONTIMG_BASE_DIR", default="/data/dsa110-contimg")
+        / "state/catalogs",
         Path("/data/dsa110-contimg/state/catalogs"),
         Path("/app/state/catalogs"),
         Path.cwd() / "state/catalogs",
-        get_env_path("CONTIMG_BASE_DIR", default="/data/dsa110-contimg")
-        / "state/catalogs",
     ]
 
     for catalog_dir in catalog_dirs:

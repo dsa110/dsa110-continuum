@@ -18,13 +18,23 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-INPUT_DIR = Path("/data/incoming")
-MS_DIR = Path("/stage/dsa110-continuum/ms")
-PROC_MS_DIR = Path("/data/dsa110-proc/ms")
-PRODUCTS_DIR = Path("/data/dsa110-proc/products")
-IMAGE_DIR = Path("/stage/dsa110-continuum/images")
-DB_PATH = REPO / "state/db/pipeline.sqlite3"
-CAMPAIGN_DIR = REPO / "outputs/jan-apr-mosaic-campaign-2026-07-21"
+INPUT_DIR = Path(os.environ.get("DSA110_INPUT_DIR", "/data/incoming"))
+MS_DIR = Path(os.environ.get("DSA110_MS_DIR", "/stage/dsa110-continuum/ms"))
+PROC_MS_DIR = Path(os.environ.get("DSA110_PROC_MS_DIR", "/data/dsa110-proc/ms"))
+PRODUCTS_MOSAIC_DIR = Path(
+    os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics")
+)
+PRODUCTS_DIR = PRODUCTS_MOSAIC_DIR.parent
+IMAGE_DIR = Path(
+    os.environ.get("DSA110_STAGE_IMAGE_BASE", "/stage/dsa110-continuum/images")
+)
+DB_PATH = Path(os.environ.get("PIPELINE_DB", REPO / "state/db/pipeline.sqlite3"))
+CAMPAIGN_DIR = Path(
+    os.environ.get(
+        "DSA110_CAMPAIGN_DIR",
+        REPO / "outputs/jan-apr-mosaic-campaign-2026-07-21",
+    )
+)
 STATUS_PATH = CAMPAIGN_DIR / "status.json"
 FILE_RE = re.compile(r"^(2026-(?:01|02|03|04)-\d{2})T.*_sb\d+\.hdf5$")
 NVME_RESERVE_BYTES = 20 * 1024**3
@@ -99,14 +109,50 @@ def run(command: list[str]) -> None:
     subprocess.run(command, cwd=REPO, check=True)
 
 
+def _select_ms_for_mosaic_hour(ms_paths: list[str], target_hour: int) -> list[str]:
+    """Keep one hourly core plus two tiles from each adjacent available hour."""
+    by_hour: dict[int, list[str]] = defaultdict(list)
+    for path in sorted(ms_paths):
+        try:
+            hour = datetime.strptime(Path(path).stem, "%Y-%m-%dT%H:%M:%S").hour
+        except ValueError:
+            continue
+        by_hour[hour].append(path)
+    if target_hour not in by_hour:
+        return []
+    hours = sorted(by_hour)
+    index = hours.index(target_hour)
+    selected = list(by_hour[target_hour])
+    if index:
+        selected = by_hour[hours[index - 1]][-2:] + selected
+    if index + 1 < len(hours):
+        selected.extend(by_hour[hours[index + 1]][:2])
+    return selected
+
+
+def _measurement_set_is_readable(ms_path: str) -> bool:
+    """Return whether the main table and essential subtables can be read."""
+    from dsa110_continuum.adapters import casa_tables as ct
+
+    try:
+        with ct.table(ms_path, readonly=True, ack=False) as table:
+            if table.nrows() == 0 or not {"DATA", "FLAG"}.issubset(table.colnames()):
+                return False
+        for subtable in ("FIELD", "SPECTRAL_WINDOW"):
+            with ct.table(f"{ms_path}::{subtable}", readonly=True, ack=False) as table:
+                if table.nrows() == 0:
+                    return False
+    except Exception:
+        return False
+    return True
+
+
 def _working_set_group_ids(
     date: str,
     target_hour: int,
     start_hour: int,
     end_hour: int,
 ) -> set[str]:
-    from batch_pipeline import select_ms_for_mosaic_hour
-
     query = """
         SELECT group_id
         FROM hdf5_files
@@ -126,7 +172,7 @@ def _working_set_group_ids(
     inventory_paths = [f"/inventory/{group_id}.ms" for group_id in group_ids]
     return {
         Path(path).stem
-        for path in select_ms_for_mosaic_hour(inventory_paths, target_hour)
+        for path in _select_ms_for_mosaic_hour(inventory_paths, target_hour)
     }
 
 
@@ -139,8 +185,6 @@ def _is_base_ms(path: Path) -> bool:
 
 
 def demote_inactive_nvme_ms(date: str, active_stems: set[str]) -> None:
-    from dsa110_continuum.calibration.epoch_gaincal import _measurement_set_is_readable
-
     for path in sorted(MS_DIR.glob(f"{date}T*.ms")):
         if not _is_base_ms(path) or path.stem in active_stems or path.is_symlink():
             continue
@@ -216,8 +260,6 @@ def _active_ms_paths(
     start_hour: int,
     end_hour: int,
 ) -> list[Path]:
-    from batch_pipeline import select_ms_for_mosaic_hour
-
     candidates = []
     for path in MS_DIR.glob(f"{date}T*.ms"):
         try:
@@ -226,7 +268,7 @@ def _active_ms_paths(
             continue
         if start_hour <= hour < end_hour:
             candidates.append(str(path))
-    return [Path(path) for path in select_ms_for_mosaic_hour(candidates, target_hour)]
+    return [Path(path) for path in _select_ms_for_mosaic_hour(candidates, target_hour)]
 
 
 def _allocated_bytes(path: Path) -> int:
@@ -243,8 +285,6 @@ def promote_working_set_to_nvme(
     start_hour: int,
     end_hour: int,
 ) -> None:
-    from dsa110_continuum.calibration.epoch_gaincal import _measurement_set_is_readable
-
     paths = _active_ms_paths(date, target_hour, start_hour, end_hour)
     slow_links: list[tuple[Path, Path, int]] = []
     for path in paths:
@@ -327,7 +367,7 @@ def mosaic_paths(date: str, hour: int) -> tuple[Path, Path]:
 
 def _manifest_paths(date: str, hour: int) -> tuple[Path, Path]:
     preserved = CAMPAIGN_DIR / f"{date}T{hour:02d}_{date}_manifest.json"
-    current = Path("/data/dsa110-proc/products/mosaics") / date / f"{date}_manifest.json"
+    current = PRODUCTS_MOSAIC_DIR / date / f"{date}_manifest.json"
     return preserved, current
 
 
@@ -353,11 +393,72 @@ def mosaic_is_valid(date: str, hour: int) -> bool:
 
 
 def preserve_run_metadata(date: str, hour: int) -> None:
-    products = Path("/data/dsa110-proc/products/mosaics") / date
-    for name in (f"{date}_manifest.json", f"{date}_run_summary.json", "run_report.md"):
+    products = PRODUCTS_MOSAIC_DIR / date
+    names = (f"{date}_manifest.json", f"{date}_run_summary.json", "run_report.md")
+    missing = [name for name in names if not (products / name).is_file()]
+    if missing:
+        raise FileNotFoundError(f"missing run metadata for {date}T{hour:02d}: {missing}")
+    for name in names:
         source = products / name
-        if source.exists():
-            shutil.copy2(source, CAMPAIGN_DIR / f"{date}T{hour:02d}_{name}")
+        shutil.copy2(source, CAMPAIGN_DIR / f"{date}T{hour:02d}_{name}")
+
+
+def preserved_run_metadata_complete(date: str, hour: int) -> bool:
+    prefix = CAMPAIGN_DIR / f"{date}T{hour:02d}_"
+    manifest_path = Path(f"{prefix}{date}_manifest.json")
+    summary_path = Path(f"{prefix}{date}_run_summary.json")
+    report_path = Path(f"{prefix}run_report.md")
+    if not all(path.is_file() for path in (manifest_path, summary_path, report_path)):
+        return False
+    try:
+        summary = json.loads(summary_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return False
+    label = f"{date}T{hour:02d}00"
+    summary_matches = any(
+        epoch.get("label") == label
+        and epoch.get("status") == "ok"
+        and epoch.get("qa_result") == "PASS"
+        for epoch in summary.get("epochs", [])
+    )
+    report_matches = f"| {hour:02d} | ok | PASS |" in report_path.read_text()
+    return strict_qa_passed(date, hour) and summary_matches and report_matches
+
+
+def photometry_path(date: str, hour: int) -> Path:
+    return PRODUCTS_MOSAIC_DIR / date / f"{date}T{hour:02d}00_forced_phot.csv"
+
+
+def accepted_artifacts_complete(date: str, hour: int) -> bool:
+    forced_phot = photometry_path(date, hour)
+    stacked = PRODUCTS_DIR / "lightcurves/lightcurves.parquet"
+    return (
+        mosaic_is_valid(date, hour)
+        and preserved_run_metadata_complete(date, hour)
+        and forced_phot.is_file()
+        and forced_phot.stat().st_size > 0
+        and stacked.is_file()
+        and stacked.stat().st_mtime_ns >= forced_phot.stat().st_mtime_ns
+    )
+
+
+def accepted_products_ready(date: str, hour: int) -> tuple[bool, str | None]:
+    try:
+        if not preserved_run_metadata_complete(date, hour):
+            preserve_run_metadata(date, hour)
+        if not preserved_run_metadata_complete(date, hour):
+            return False, "preserved run metadata does not match the accepted epoch"
+    except (OSError, ValueError) as exc:
+        return False, f"run metadata preservation failed: {exc}"
+    forced_phot = photometry_path(date, hour)
+    if not forced_phot.is_file() or forced_phot.stat().st_size == 0:
+        return False, "forced-photometry product is missing or empty"
+    if not refresh_lightcurves():
+        return False, "light-curve stack was not produced"
+    stacked = PRODUCTS_DIR / "lightcurves/lightcurves.parquet"
+    if not stacked.is_file() or stacked.stat().st_mtime_ns < forced_phot.stat().st_mtime_ns:
+        return False, "light-curve stack is older than forced photometry"
+    return True, None
 
 
 def refresh_lightcurves() -> bool:
@@ -371,7 +472,7 @@ def refresh_lightcurves() -> bool:
             str(PRODUCTS_DIR),
         ]
     )
-    return True
+    return (PRODUCTS_DIR / "lightcurves/lightcurves.parquet").is_file()
 
 
 def _last_base_ms_stems(date: str, hour: int, count: int = 2) -> list[str]:
@@ -423,6 +524,7 @@ def run_campaign(plan_only: bool) -> None:
         DSA110_CATALOG_DIR=str(REPO / "state/catalogs"),
         DSA110_MS_DIR=str(MS_DIR),
         DSA110_STAGE_IMAGE_BASE=str(IMAGE_DIR),
+        DSA110_PRODUCTS_BASE=str(PRODUCTS_MOSAIC_DIR),
     )
     write_status(state="indexing", error=None)
     index_inventory()
@@ -431,9 +533,10 @@ def run_campaign(plan_only: bool) -> None:
         f"{date}T{hour:02d}00"
         for date, hours in inventory.items()
         for hour in hours
-        if mosaic_is_valid(date, hour)
+        if accepted_artifacts_complete(date, hour)
     ]
     status = write_status(state="planned", dates=inventory, completed=accepted_existing)
+    completed_epochs = set(accepted_existing)
     failed_epochs = {
         str(item["epoch"]): item
         for item in status.get("failed_epochs", [])
@@ -463,7 +566,6 @@ def run_campaign(plan_only: bool) -> None:
                 run([*command, "--dry-run"])
                 write_status(state="imaging", date=date, target_hour=target_hour)
                 run(command)
-                preserve_run_metadata(date, target_hour)
                 if not mosaic_is_valid(date, target_hour):
                     accepted = False
                     failed_epochs[epoch] = {
@@ -478,16 +580,28 @@ def run_campaign(plan_only: bool) -> None:
                     )
 
             if accepted:
+                accepted, reason = accepted_products_ready(date, target_hour)
+                if not accepted:
+                    failed_epochs[epoch] = {"epoch": epoch, "reason": reason}
+                    completed_epochs.discard(epoch)
+                    write_status(
+                        state="epoch_rejected",
+                        date=date,
+                        target_hour=target_hour,
+                        completed=sorted(completed_epochs),
+                        failed_epochs=list(failed_epochs.values()),
+                    )
+
+            if accepted:
                 failed_epochs.pop(epoch, None)
-                completed = write_status(
+                completed_epochs.add(epoch)
+                write_status(
                     state="validated",
                     date=date,
                     target_hour=target_hour,
+                    completed=sorted(completed_epochs),
                     failed_epochs=list(failed_epochs.values()),
-                ).setdefault("completed", [])
-                if epoch not in completed:
-                    completed.append(epoch)
-                    write_status(completed=completed)
+                )
             if index:
                 previous_epoch = f"{date}T{hours[index - 1]:02d}00"
                 if previous_epoch not in failed_epochs:
@@ -499,9 +613,6 @@ def run_campaign(plan_only: bool) -> None:
                     else set()
                 )
                 prune_hour(date, target_hour, retain_stems)
-
-        refresh_lightcurves()
-
     write_status(
         state="complete_with_failures" if failed_epochs else "complete",
         failed_epochs=list(failed_epochs.values()),
