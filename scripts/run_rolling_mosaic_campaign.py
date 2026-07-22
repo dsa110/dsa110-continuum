@@ -514,13 +514,13 @@ def prune_hour(date: str, hour: int, retain_stems: set[str] | None = None) -> No
 
 
 def run_campaign(plan_only: bool) -> None:
+    os.environ.setdefault("CONTIMG_TMPFS_DIR", "/dev/shm/dsa110-continuum")
+    os.environ.setdefault("CONTIMG_SCRATCH_DIR", "/dev/shm/dsa110-continuum")
     os.environ.update(
         PYTHONPATH=str(REPO),
         PIPELINE_DB=str(DB_PATH),
         CONTIMG_BASE_DIR=str(REPO),
         CONTIMG_STATE_DIR=str(REPO / "state"),
-        CONTIMG_TMPFS_DIR="/dev/shm/dsa110-continuum",
-        CONTIMG_SCRATCH_DIR="/dev/shm/dsa110-continuum",
         DSA110_CATALOG_DIR=str(REPO / "state/catalogs"),
         DSA110_MS_DIR=str(MS_DIR),
         DSA110_STAGE_IMAGE_BASE=str(IMAGE_DIR),
