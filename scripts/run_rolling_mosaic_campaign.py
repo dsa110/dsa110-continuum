@@ -25,9 +25,7 @@ PRODUCTS_MOSAIC_DIR = Path(
     os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics")
 )
 PRODUCTS_DIR = PRODUCTS_MOSAIC_DIR.parent
-IMAGE_DIR = Path(
-    os.environ.get("DSA110_STAGE_IMAGE_BASE", "/stage/dsa110-continuum/images")
-)
+IMAGE_DIR = Path(os.environ.get("DSA110_STAGE_IMAGE_BASE", "/stage/dsa110-continuum/images"))
 DB_PATH = Path(os.environ.get("PIPELINE_DB", REPO / "state/db/pipeline.sqlite3"))
 CAMPAIGN_DIR = Path(
     os.environ.get(
@@ -170,10 +168,7 @@ def _working_set_group_ids(
             )
         ]
     inventory_paths = [f"/inventory/{group_id}.ms" for group_id in group_ids]
-    return {
-        Path(path).stem
-        for path in _select_ms_for_mosaic_hour(inventory_paths, target_hour)
-    }
+    return {Path(path).stem for path in _select_ms_for_mosaic_hour(inventory_paths, target_hour)}
 
 
 def _is_base_ms(path: Path) -> bool:
@@ -193,12 +188,7 @@ def demote_inactive_nvme_ms(date: str, active_stems: set[str]) -> None:
             continue
         temp_link = path.with_name(f".{path.name}.slow-link-{os.getpid()}")
         backup = path.with_name(f".{path.name}.nvme-backup-{os.getpid()}")
-        if (
-            temp_link.exists()
-            or temp_link.is_symlink()
-            or backup.exists()
-            or backup.is_symlink()
-        ):
+        if temp_link.exists() or temp_link.is_symlink() or backup.exists() or backup.is_symlink():
             raise RuntimeError(f"refusing stale NVMe demotion path for {path.name}")
         temp_link.symlink_to(target)
         path.rename(backup)
@@ -373,16 +363,23 @@ def _manifest_paths(date: str, hour: int) -> tuple[Path, Path]:
 
 def strict_qa_passed(date: str, hour: int) -> bool:
     for manifest_path in _manifest_paths(date, hour):
-        if not manifest_path.exists():
-            continue
-        try:
-            manifest = json.loads(manifest_path.read_text())
-        except (OSError, json.JSONDecodeError):
-            continue
-        for epoch in manifest.get("epochs", []):
-            if int(epoch.get("hour", -1)) == hour:
-                return epoch.get("status") == "ok" and epoch.get("qa_result") == "PASS"
+        verdict = _manifest_epoch_passed(manifest_path, hour)
+        if verdict is not None:
+            return verdict
     return False
+
+
+def _manifest_epoch_passed(manifest_path: Path, hour: int) -> bool | None:
+    if not manifest_path.exists():
+        return None
+    try:
+        manifest = json.loads(manifest_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    for epoch in manifest.get("epochs", []):
+        if int(epoch.get("hour", -1)) == hour:
+            return epoch.get("status") == "ok" and epoch.get("qa_result") == "PASS"
+    return None
 
 
 def mosaic_is_valid(date: str, hour: int) -> bool:
@@ -422,7 +419,9 @@ def preserved_run_metadata_complete(date: str, hour: int) -> bool:
         for epoch in summary.get("epochs", [])
     )
     report_matches = f"| {hour:02d} | ok | PASS |" in report_path.read_text()
-    return strict_qa_passed(date, hour) and summary_matches and report_matches
+    return (
+        _manifest_epoch_passed(manifest_path, hour) is True and summary_matches and report_matches
+    )
 
 
 def photometry_path(date: str, hour: int) -> Path:
@@ -608,9 +607,7 @@ def run_campaign(plan_only: bool) -> None:
                     prune_hour(date, hours[index - 1])
             if accepted:
                 retain_stems = (
-                    set(_last_base_ms_stems(date, target_hour))
-                    if index + 1 < len(hours)
-                    else set()
+                    set(_last_base_ms_stems(date, target_hour)) if index + 1 < len(hours) else set()
                 )
                 prune_hour(date, target_hour, retain_stems)
     write_status(

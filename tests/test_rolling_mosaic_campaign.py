@@ -37,11 +37,7 @@ def test_working_set_group_ids_limits_conversion_to_core_and_overlap(tmp_path, m
         )
         connection.executemany(
             "INSERT INTO hdf5_files VALUES (?, ?, ?)",
-            [
-                (timestamp, timestamp, subband)
-                for timestamp in timestamps
-                for subband in range(16)
-            ],
+            [(timestamp, timestamp, subband) for timestamp in timestamps for subband in range(16)],
         )
     monkeypatch.setattr(campaign, "DB_PATH", database)
 
@@ -62,6 +58,7 @@ def test_refresh_lightcurves_stacks_forced_photometry(tmp_path, monkeypatch):
     forced_phot = tmp_path / "mosaics/2026-01-25/2026-01-25T0500_forced_phot.csv"
     forced_phot.parent.mkdir(parents=True)
     forced_phot.touch()
+
     def run(_command):
         stacked = tmp_path / "lightcurves/lightcurves.parquet"
         stacked.parent.mkdir(parents=True)
@@ -152,8 +149,16 @@ def test_strict_qa_requires_matching_pass_epoch(tmp_path, monkeypatch):
 
 def test_preserved_metadata_requires_matching_pass_epoch(tmp_path, monkeypatch):
     monkeypatch.setattr(campaign, "CAMPAIGN_DIR", tmp_path)
+    products = tmp_path / "products"
+    monkeypatch.setattr(campaign, "PRODUCTS_MOSAIC_DIR", products)
     prefix = tmp_path / "2026-01-25T04_"
-    Path(f"{prefix}2026-01-25_manifest.json").write_text(
+    preserved_manifest = Path(f"{prefix}2026-01-25_manifest.json")
+    preserved_manifest.write_text(
+        json.dumps({"epochs": [{"hour": 5, "status": "ok", "qa_result": "PASS"}]})
+    )
+    current_manifest = products / "2026-01-25/2026-01-25_manifest.json"
+    current_manifest.parent.mkdir(parents=True)
+    current_manifest.write_text(
         json.dumps({"epochs": [{"hour": 4, "status": "ok", "qa_result": "PASS"}]})
     )
     Path(f"{prefix}2026-01-25_run_summary.json").write_text(
@@ -170,11 +175,13 @@ def test_preserved_metadata_requires_matching_pass_epoch(tmp_path, monkeypatch):
         )
     )
     report = Path(f"{prefix}run_report.md")
-    report.write_text("| 04 | ok | FAIL | 12 |\n")
+    report.write_text("| 04 | ok | PASS | 12 |\n")
 
     assert not campaign.preserved_run_metadata_complete("2026-01-25", 4)
 
-    report.write_text("| 04 | ok | PASS | 12 |\n")
+    preserved_manifest.write_text(
+        json.dumps({"epochs": [{"hour": 4, "status": "ok", "qa_result": "PASS"}]})
+    )
     assert campaign.preserved_run_metadata_complete("2026-01-25", 4)
 
 
