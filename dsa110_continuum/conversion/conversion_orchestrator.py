@@ -123,6 +123,7 @@ def convert_subband_groups_to_ms(
     defer_final_copy: bool | None = None,
     remap_input_dir: str | None = None,
     ms_suffix: str | None = None,
+    group_ids: set[str] | None = None,
 ) -> dict:
     """Orchestrate the conversion of HDF5 subband files to Measurement Sets.
 
@@ -155,6 +156,8 @@ def convert_subband_groups_to_ms(
         golden datasets where HDF5 files are stored in a different location.
     ms_suffix : str, optional
         Suffix to append to MS filename (inserted before .ms extension).
+    group_ids : set[str], optional
+        Convert only these exact indexed group IDs within the time window.
 
     Returns
     -------
@@ -249,14 +252,27 @@ def convert_subband_groups_to_ms(
     # Validate file existence before processing
     # Use rolling window validator with 100-group window for production (60k files)
     validator = RollingFileValidator(window_size=100, max_workers=16)
+    groups_to_process = list(result)
+    if group_ids is not None:
+        groups_to_process = [
+            group
+            for group in groups_to_process
+            if _extract_group_id(group.files) in group_ids
+        ]
+        logger.info(
+            "Selected %d/%d subband groups for the requested working set",
+            len(groups_to_process),
+            len(result),
+        )
+
     validation_results = validator.validate_groups(
-        result,
+        groups_to_process,
         extract_id=lambda g: g.representative_time,
     )
 
     # Filter to valid groups and log validation failures
     valid_groups = []
-    for group, val_result in zip(result, validation_results):
+    for group, val_result in zip(groups_to_process, validation_results):
         if val_result.valid:
             valid_groups.append(group)
         else:

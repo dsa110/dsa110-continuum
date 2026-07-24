@@ -1,0 +1,24 @@
+[Unit]
+Description=Immediate strict-QA Jan-Apr 2026 mosaic campaign
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/data/dsa110-continuum-worktrees/qa-fail-fixes-online
+Environment=PYTHONPATH=/data/dsa110-continuum-worktrees/qa-fail-fixes-online
+Environment=CONTIMG_BASE_DIR=/data/dsa110-continuum-worktrees/qa-fail-fixes-online
+Environment=CONTIMG_STATE_DIR=/data/dsa110-continuum/state
+Environment=DSA110_CATALOG_DIR=/data/dsa110-continuum/state/catalogs
+Environment=PIPELINE_DB=/data/dsa110-continuum/state/db/pipeline.sqlite3
+Environment=DSA110_CAMPAIGN_DIR=/data/dsa110-continuum/outputs/jan-apr-mosaic-campaign-2026-07-21
+Environment=CONTIMG_TMPFS_DIR=/dev/shm/dsa110-continuum
+Environment=CONTIMG_SCRATCH_DIR=/dev/shm/dsa110-continuum
+ExecStart=/opt/miniforge/envs/casa6/bin/python /data/dsa110-continuum-worktrees/qa-fail-fixes-online/scripts/run_rolling_mosaic_campaign.py
+StandardOutput=append:/data/dsa110-continuum/outputs/jan-apr-mosaic-campaign-2026-07-21/controller.log
+StandardError=append:/data/dsa110-continuum/outputs/jan-apr-mosaic-campaign-2026-07-21/controller.log
+Restart=on-abnormal
+RestartSec=60
+
+[Install]
+WantedBy=default.target

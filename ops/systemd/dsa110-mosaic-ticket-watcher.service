@@ -1,0 +1,16 @@
+[Unit]
+Description=Close mosaic optimization tickets on strict live milestones
+Wants=network-online.target dsa110-jan-apr-mosaic-immediate.service
+After=network-online.target dsa110-jan-apr-mosaic-immediate.service
+
+[Service]
+Type=simple
+WorkingDirectory=/data/dsa110-continuum-worktrees/qa-fail-fixes-online
+Environment=PYTHONPATH=/data/dsa110-continuum-worktrees/qa-fail-fixes-online
+Environment=DSA110_CAMPAIGN_DIR=/data/dsa110-continuum/outputs/jan-apr-mosaic-campaign-2026-07-21
+ExecStart=/opt/miniforge/envs/casa6/bin/python /data/dsa110-continuum-worktrees/qa-fail-fixes-online/scripts/watch_rolling_mosaic_tickets.py
+Restart=on-abnormal
+RestartSec=60
+
+[Install]
+WantedBy=default.target

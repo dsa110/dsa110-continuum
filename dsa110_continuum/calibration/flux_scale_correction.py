@@ -65,9 +65,17 @@ FluxScaleResult(gradient=1.083, offset=0.001, n_fit=3, passed=True)
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+import shutil
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 
 import numpy as np
+from astropy.io import fits
+from astropy.wcs import WCS
+from scipy.spatial import cKDTree
+
+from dsa110_continuum.adapters import casa_tables as ct
 
 logger = logging.getLogger(__name__)
 
@@ -536,7 +544,6 @@ def apply_flux_scale(
     # Error propagation
     flux_errors = np.asarray(flux_errors, dtype=float)
     g   = result.gradient
-    o   = result.offset
     s_g = result.gradient_err if np.isfinite(result.gradient_err) else 0.0
     s_o = result.offset_err   if np.isfinite(result.offset_err)   else 0.0
 
@@ -567,3 +574,230 @@ def correction_factor(result: FluxScaleResult) -> float:
     if result.gradient == 0.0:
         raise ValueError("gradient is 0")
     return 1.0 / result.gradient
+
+
+# ── Mosaic / caltable application ─────────────────────────────────────────────
+
+def _caltable_gain_scale(result: FluxScaleResult) -> float:
+    """Return per-antenna gain amplitude scale for a flux scale correction.
+
+    Visibility amplitudes scale as the product of two antenna gains, so a
+    flux scale error of ``gradient`` is corrected by multiplying each
+    CPARAM amplitude by ``1 / sqrt(gradient)``.
+    """
+    if result.gradient <= 0.0:
+        raise ValueError(f"Cannot scale caltable with non-positive gradient {result.gradient}")
+    return 1.0 / np.sqrt(result.gradient)
+
+
+def measure_flux_scale_from_mosaic(
+    mosaic_fits: str,
+    nvss_db: str,
+    *,
+    min_flux_mjy: float = 50.0,
+    recovery_sigma: float = 5.0,
+    snr_min: float = 20.0,
+    isolation_arcsec: float = 60.0,
+    sigma_clip: float = 5.0,
+    n_bootstrap: int = 200,
+    delta: float = 1.5,
+) -> FluxScaleResult:
+    """Derive a Huber-regression flux scale from a DSA-110 mosaic vs NVSS.
+
+    Parameters mirror ``huber_flux_scale`` plus the mosaic-specific cuts
+    documented in ``docs/reference/vast-crossref.md``.
+    """
+    # Cross-package: photometry.epoch_qa can pull calibration at package-init
+    # time in some import orders; keep these helpers function-scoped.
+    from dsa110_continuum.photometry.epoch_qa import (
+        _local_rms,
+        _peak_in_box,
+        _query_nvss_in_footprint,
+        _sky_footprint,
+    )
+
+    if not Path(mosaic_fits).is_file():
+        raise FileNotFoundError(mosaic_fits)
+    if not Path(nvss_db).is_file():
+        raise FileNotFoundError(nvss_db)
+
+    with fits.open(mosaic_fits) as hdul:
+        hdr = hdul[0].header
+        raw = hdul[0].data
+    while raw.ndim > 2:
+        raw = raw[0]
+    data = raw.astype(np.float64)
+    wcs = WCS(hdr, naxis=2)
+    ny, nx = data.shape
+
+    ra_min, ra_max, dec_min, dec_max = _sky_footprint(wcs, ny, nx)
+    catalog = _query_nvss_in_footprint(
+        nvss_db, ra_min, ra_max, dec_min, dec_max, min_flux_mjy
+    )
+
+    s_measured: list[float] = []
+    s_reference: list[float] = []
+    snr: list[float] = []
+    positions: list[tuple[float, float]] = []
+
+    for ra, dec, cat_flux_mjy in catalog:
+        try:
+            pix = wcs.world_to_pixel_values(ra, dec)
+            cx, cy = int(round(float(pix[0]))), int(round(float(pix[1])))
+        except Exception:
+            continue
+        if not (2 <= cy < ny - 2 and 2 <= cx < nx - 2):
+            continue
+        search_box = data[cy - 1 : cy + 2, cx - 1 : cx + 2]
+        if not np.any(np.isfinite(search_box)):
+            continue
+        local = _local_rms(data, cy, cx)
+        cat_flux_jy = cat_flux_mjy / 1000.0
+        if not np.isfinite(local) or local <= 0 or cat_flux_jy < recovery_sigma * local:
+            continue
+        peak = _peak_in_box(data, cy, cx, half=1)
+        if peak <= 0:
+            continue
+        if peak > recovery_sigma * local:
+            s_measured.append(peak)
+            s_reference.append(cat_flux_jy)
+            snr.append(peak / local)
+            positions.append((ra, dec))
+
+    if len(s_measured) < 2:
+        return FluxScaleResult(
+            gradient=1.0,
+            offset=0.0,
+            n_candidate=0,
+            n_fit=0,
+            n_outlier=len(catalog) - len(s_measured),
+            passed=False,
+            message=(
+                f"Too few matched sources in {mosaic_fits}: "
+                f"{len(s_measured)} recovered from {len(catalog)} catalog sources"
+            ),
+        )
+
+    pos = np.radians(positions)
+    vec = np.stack(
+        [
+            np.cos(pos[:, 0]) * np.cos(pos[:, 1]),
+            np.sin(pos[:, 0]) * np.cos(pos[:, 1]),
+            np.sin(pos[:, 1]),
+        ],
+        axis=1,
+    )
+    tree = cKDTree(vec)
+    dist, _ = tree.query(vec, k=2)
+    nearest_arcsec = np.degrees(dist[:, 1]) * 3600.0
+
+    return huber_flux_scale(
+        np.array(s_measured),
+        np.array(s_reference),
+        snr=np.array(snr),
+        snr_min=snr_min,
+        nearest_neighbour_arcsec=nearest_arcsec,
+        isolation_arcsec=isolation_arcsec,
+        sigma_clip=sigma_clip,
+        n_bootstrap=n_bootstrap,
+        delta=delta,
+    )
+
+
+def apply_flux_scale_to_mosaic(
+    mosaic_fits: str,
+    result: FluxScaleResult,
+    *,
+    output_path: str | None = None,
+    backup_suffix: str = ".uncorrected",
+    apply_offset: bool = False,
+) -> str:
+    """Apply a Huber flux scale correction to a mosaic FITS image.
+
+    By default only the multiplicative part of the correction is applied
+    (``S_corrected = S_measured / gradient``).  The additive offset is not
+    applied to pixel values because it can over/under-correct faint sources
+    and is better handled in per-source photometry.  Set ``apply_offset=True``
+    to also subtract ``offset``.  The original file is preserved with
+    *backup_suffix* if ``output_path`` is not provided.
+    """
+    if result.gradient == 0.0:
+        raise ValueError("gradient is 0")
+
+    path = Path(mosaic_fits)
+    if not path.is_file():
+        raise FileNotFoundError(mosaic_fits)
+
+    out_path = Path(output_path) if output_path else path
+    if out_path == path:
+        backup = path.with_name(path.name + backup_suffix)
+        path.rename(backup)
+        source = backup
+    else:
+        source = path
+
+    with fits.open(source, mode="readonly") as hdul:
+        hdu = hdul[0]
+        hdr = hdu.header.copy()
+        raw = hdu.data
+        while raw.ndim > 2:
+            raw = raw[0]
+        data = raw.astype(np.float64)
+        corrected = data / result.gradient
+        if apply_offset:
+            corrected = corrected - result.offset / result.gradient
+        # Preserve NaN mask exactly as in the input
+        corrected = np.where(np.isfinite(data), corrected, np.nan)
+
+        hdr["FLUXSCL"] = (round(result.gradient, 6), "Huber slope S_meas/S_ref")
+        hdr["FLUXOFF"] = (round(result.offset, 6), "Huber offset (Jy)")
+        hdr["FLUXAPP"] = (int(apply_offset), "offset applied to pixels")
+        hdr["FLUXCORR"] = (round(correction_factor(result), 6), "flux scale correction 1/gradient")
+        hdr["FLUXDATE"] = (datetime.now(UTC).isoformat(), "flux scale correction UTC")
+
+        hdu_new = fits.PrimaryHDU(data=corrected.astype(np.float32), header=hdr)
+        hdu_new.writeto(out_path, overwrite=True)
+
+    return str(out_path)
+
+
+def apply_flux_scale_to_caltable(
+    caltable_path: str,
+    result: FluxScaleResult,
+    *,
+    output_path: str | None = None,
+    backup_suffix: str = ".uncorrected",
+) -> str:
+    """Apply a flux scale correction to a CASA calibration table.
+
+    Multiplies the amplitude of every unflagged CPARAM entry by
+    ``1 / sqrt(gradient)``.  Phases are unchanged.  The original table is
+    preserved unless ``output_path`` is given.
+    """
+    scale = _caltable_gain_scale(result)
+    path = Path(caltable_path)
+    if not path.exists():
+        raise FileNotFoundError(caltable_path)
+
+    out_path = Path(output_path) if output_path else path
+    if out_path == path:
+        backup = path.with_name(path.name + backup_suffix)
+        if backup.exists():
+            shutil.rmtree(backup, ignore_errors=True)
+        path.rename(backup)
+        source = str(backup)
+    else:
+        source = str(path)
+        if out_path.exists():
+            shutil.rmtree(out_path, ignore_errors=True)
+
+    shutil.copytree(source, out_path, symlinks=False)
+
+    with ct.table(str(out_path), readonly=False) as tb:
+        cparam = tb.getcol("CPARAM")
+        flags = tb.getcol("FLAG")
+        valid = ~flags
+        cparam[valid] *= scale
+        tb.putcol("CPARAM", cparam)
+
+    return str(out_path)

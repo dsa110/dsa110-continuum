@@ -515,16 +515,16 @@ def prune_hour(date: str, hour: int, retain_stems: set[str] | None = None) -> No
 def run_campaign(plan_only: bool) -> None:
     os.environ.setdefault("CONTIMG_TMPFS_DIR", "/dev/shm/dsa110-continuum")
     os.environ.setdefault("CONTIMG_SCRATCH_DIR", "/dev/shm/dsa110-continuum")
-    os.environ.update(
-        PYTHONPATH=str(REPO),
-        PIPELINE_DB=str(DB_PATH),
-        CONTIMG_BASE_DIR=str(REPO),
-        CONTIMG_STATE_DIR=str(REPO / "state"),
-        DSA110_CATALOG_DIR=str(REPO / "state/catalogs"),
-        DSA110_MS_DIR=str(MS_DIR),
-        DSA110_STAGE_IMAGE_BASE=str(IMAGE_DIR),
-        DSA110_PRODUCTS_BASE=str(PRODUCTS_MOSAIC_DIR),
-    )
+    # Prefer caller/systemd overrides for shared state (catalogs, products, MS)
+    # so a code worktree can reuse the H17 operational roots.
+    os.environ.setdefault("PYTHONPATH", str(REPO))
+    os.environ.setdefault("PIPELINE_DB", str(DB_PATH))
+    os.environ.setdefault("CONTIMG_BASE_DIR", str(REPO))
+    os.environ.setdefault("CONTIMG_STATE_DIR", str(REPO / "state"))
+    os.environ.setdefault("DSA110_CATALOG_DIR", str(REPO / "state/catalogs"))
+    os.environ.setdefault("DSA110_MS_DIR", str(MS_DIR))
+    os.environ.setdefault("DSA110_STAGE_IMAGE_BASE", str(IMAGE_DIR))
+    os.environ.setdefault("DSA110_PRODUCTS_BASE", str(PRODUCTS_MOSAIC_DIR))
     write_status(state="indexing", error=None)
     index_inventory()
     inventory = complete_hours()
