@@ -506,3 +506,39 @@ class TestFluxScaleIntegration:
         s_meas[[0, 5, 20]] = [50.0, 0.001, 100.0]
         result = huber_flux_scale(s_meas, s_ref, sigma_clip=5.0)
         assert result.n_outlier >= 3
+
+
+class TestApplyFluxScaleToMosaic:
+    """Synthetic FITS apply path (no catalog / no H17)."""
+
+    def test_multiplicative_correction_and_headers(self, tmp_path):
+        from astropy.io import fits
+
+        from dsa110_continuum.calibration.flux_scale_correction import (
+            FluxScaleResult,
+            apply_flux_scale_to_mosaic,
+        )
+
+        data = np.ones((32, 32), dtype=np.float32) * 2.0
+        path = tmp_path / "epoch_mosaic.fits"
+        fits.PrimaryHDU(data).writeto(path)
+
+        result = FluxScaleResult(
+            gradient=0.8,
+            offset=0.0,
+            n_candidate=10,
+            n_fit=10,
+            n_outlier=0,
+            passed=True,
+            message="synthetic",
+        )
+        out = apply_flux_scale_to_mosaic(str(path), result)
+        assert out == str(path)
+        assert path.with_name(path.name + ".uncorrected").is_file()
+
+        with fits.open(path) as hdul:
+            arr = hdul[0].data
+            hdr = hdul[0].header
+        np.testing.assert_allclose(arr, 2.5, atol=1e-5)
+        assert hdr["FLUXCORR"] == pytest.approx(1.25, abs=1e-5)
+        assert hdr["FLUXSCL"] == pytest.approx(0.8, abs=1e-5)

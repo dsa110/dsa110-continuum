@@ -58,13 +58,25 @@ sys.path.insert(0, str(Path(__file__).parent))  # enables `import mosaic_day`
 import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
-from dsa110_continuum.photometry.epoch_qa import EpochQAResult, measure_epoch_qa
+from dsa110_continuum.calibration.flux_scale_correction import (
+    apply_flux_scale_to_mosaic,
+    correction_factor,
+    measure_flux_scale_from_mosaic,
+)
+from dsa110_continuum.photometry.epoch_qa import (
+    DEFAULT_NVSS_DB,
+    EpochQAResult,
+    measure_epoch_qa,
+)
 from dsa110_continuum.photometry.epoch_qa_plot import plot_epoch_qa
 from dsa110_continuum.photometry.phot_csv import (
     MIN_EPOCH_MEASUREMENTS,
     check_min_measurements,
 )
 from dsa110_continuum.qa.provenance import RunManifest, try_load_prior_manifest
+
+# Apply Huber mosaic correction when |corr-1| exceeds this fraction.
+FLUX_SCALE_APPLY_MIN_DELTA = 0.05
 
 logging.basicConfig(
     level=logging.INFO,
@@ -967,6 +979,67 @@ def write_epoch_mosaic(
 
 # ── Mosaic stats helper ───────────────────────────────────────────────────────
 
+def apply_huber_flux_scale_if_needed(
+    mosaic_path: str,
+    *,
+    nvss_db: str = DEFAULT_NVSS_DB,
+    min_delta: float = FLUX_SCALE_APPLY_MIN_DELTA,
+) -> dict[str, object] | None:
+    """Measure and optionally apply Huber flux-scale correction before epoch QA.
+
+    Returns a small provenance dict when a fit is attempted, else ``None`` when
+    the NVSS DB is unavailable. Failures are logged and do not abort the epoch.
+    """
+    if not os.path.isfile(nvss_db):
+        log.warning("  Flux scale: NVSS DB missing (%s) — skipping correction", nvss_db)
+        return None
+    try:
+        result = measure_flux_scale_from_mosaic(mosaic_path, nvss_db)
+    except Exception as exc:
+        log.warning("  Flux scale: fit failed (%s) — skipping correction", exc)
+        return {"applied": False, "error": str(exc)}
+
+    info: dict[str, object] = {
+        "applied": False,
+        "gradient": result.gradient,
+        "offset": result.offset,
+        "n_fit": result.n_fit,
+        "passed": result.passed,
+        "message": result.message,
+    }
+    if not result.passed or not np.isfinite(result.gradient) or result.gradient <= 0:
+        log.warning("  Flux scale: %s", result.message)
+        return info
+
+    corr = correction_factor(result)
+    info["correction"] = corr
+    if abs(corr - 1.0) < min_delta:
+        log.info(
+            "  Flux scale: near unity (gradient=%.4f corr=%.4f n_fit=%d) — leave mosaic",
+            result.gradient,
+            corr,
+            result.n_fit,
+        )
+        return info
+
+    try:
+        apply_flux_scale_to_mosaic(mosaic_path, result)
+    except Exception as exc:
+        log.warning("  Flux scale: apply failed (%s)", exc)
+        info["error"] = str(exc)
+        return info
+
+    info["applied"] = True
+    log.info(
+        "  Flux scale: applied corr=%.4f (gradient=%.4f n_fit=%d) → %s",
+        corr,
+        result.gradient,
+        result.n_fit,
+        mosaic_path,
+    )
+    return info
+
+
 def mosaic_stats(mosaic_path: str) -> tuple[float, float]:
     """Return (peak_jyb, rms_jyb) for a FITS mosaic."""
     with fits.open(mosaic_path) as hdul:
@@ -1356,6 +1429,16 @@ def main() -> None:
             "though they failed the three-gate epoch QA. Emits a 'lenient_qa' "
             "gate so the run finishes with pipeline_verdict=DEGRADED. Use only "
             "for investigative re-runs; the default is strict (skip)."
+        ),
+    )
+    parser.add_argument(
+        "--skip-flux-scale-correction",
+        action="store_true",
+        default=False,
+        help=(
+            "Skip Huber-regression mosaic flux-scale correction before epoch QA. "
+            "Default is to measure NVSS scale and apply when |corr-1| >= "
+            f"{FLUX_SCALE_APPLY_MIN_DELTA:.0%}."
         ),
     )
     parser.add_argument(
@@ -2096,6 +2179,14 @@ def main() -> None:
 
         # QA
         _md.check_mosaic_quality(mosaic_path)
+
+        # ── Huber flux-scale correction (before three-gate epoch QA) ──────────
+        # Investigations of 2026-01-25 QA-FAIL epochs showed cold mosaics
+        # (~0.7× NVSS) after LOW_SNR epoch-gaincal fallback. Apply the VAST-
+        # style Huber correction in-pipeline so strict QA sees corrected fluxes.
+        if not args.skip_flux_scale_correction:
+            apply_huber_flux_scale_if_needed(mosaic_path)
+
         peak, rms = mosaic_stats(mosaic_path)
         log.info("  Peak: %.4f Jy/beam  RMS: %.2f mJy/beam  DR: %.0f", peak, rms * 1000, peak / rms if rms else 0)
 
