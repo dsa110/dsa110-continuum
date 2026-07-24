@@ -28,8 +28,11 @@ import argparse
 import csv
 import json
 import logging
+import multiprocessing
 import os
+import queue
 import shutil
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -55,6 +58,7 @@ if _ENV_FILE.exists():
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))  # enables `import mosaic_day`
 
+import mosaic_day as _mosaic_day
 import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
@@ -89,9 +93,9 @@ log = logging.getLogger(__name__)
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 DEFAULT_DATE = "2026-01-25"
-MS_DIR = os.environ.get("DSA110_MS_DIR", "/stage/dsa110-contimg/ms")
-PIPELINE_DB = os.environ.get("PIPELINE_DB", "/data/dsa110-contimg/state/db/pipeline.sqlite3")
-STAGE_IMAGE_BASE = os.environ.get("DSA110_STAGE_IMAGE_BASE", "/stage/dsa110-contimg/images")
+MS_DIR = os.environ.get("DSA110_MS_DIR", "/stage/dsa110-continuum/ms")
+PIPELINE_DB = os.environ.get("PIPELINE_DB", "/data/dsa110-continuum/state/db/pipeline.sqlite3")
+STAGE_IMAGE_BASE = os.environ.get("DSA110_STAGE_IMAGE_BASE", "/stage/dsa110-continuum/images")
 PRODUCTS_BASE = os.environ.get("DSA110_PRODUCTS_BASE", "/data/dsa110-proc/products/mosaics")
 CELL_ARCSEC = 6.0  # must match mosaic_day.py
 TILE_TIMEOUT_SEC = 1800  # 30 min max per tile before we kill & skip
@@ -203,6 +207,28 @@ def timestamp_from_fits(fits_path: str) -> datetime | None:
         return None
 
 
+def select_ms_for_mosaic_hour(ms_paths: list[str], target_hour: int) -> list[str]:
+    """Keep one hourly core plus two tiles from each adjacent available hour."""
+    by_hour: dict[int, list[str]] = {}
+    for path in sorted(ms_paths):
+        try:
+            hour = datetime.strptime(Path(path).stem, "%Y-%m-%dT%H:%M:%S").hour
+        except ValueError:
+            continue
+        by_hour.setdefault(hour, []).append(path)
+
+    if target_hour not in by_hour:
+        return []
+    hours = sorted(by_hour)
+    index = hours.index(target_hour)
+    selected = list(by_hour[target_hour])
+    if index:
+        selected = by_hour[hours[index - 1]][-2:] + selected
+    if index + 1 < len(hours):
+        selected.extend(by_hour[hours[index + 1]][:2])
+    return selected
+
+
 def _request_time_bounds(
     date: str,
     start_hour: int | None,
@@ -288,6 +314,7 @@ def _find_missing_ms_for_indexed_hdf5(
     start_hour: int | None,
     end_hour: int | None,
     ms_paths: list[str],
+    mosaic_hour: int | None = None,
 ) -> list[str]:
     """Return complete indexed HDF5 group IDs lacking matching base MS files."""
     expected_groups = _complete_hdf5_groups_for_window(
@@ -298,6 +325,12 @@ def _find_missing_ms_for_indexed_hdf5(
     )
     if not expected_groups:
         return []
+    if mosaic_hour is not None:
+        inventory_paths = [f"/inventory/{group_id}.ms" for group_id in expected_groups]
+        expected_groups = [
+            Path(path).stem
+            for path in select_ms_for_mosaic_hour(inventory_paths, mosaic_hour)
+        ]
 
     converted = {
         Path(ms_path).stem
@@ -346,6 +379,7 @@ def _abort_if_indexed_hdf5_missing_ms(
     start_hour: int | None,
     end_hour: int | None,
     ms_paths: list[str],
+    mosaic_hour: int | None = None,
 ) -> None:
     """Fail loudly when indexed complete HDF5 groups have not been converted."""
     missing = _find_missing_ms_for_indexed_hdf5(
@@ -354,6 +388,7 @@ def _abort_if_indexed_hdf5_missing_ms(
         start_hour=start_hour,
         end_hour=end_hour,
         ms_paths=ms_paths,
+        mosaic_hour=mosaic_hour,
     )
     if not missing:
         return
@@ -772,7 +807,12 @@ def _dry_run_main(args, date: str, cal_date: str, obs_dec_deg: float | None) -> 
             and (args.end_hour is None or t.hour < args.end_hour)
         ]
 
+    mosaic_hour = getattr(args, "mosaic_hour", None)
+    if mosaic_hour is not None:
+        ms_list = select_ms_for_mosaic_hour(ms_list, mosaic_hour)
     epoch_hours = sorted({_ms_ts(p).hour for p in ms_list if _ms_ts(p) is not None})
+    if mosaic_hour is not None:
+        epoch_hours = [mosaic_hour] if ms_list else []
 
     # Prior manifest + checkpoint (read-only)
     prior_manifest = try_load_prior_manifest(date, products_dir=PRODUCTS_BASE)
@@ -908,6 +948,15 @@ def build_epoch_tile_sets(epochs: dict[int, list[str]]) -> list[tuple[int, list[
 
         result.append((h, tiles))
     return result
+
+
+def select_epoch_tile_sets(
+    epoch_sets: list[tuple[int, list[str]]], mosaic_hour: int | None
+) -> list[tuple[int, list[str]]]:
+    """Limit coadd publication while retaining all imaged overlap tiles."""
+    if mosaic_hour is None:
+        return epoch_sets
+    return [item for item in epoch_sets if item[0] == mosaic_hour]
 
 
 # ── Per-epoch mosaic writer (path-explicit version of mosaic_day.write_mosaic) ─
@@ -1222,6 +1271,142 @@ def process_tile_safe(
     return result
 
 
+def _tile_process_entry(
+    result_queue,
+    cfg_dict: dict,
+    ms_path: str,
+    keep: bool,
+    force_recal: bool,
+    slot: int,
+    threads: int,
+) -> None:
+    os.setsid()
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(slot)
+    os.environ["WSCLEAN_THREADS"] = str(threads)
+    try:
+        result_queue.put({"result": _run_process_ms(ms_path, cfg_dict, keep, force_recal)})
+    except BaseException as error:
+        result_queue.put({"error": f"{type(error).__name__}: {error}"})
+
+
+def _terminate_tile_process(process: multiprocessing.Process) -> None:
+    if not process.is_alive():
+        process.join(timeout=1)
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+        process.join(timeout=5)
+        if process.is_alive():
+            os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    process.join(timeout=5)
+
+
+def _run_parallel_tile_attempt(
+    cfg_dict: dict,
+    ms_paths: list[str],
+    keep: bool,
+    timeout_sec: int,
+    force_recal: bool,
+    workers: int,
+) -> dict[str, tuple[object, float]]:
+    context = multiprocessing.get_context("spawn")
+    outcomes: dict[str, tuple[object, float]] = {}
+    threads = max(1, (os.cpu_count() or workers) // workers)
+
+    for offset in range(0, len(ms_paths), workers):
+        active = {}
+        for slot, ms_path in enumerate(ms_paths[offset : offset + workers]):
+            result_queue = context.Queue()
+            process = context.Process(
+                target=_tile_process_entry,
+                args=(
+                    result_queue,
+                    cfg_dict,
+                    ms_path,
+                    keep,
+                    force_recal,
+                    slot,
+                    threads,
+                ),
+            )
+            process.start()
+            active[ms_path] = (process, result_queue, time.monotonic())
+
+        while active:
+            for ms_path, (process, result_queue, started) in list(active.items()):
+                message = None
+                try:
+                    message = result_queue.get_nowait()
+                except queue.Empty:
+                    pass
+
+                elapsed = time.monotonic() - started
+                if message is not None:
+                    process.join(timeout=5)
+                    if "result" in message:
+                        result = _mosaic_day.TileResult.from_dict(message["result"])
+                    else:
+                        result = _mosaic_day.TileResult(
+                            "failed", failed_stage="exception", error=message["error"]
+                        )
+                elif elapsed > timeout_sec:
+                    log.error("[%s] TIMEOUT after %ds", Path(ms_path).stem, timeout_sec)
+                    _terminate_tile_process(process)
+                    result = _mosaic_day.TileResult(
+                        "failed",
+                        failed_stage="timeout",
+                        error=f"exceeded {timeout_sec}s",
+                    )
+                elif not process.is_alive():
+                    try:
+                        message = result_queue.get(timeout=1)
+                    except queue.Empty:
+                        message = None
+                    if message and "result" in message:
+                        result = _mosaic_day.TileResult.from_dict(message["result"])
+                    else:
+                        error = message.get("error") if message else f"worker exit {process.exitcode}"
+                        result = _mosaic_day.TileResult(
+                            "failed", failed_stage="worker", error=error
+                        )
+                else:
+                    continue
+
+                outcomes[ms_path] = (result, elapsed)
+                result_queue.close()
+                active.pop(ms_path)
+            if active:
+                time.sleep(0.2)
+
+    return outcomes
+
+
+def process_tiles_parallel(
+    cfg_dict: dict,
+    ms_paths: list[str],
+    keep: bool,
+    timeout_sec: int,
+    retry: bool,
+    force_recal: bool,
+    workers: int = 2,
+) -> dict[str, tuple[object, float]]:
+    outcomes = _run_parallel_tile_attempt(
+        cfg_dict, ms_paths, keep, timeout_sec, force_recal, workers
+    )
+    failed = [ms_path for ms_path, (result, _elapsed) in outcomes.items() if not result.ok]
+    if retry and failed:
+        log.warning("Retrying %d failed parallel tile(s) after 60s", len(failed))
+        time.sleep(60)
+        retried = _run_parallel_tile_attempt(
+            cfg_dict, failed, keep, timeout_sec, force_recal, workers
+        )
+        for ms_path, (result, elapsed) in retried.items():
+            outcomes[ms_path] = (result, outcomes[ms_path][1] + 60 + elapsed)
+    return outcomes
+
+
 def _build_epoch_coadd(epoch_tiles: list[str]) -> tuple[np.ndarray, WCS]:
     """Build an hourly-epoch coadd through the canonical package entry."""
     from dsa110_continuum.mosaic.production import build_epoch_coadd
@@ -1384,6 +1569,17 @@ def main() -> None:
         help="Only process MS files with timestamp < this UTC hour (0–23). Default: all hours.",
     )
     parser.add_argument(
+        "--mosaic-hour",
+        type=int,
+        choices=range(24),
+        default=None,
+        metavar="H",
+        help=(
+            "Build only this UTC-hour mosaic after imaging the full requested "
+            "--start-hour/--end-hour window."
+        ),
+    )
+    parser.add_argument(
         "--tile-timeout",
         type=int,
         default=TILE_TIMEOUT_SEC,
@@ -1438,7 +1634,7 @@ def main() -> None:
         help=(
             "Skip Huber-regression mosaic flux-scale correction before epoch QA. "
             "Default is to measure NVSS scale and apply when |corr-1| >= "
-            f"{FLUX_SCALE_APPLY_MIN_DELTA:.0%}."
+            f"{FLUX_SCALE_APPLY_MIN_DELTA * 100:.0f}%%."
         ),
     )
     parser.add_argument(
@@ -1496,6 +1692,14 @@ def main() -> None:
             "--force-recal is a no-op for the clear because force-recal "
             "deletes the checkpoint first."
         ),
+    )
+    parser.add_argument(
+        "--tile-workers",
+        type=int,
+        choices=(1, 2),
+        default=1,
+        metavar="N",
+        help="Isolated tile processes (1 or certified H17 mode 2; default: 1).",
     )
     parser.add_argument(
         "--photometry-workers",
@@ -1579,6 +1783,7 @@ def main() -> None:
         start_hour=args.start_hour,
         end_hour=args.end_hour,
         ms_paths=_preflight_ms_paths,
+        mosaic_hour=args.mosaic_hour,
     )
 
     # ── Dry-run plan (Batch E) ───────────────────────────────────────────────
@@ -1767,6 +1972,20 @@ def main() -> None:
         )
         if not ms_list:
             log.error("No MS files remain after hour filter — aborting")
+            sys.exit(1)
+
+    mosaic_hour = getattr(args, "mosaic_hour", None)
+    if mosaic_hour is not None:
+        before = len(ms_list)
+        ms_list = select_ms_for_mosaic_hour(ms_list, mosaic_hour)
+        log.info(
+            "Mosaic-hour working set (%02d core plus adjacent overlap): %d → %d MS files",
+            mosaic_hour,
+            before,
+            len(ms_list),
+        )
+        if not ms_list:
+            log.error("No MS files remain for requested mosaic hour %02d", mosaic_hour)
             sys.exit(1)
 
     # ── Phase 0: Per-epoch gain calibration ───────────────────────────────────
@@ -1975,6 +2194,7 @@ def main() -> None:
              tile_timeout, retry_failed)
     n_imaged = n_skipped_tiles = n_failed_tiles = n_quarantined = 0
 
+    eligible_ms: list[str] = []
     for i, ms_path in enumerate(ms_list, 1):
         tag = Path(ms_path).stem
         log.info("[%d/%d] %s", i, len(ms_list), tag)
@@ -2017,13 +2237,36 @@ def main() -> None:
             )
             continue
 
-        t0 = time.time()
-        result = process_tile_safe(
-            cfg.to_dict(), ms_path, keep, tile_timeout, retry_failed,
-            force_recal=(args.force_recal or _epoch_gaincal_status == "ok"),
-        )
-        elapsed = time.time() - t0
+        eligible_ms.append(ms_path)
 
+    force_tile_recal = args.force_recal or _epoch_gaincal_status == "ok"
+    if args.tile_workers == 2:
+        log.info("Running %d tiles with two isolated workers", len(eligible_ms))
+        outcomes = process_tiles_parallel(
+            cfg.to_dict(),
+            eligible_ms,
+            keep,
+            tile_timeout,
+            retry_failed,
+            force_tile_recal,
+            workers=2,
+        )
+    else:
+        outcomes = {}
+        for ms_path in eligible_ms:
+            started = time.time()
+            result = process_tile_safe(
+                cfg.to_dict(),
+                ms_path,
+                keep,
+                tile_timeout,
+                retry_failed,
+                force_recal=force_tile_recal,
+            )
+            outcomes[ms_path] = (result, time.time() - started)
+
+    for ms_path in eligible_ms:
+        result, elapsed = outcomes[ms_path]
         if not result.ok:
             err_msg = result.error or result.failed_stage
             log.error("  FAILED after %.0fs (%s: %s)", elapsed,
@@ -2094,6 +2337,11 @@ def main() -> None:
     log.info("=== Phase 2/3: Build hourly-epoch mosaics ===")
     by_hour = bin_tiles_by_hour(tile_fits)
     epoch_sets = build_epoch_tile_sets(by_hour)  # [(hour, [tile_paths...]), ...]
+    mosaic_hour = getattr(args, "mosaic_hour", None)
+    epoch_sets = select_epoch_tile_sets(epoch_sets, mosaic_hour)
+    if mosaic_hour is not None and not epoch_sets:
+        log.error("No accepted tiles for requested mosaic hour %02d", mosaic_hour)
+        sys.exit(1)
 
     log.info(
         "Epochs: %d  (hours: %s)",
