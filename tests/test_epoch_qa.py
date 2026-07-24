@@ -216,3 +216,80 @@ class TestToDictCSV:
         }
         assert required.issubset(d.keys())
         assert "ratios" not in d  # excluded from CSV row
+
+
+def _make_partial_coverage_fits(
+    tmp_path: Path,
+    n_finite_sources: int = 6,
+    n_blank_sources: int = 6,
+) -> tuple[Path, list[tuple[float, float, float]], int]:
+    """Synthetic mosaic where columns >= 350 are NaN (unobserved sky).
+
+    Returns (fits_path, catalog, n_expected_covered): catalog mixes
+    sources embedded on finite pixels with sources placed on the blank
+    band; only the former should enter the completeness denominator.
+    """
+    ny, nx = 500, 500
+    rng = np.random.default_rng(42)
+    data = rng.normal(0, 0.0085, (ny, nx)).astype(np.float32)
+
+    w = WCS(naxis=2)
+    w.wcs.crpix = [nx // 2, ny // 2]
+    w.wcs.cdelt = [-6.0 / 3600, 6.0 / 3600]
+    w.wcs.crval = [45.0, 16.1]
+    w.wcs.ctype = ["RA---SIN", "DEC--SIN"]
+
+    catalog: list[tuple[float, float, float]] = []
+    for y in np.linspace(100, 400, n_finite_sources, dtype=int):
+        x = 150
+        data[y, x] += 0.5
+        sky = w.pixel_to_world(x, y)
+        catalog.append((sky.ra.deg, sky.dec.deg, 500.0))
+    for y in np.linspace(120, 380, n_blank_sources, dtype=int):
+        x = 420
+        sky = w.pixel_to_world(x, y)
+        catalog.append((sky.ra.deg, sky.dec.deg, 500.0))
+
+    data[:, 350:] = np.nan
+
+    hdr = w.to_header()
+    hdr["BUNIT"] = "Jy/beam"
+    hdu = fits.PrimaryHDU(data=data[np.newaxis, np.newaxis], header=hdr)
+    out = tmp_path / "partial_mosaic.fits"
+    hdu.writeto(str(out), overwrite=True)
+    return out, catalog, n_finite_sources
+
+
+class TestCoverageAwareCompleteness:
+    """Sources on non-finite pixels must not count as completeness misses."""
+
+    def test_blank_pixel_sources_excluded_from_denominator(self, tmp_path):
+        fits_path, catalog, n_finite = _make_partial_coverage_fits(tmp_path)
+        nvss_db = _make_nvss_db(tmp_path, catalog)
+        result = measure_epoch_qa(str(fits_path), str(nvss_db))
+
+        assert result.n_catalog == len(catalog)
+        assert result.n_covered == n_finite
+        assert result.n_recovered == n_finite
+        assert result.completeness_frac == 1.0
+        assert result.completeness_gate == "PASS"
+
+    def test_gate_skips_when_covered_below_minimum(self, tmp_path):
+        # 2 finite + 8 blank: n_catalog=10 >= 5 but n_covered=2 < 5 → SKIP
+        fits_path, catalog, n_finite = _make_partial_coverage_fits(
+            tmp_path, n_finite_sources=2, n_blank_sources=8,
+        )
+        nvss_db = _make_nvss_db(tmp_path, catalog)
+        result = measure_epoch_qa(str(fits_path), str(nvss_db))
+
+        assert result.n_catalog == 10
+        assert result.n_covered == 2
+        assert result.completeness_gate == "SKIP"
+
+    def test_n_covered_serialised_in_to_dict(self, tmp_path):
+        fits_path, catalog, n_finite = _make_partial_coverage_fits(tmp_path)
+        nvss_db = _make_nvss_db(tmp_path, catalog)
+        d = measure_epoch_qa(str(fits_path), str(nvss_db)).to_dict()
+
+        assert d["n_covered"] == n_finite
+        assert "ratios" not in d

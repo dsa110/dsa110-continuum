@@ -84,7 +84,7 @@ def plot_epoch_qa(
     ax.set_ylim(0, 105)
     ax.set_ylabel("% recovered")
     ax.legend(fontsize=8, labelcolor="#e0e0e0", facecolor="#1a1a2e")
-    n_str = f"{result.n_recovered}/{result.n_catalog}"
+    n_str = f"{result.n_recovered}/{result.n_covered or result.n_catalog}"
     ax.set_title(f"Completeness {n_str}  [{result.completeness_gate}]")
 
     # --- Panel 3: Per-tile RMS ---

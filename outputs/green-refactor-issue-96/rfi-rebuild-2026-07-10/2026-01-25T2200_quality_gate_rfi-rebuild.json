@@ -1,0 +1,100 @@
+{
+  "schema": "dsa110-mosaic-quality-gate/v1",
+  "evaluated_at_utc": "2026-07-10T21:39:53.935527+00:00",
+  "input": {
+    "image": "/stage/dsa110-contimg/images/mosaic_2026-01-25/2026-01-25T2200_mosaic.fits",
+    "weight": "/stage/dsa110-contimg/images/mosaic_2026-01-25/2026-01-25T2200_mosaic.weights.fits",
+    "image_sha256": "1ebd0713e57ebf33b781cafc737dfbe735f8eb0817e1fbf95b594dfbf4afb930",
+    "weight_sha256": "cc6c3a4af00af4595ec4baaec8ae2a7c18601d7a83da805293e5164cd4b4bd20",
+    "shape": [
+      2706,
+      11552
+    ],
+    "pixel_scale_deg": 0.0016666666666667
+  },
+  "thresholds": {
+    "central_rms_mjy_per_beam_max": 8.0,
+    "herr_anisotropy_max": 5000.0,
+    "edge_to_interior_rms_ratio_max": 2.0,
+    "min_positive_weight_fraction": 0.5
+  },
+  "metrics": {
+    "positive_weight_fraction": 0.6687494113829328,
+    "effective_noise_mjy_per_beam": {
+      "median": 6.713379507547213,
+      "p95": 324.1556411454091
+    },
+    "edge": {
+      "band_width_pixels": 64,
+      "edge_rms_mjy_per_beam": 10.805713863768323,
+      "interior_rms_mjy_per_beam": 4.591172910437945,
+      "edge_to_interior_rms_ratio": 2.353584601268608
+    },
+    "components": [
+      {
+        "label": 1,
+        "pixels": 20904912,
+        "window_bounds_xyxy": [
+          5655,
+          1040,
+          6355,
+          1740
+        ],
+        "central_rms_mjy_per_beam": 8.97984269208573,
+        "herr": {
+          "anisotropy_peak_to_median": 16.26712996995213,
+          "fringe_bandpower_to_lowfreq_median": 39.55613681754992,
+          "source_clip_sigma": 5,
+          "hanning": true,
+          "annulus_cycles_per_degree": [
+            12,
+            45
+          ],
+          "orientation_bins": 180
+        }
+      }
+    ]
+  },
+  "method": {
+    "herr": "central component window; 5-sigma source clip; Hanning; FFT annulus 12-45 cycles/degree; peak/median orientation bandpower",
+    "edge": "64-pixel in-support boundary band relative to >=128-pixel interior"
+  },
+  "checks": [
+    {
+      "name": "component_1_central_rms",
+      "value": 8.97984269208573,
+      "threshold": 8.0,
+      "operator": "<=",
+      "passed": false
+    },
+    {
+      "name": "component_1_herr",
+      "value": 16.26712996995213,
+      "threshold": 5000.0,
+      "operator": "<=",
+      "passed": true
+    },
+    {
+      "name": "edge_to_interior_rms_ratio",
+      "value": 2.353584601268608,
+      "threshold": 2.0,
+      "operator": "<=",
+      "passed": false
+    },
+    {
+      "name": "positive_weight_fraction",
+      "value": 0.6687494113829328,
+      "threshold": 0.5,
+      "operator": ">=",
+      "passed": true
+    }
+  ],
+  "verdict": {
+    "status": "FAIL",
+    "science_ready": false,
+    "failed_checks": [
+      "component_1_central_rms",
+      "edge_to_interior_rms_ratio"
+    ]
+  }
+}

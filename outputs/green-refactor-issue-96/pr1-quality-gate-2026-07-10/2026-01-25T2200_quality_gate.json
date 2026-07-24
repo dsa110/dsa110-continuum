@@ -1,0 +1,100 @@
+{
+  "schema": "dsa110-mosaic-quality-gate/v1",
+  "evaluated_at_utc": "2026-07-10T16:00:50.739639+00:00",
+  "input": {
+    "image": "/data/dsa110-continuum/outputs/green-refactor-issue-96/pr1-validation/2026-01-25T2200_mosaic.fits",
+    "weight": "/data/dsa110-continuum/outputs/green-refactor-issue-96/pr1-validation/2026-01-25T2200_mosaic.weights.fits",
+    "image_sha256": "91d2b03e900325f8ab890e1b6ad88bc90ef7e33456c47bae86be31a548009392",
+    "weight_sha256": "7ca34186b45ce2a0c3959857f3302cdc42024238d6f57ff8e5a1f511053c4e5f",
+    "shape": [
+      2706,
+      11552
+    ],
+    "pixel_scale_deg": 0.0016666666666667
+  },
+  "thresholds": {
+    "central_rms_mjy_per_beam_max": 8.0,
+    "herr_anisotropy_max": 5000.0,
+    "edge_to_interior_rms_ratio_max": 2.0,
+    "min_positive_weight_fraction": 0.5
+  },
+  "metrics": {
+    "positive_weight_fraction": 0.6687494113829328,
+    "effective_noise_mjy_per_beam": {
+      "median": 11.58376353410008,
+      "p95": 347.4723895179813
+    },
+    "edge": {
+      "band_width_pixels": 64,
+      "edge_rms_mjy_per_beam": 19.82013325119624,
+      "interior_rms_mjy_per_beam": 7.963285822624676,
+      "edge_to_interior_rms_ratio": 2.4889390752350993
+    },
+    "components": [
+      {
+        "label": 1,
+        "pixels": 20904912,
+        "window_bounds_xyxy": [
+          5655,
+          1040,
+          6355,
+          1740
+        ],
+        "central_rms_mjy_per_beam": 11.49215539349243,
+        "herr": {
+          "anisotropy_peak_to_median": 34.29684183021977,
+          "fringe_bandpower_to_lowfreq_median": 17.51176262045599,
+          "source_clip_sigma": 5,
+          "hanning": true,
+          "annulus_cycles_per_degree": [
+            12,
+            45
+          ],
+          "orientation_bins": 180
+        }
+      }
+    ]
+  },
+  "method": {
+    "herr": "central component window; 5-sigma source clip; Hanning; FFT annulus 12-45 cycles/degree; peak/median orientation bandpower",
+    "edge": "64-pixel in-support boundary band relative to >=128-pixel interior"
+  },
+  "checks": [
+    {
+      "name": "component_1_central_rms",
+      "value": 11.49215539349243,
+      "threshold": 8.0,
+      "operator": "<=",
+      "passed": false
+    },
+    {
+      "name": "component_1_herr",
+      "value": 34.29684183021977,
+      "threshold": 5000.0,
+      "operator": "<=",
+      "passed": true
+    },
+    {
+      "name": "edge_to_interior_rms_ratio",
+      "value": 2.4889390752350993,
+      "threshold": 2.0,
+      "operator": "<=",
+      "passed": false
+    },
+    {
+      "name": "positive_weight_fraction",
+      "value": 0.6687494113829328,
+      "threshold": 0.5,
+      "operator": ">=",
+      "passed": true
+    }
+  ],
+  "verdict": {
+    "status": "FAIL",
+    "science_ready": false,
+    "failed_checks": [
+      "component_1_central_rms",
+      "edge_to_interior_rms_ratio"
+    ]
+  }
+}

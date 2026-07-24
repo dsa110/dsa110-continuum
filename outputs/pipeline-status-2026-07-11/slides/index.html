@@ -1,0 +1,857 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>DSA-110 Continuum Imaging — Pipeline Status · Jul 2026</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap"
+            rel="stylesheet"
+        />
+        <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+        <script type="module">
+            import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+            mermaid.initialize({
+                startOnLoad: false,
+                theme: "dark",
+                flowchart: {
+                    nodeSpacing: 80,
+                    rankSpacing: 80,
+                    useMaxWidth: false,
+                },
+                themeVariables: {
+                    fontSize: "24px",
+                    primaryColor: "#303340",
+                    primaryTextColor: "#a6accd",
+                    primaryBorderColor: "#5c6078",
+                    lineColor: "#ADD7FF",
+                    secondaryColor: "#1b1e28",
+                    tertiaryColor: "#1b1e28",
+                    background: "#1b1e28",
+                    mainBkg: "#303340",
+                    nodeBorder: "#5c6078",
+                    clusterBkg: "#1b1e28",
+                    titleColor: "#ffffff",
+                    edgeLabelBackground: "#1b1e28",
+                },
+            });
+            window.mermaid = mermaid;
+        </script>
+        <style>
+            /* ==========================================
+       POIMANDRES THEME
+       ========================================== */
+            :root {
+                --bg: #1b1e28;
+                --bg-alt: #303340;
+                --fg: #a6accd;
+                --fg-bright: #ffffff;
+                --fg-dim: #5c6078;
+                --selection: #717cb425;
+                --accent: #add7ff;
+                --border: #303340;
+                --green: #5de4c7;
+                --yellow: #fffac2;
+                --pink: #d0679d;
+                --cyan: #89ddff;
+                --magenta: #f087bd;
+            }
+
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+
+            body {
+                font-family: "IBM Plex Mono", monospace;
+                background: var(--bg);
+                color: var(--fg);
+                line-height: 1.6;
+            }
+
+            /* ==========================================
+       BASE SLIDE STYLES
+       ========================================== */
+            .slide {
+                display: none;
+                min-height: 100vh;
+                padding: 60px 80px;
+                flex-direction: column;
+                justify-content: center;
+            }
+
+            .slide.active {
+                display: flex;
+            }
+
+            /* Slide variants */
+            .slide.centered {
+                align-items: center;
+                text-align: center;
+            }
+            .slide.top {
+                justify-content: flex-start;
+                padding-top: 100px;
+            }
+
+            /* ==========================================
+       TYPOGRAPHY
+       ========================================== */
+            .slide h1 {
+                font-size: 3rem;
+                font-weight: 600;
+                margin-bottom: 1rem;
+                color: var(--fg-bright);
+            }
+
+            .slide h2 {
+                font-size: 2.2rem;
+                font-weight: 500;
+                margin-bottom: 1.5rem;
+                color: var(--fg-bright);
+            }
+
+            .slide h3 {
+                font-size: 1.5rem;
+                font-weight: 500;
+                margin-bottom: 1rem;
+                color: var(--fg);
+            }
+
+            .slide p {
+                font-size: 1.3rem;
+                margin-bottom: 1rem;
+                color: var(--fg);
+            }
+
+            .slide .subtitle {
+                font-size: 1.4rem;
+                color: var(--fg-dim);
+                margin-top: 0.5rem;
+            }
+
+            .slide .small {
+                font-size: 1rem;
+            }
+
+            /* ==========================================
+       LISTS
+       ========================================== */
+            .slide ul,
+            .slide ol {
+                font-size: 1.3rem;
+                margin-left: 0;
+                color: var(--fg);
+                list-style: none;
+            }
+
+            .slide li {
+                margin-bottom: 0.75rem;
+                position: relative;
+                padding-left: 1.8rem;
+            }
+
+            .slide ul li::before {
+                content: "→";
+                position: absolute;
+                left: 0;
+                color: var(--accent);
+            }
+
+            .slide ol {
+                counter-reset: item;
+            }
+            .slide ol li::before {
+                content: counter(item) ".";
+                counter-increment: item;
+                position: absolute;
+                left: 0;
+                color: var(--accent);
+                font-weight: 500;
+            }
+
+            /* ==========================================
+       COLOR UTILITY CLASSES
+       ========================================== */
+            .accent {
+                color: var(--accent);
+            }
+            .green {
+                color: var(--green);
+            }
+            .yellow {
+                color: var(--yellow);
+            }
+            .pink {
+                color: var(--pink);
+            }
+            .cyan {
+                color: var(--cyan);
+            }
+            .magenta {
+                color: var(--magenta);
+            }
+            .muted {
+                color: var(--fg-dim);
+            }
+            .bright {
+                color: var(--fg-bright);
+            }
+
+            /* ==========================================
+       LAYOUTS
+       ========================================== */
+
+            /* Two columns */
+            .columns {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 60px;
+                width: 100%;
+            }
+
+            .columns.narrow-left {
+                grid-template-columns: 1fr 2fr;
+            }
+            .columns.narrow-right {
+                grid-template-columns: 2fr 1fr;
+            }
+
+            .column {
+            }
+
+            /* Split: image left/right */
+            .split {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 40px;
+                align-items: center;
+                width: 100%;
+            }
+
+            /* ==========================================
+       IMAGES
+       ========================================== */
+            .slide img {
+                max-width: 100%;
+                max-height: 65vh;
+                border-radius: 6px;
+            }
+
+            .slide img.full {
+                max-height: 75vh;
+            }
+
+            .slide img.bordered {
+                border: 1px solid var(--border);
+            }
+
+            .slide img.shadow {
+                box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+            }
+
+            /* ==========================================
+       SPECIAL ELEMENTS
+       ========================================== */
+
+            /* Big number/stat */
+            .big-number {
+                font-size: 8rem;
+                font-weight: 700;
+                color: var(--accent);
+                line-height: 1;
+                margin-bottom: 1rem;
+            }
+
+            .big-number.green {
+                color: var(--green);
+            }
+            .big-number.pink {
+                color: var(--pink);
+            }
+
+            /* Quote/blockquote */
+            .quote {
+                font-size: 1.8rem;
+                font-style: italic;
+                color: var(--fg);
+                border-left: 3px solid var(--accent);
+                padding-left: 1.5rem;
+                margin: 1rem 0;
+            }
+
+            .quote-author {
+                font-size: 1.1rem;
+                color: var(--fg-dim);
+                margin-top: 1rem;
+            }
+
+            /* Code block */
+            .code {
+                background: var(--bg-alt);
+                border: 1px solid var(--border);
+                border-radius: 6px;
+                padding: 1.5rem;
+                font-size: 1.1rem;
+                overflow-x: auto;
+                margin: 1rem 0;
+                white-space: pre;
+            }
+
+            /* Mermaid diagrams */
+            .mermaid-wrapper {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                width: 100%;
+                margin: 2rem 0;
+            }
+
+            .mermaid svg {
+                max-width: none !important;
+            }
+
+            /* Gallery */
+            .gallery {
+                display: flex;
+                gap: 40px;
+                align-items: center;
+                justify-content: center;
+                flex-wrap: wrap;
+            }
+
+            .gallery img {
+                max-height: 200px;
+                max-width: 280px;
+            }
+
+            .gallery-item {
+                text-align: center;
+            }
+
+            .gallery-item p {
+                font-size: 0.9rem;
+                color: var(--fg-dim);
+                margin-top: 0.75rem;
+            }
+
+            .code .comment {
+                color: var(--fg-dim);
+            }
+            .code .keyword {
+                color: var(--magenta);
+            }
+            .code .string {
+                color: var(--green);
+            }
+            .code .function {
+                color: var(--accent);
+            }
+
+            /* Badge/tag */
+            .badge {
+                display: inline-block;
+                background: var(--bg-alt);
+                border: 1px solid var(--border);
+                padding: 0.3rem 0.8rem;
+                border-radius: 4px;
+                font-size: 0.9rem;
+                margin-right: 0.5rem;
+            }
+
+            .badge.accent {
+                background: rgba(173, 215, 255, 0.15);
+                border-color: var(--accent);
+            }
+            .badge.green {
+                background: rgba(93, 228, 199, 0.15);
+                border-color: var(--green);
+            }
+
+            /* Divider */
+            hr {
+                border: none;
+                border-top: 1px solid var(--border);
+                margin: 2rem 0;
+            }
+
+            /* ==========================================
+       NAVIGATION
+       ========================================== */
+            .nav {
+                position: fixed;
+                bottom: 30px;
+                right: 30px;
+                display: flex;
+                gap: 10px;
+            }
+
+            .nav button {
+                font-family: "IBM Plex Mono", monospace;
+                background: var(--bg-alt);
+                color: var(--fg);
+                border: 1px solid var(--border);
+                padding: 12px 20px;
+                font-size: 0.9rem;
+                cursor: pointer;
+                border-radius: 4px;
+                transition: all 0.15s;
+            }
+
+            .nav button:hover {
+                background: #3a3f52;
+                color: var(--fg-bright);
+            }
+
+            .nav button:disabled {
+                opacity: 0.3;
+                cursor: not-allowed;
+            }
+
+            .progress {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                height: 2px;
+                background: var(--accent);
+                transition: width 0.3s;
+            }
+
+            .slide-number {
+                position: fixed;
+                bottom: 35px;
+                left: 30px;
+                color: var(--fg-dim);
+                font-size: 0.85rem;
+            }
+
+            /* ==========================================
+       PROGRESSIVE REVEAL
+       ========================================== */
+            .slide[data-progressive] {
+                justify-content: flex-start;
+                padding-top: 15vh;
+            }
+            .slide[data-progressive] li,
+            .slide[data-progressive] .reveal {
+                opacity: 0;
+                transition: opacity 0.3s ease;
+            }
+            .slide[data-progressive] li.visible,
+            .slide[data-progressive] .reveal.visible {
+                opacity: 1;
+            }
+        
+            .slide img.diag {
+                max-width: 100%;
+                max-height: 72vh;
+                width: auto;
+                height: auto;
+                object-fit: contain;
+                border: 1px solid var(--border);
+                border-radius: 4px;
+            }
+            .slide.image-focus {
+                padding-top: 40px;
+                padding-bottom: 80px;
+            }
+            table.metrics {
+                border-collapse: collapse;
+                width: 100%;
+                margin-top: 1rem;
+                font-size: 0.95rem;
+            }
+            table.metrics th, table.metrics td {
+                border-bottom: 1px solid var(--border);
+                padding: 0.55rem 0.75rem;
+                text-align: left;
+            }
+            table.metrics th { color: var(--fg-bright); }
+            table.metrics td.pass { color: var(--green); font-weight: 600; }
+            table.metrics td.fail { color: var(--pink); font-weight: 600; }
+            .two-col-status h3 { margin-bottom: 1rem; }
+            .two-col-status ul { font-size: 1.15rem; }
+
+        </style>
+    </head>
+    <body>
+
+        <section class="slide centered">
+            <h1>DSA-110 Continuum Imaging</h1>
+            <p class="subtitle">Where the pipeline stands · July 2026</p>
+            <p class="small muted" style="margin-top: 2rem">
+                Status for science collaborators<br/>
+                Reference epoch: <span class="accent">2026-01-25T2200</span>
+            </p>
+        </section>
+
+        <section class="slide" data-progressive>
+            <h2>Science goal</h2>
+            <ul>
+                <li>Detect <span class="accent">variable / transient compact radio sources</span> (including ESEs)</li>
+                <li>Daily-cadenced <span class="accent">forced photometry</span> on hourly-epoch mosaics</li>
+                <li>Light curves + Mooley variability metrics (η / Vs / m)</li>
+                <li class="muted">Not a single deep all-sky map — a time-domain survey on a Dec strip</li>
+            </ul>
+        </section>
+
+        <section class="slide" data-progressive>
+            <h2>What “done” means</h2>
+            <ul>
+                <li>Array dwells on a fixed <span class="accent">Dec strip</span>; sky drifts through the beam</li>
+                <li>~5-minute <span class="accent">tiles</span> → coadd into ~1-hour <span class="accent">hourly-epoch mosaics</span></li>
+                <li>Adjacent epochs overlap so flux stays continuous across boundaries</li>
+                <li>Per-source forced photometry → variability / ESE search</li>
+                <li class="muted">Not a 24-hour “daily mosaic”</li>
+            </ul>
+        </section>
+
+        <section class="slide" data-progressive>
+            <h2>Instrument snapshot</h2>
+            <ul>
+                <li><span class="accent">DSA-110</span> at OVRO — meridian drift-scan transit array</li>
+                <li>~96 active antennas of 117 elements in the HDF5 metadata</li>
+                <li>L-band <span class="accent">1.31–1.50 GHz</span> · 16 subbands · 187.5 MHz total</li>
+                <li>Integration ~12.9 s · ~24 samples per ~5-min tile</li>
+                <li class="muted">Current production Dec strip ~16.1°</li>
+            </ul>
+        </section>
+
+        <section class="slide centered">
+            <h2>Data flow</h2>
+            <div class="mermaid-wrapper">
+                <pre class="mermaid">
+flowchart LR
+  H[HDF5] --> MS[MS]
+  MS --> C[Calibrate]
+  C --> T[Tile image]
+  T --> M[Hourly-epoch mosaic]
+  M --> QA[Epoch QA]
+  QA --> P[Forced photometry]
+  P --> LC[Light curves / ESE]
+                </pre>
+            </div>
+            <p class="small muted">Strict QA can stop the chain before photometry</p>
+        </section>
+
+        <section class="slide" data-progressive>
+            <h2>Calibration status</h2>
+            <ul>
+                <li>Bandpass + gain tables (.b / .g) before imaging</li>
+                <li>Acquisition order: same-date → primary calibrator → bright-source fallback → borrow nearest validated</li>
+                <li><span class="green">Fail loud</span> — no silent unknown provenance</li>
+                <li>Borrowing requires Dec-strip compatibility via provenance sidecar</li>
+                <li class="muted">Pre-applycal RFI flagging recently wired into day/batch paths</li>
+            </ul>
+        </section>
+
+        <section class="slide" data-progressive>
+            <h2>Tile imaging status</h2>
+            <ul>
+                <li>WSClean · 4800×4800 px · cell ~3″ (tile); mosaic products often 6″ pixels</li>
+                <li>Phaseshift → applycal → image; FIELD phase/reference dirs synced</li>
+                <li>EveryBeam needs <span class="accent">TELESCOPE_NAME = DSA_110</span> after SPW merge</li>
+                <li>Reference check: 3C454.3 recovers ~<span class="green">12.5 Jy/beam</span> on test data</li>
+                <li class="muted">These invariants are silent-failure modes if skipped</li>
+            </ul>
+        </section>
+
+        <section class="slide" data-progressive>
+            <h2>Mosaicking status</h2>
+            <ul>
+                <li>Production: <span class="accent">batch</span> UTC-hour bins with ±2 tile overlap (~20 min)</li>
+                <li>Quicklook image-domain coadd (PB-weighted; beam-map blanking)</li>
+                <li>~12 tiles per hourly-epoch mosaic along the Dec strip</li>
+                <li>Science/Deep visibility-domain joint imaging exists but is not the default product</li>
+                <li class="muted">Sliding-window mosaics are the streaming design target</li>
+            </ul>
+        </section>
+
+        <section class="slide image-focus">
+            <h2>Reference product — 2026-01-25T2200</h2>
+            <p class="small muted" style="margin-bottom:0.75rem">
+              Hourly-epoch mosaic · Dec strip ~16.2° · used for all validation below
+            </p>
+            <div class="columns">
+              <div class="column">
+                <p class="small muted">Full field</p>
+                <img class="diag shadow" src="./09_mosaic_full.png" alt="2026-01-25T2200 mosaic full field" />
+              </div>
+              <div class="column">
+                <p class="small muted">Zoom</p>
+                <img class="diag shadow" src="./09_mosaic_zoom.png" alt="2026-01-25T2200 mosaic zoom" />
+              </div>
+            </div>
+        </section>
+
+        <section class="slide" data-progressive>
+            <h2>Image quality — RFI rebuild</h2>
+            <ul>
+                <li>Pre-applycal RFI flagging cut noise substantially on this epoch</li>
+                <li>Global robust RMS: <span class="accent">8.92 → 5.10 mJy/beam</span> (~−43%)</li>
+                <li>Bright-source peak flux essentially preserved (~16.2 Jy)</li>
+                <li class="yellow">Residual crosshatch / PSF-lattice texture remains</li>
+                <li class="yellow">Central coverage pinch (missing tile) still present</li>
+                <li class="muted">Amplitude improved; failure topology of some image-QA metrics unchanged</li>
+            </ul>
+        </section>
+
+        <section class="slide image-focus">
+            <h2>RFI-cleaned mosaic</h2>
+            <p class="small muted" style="margin-bottom:0.75rem">
+              Same epoch after RFI rebuild — quieter, but lattice + coverage pinch remain
+            </p>
+            <img class="diag shadow" src="./10_rfi_rebuild_full.png" alt="RFI-rebuild mosaic full field" />
+        </section>
+
+        <section class="slide" data-progressive>
+            <h2>Epoch QA — three gates</h2>
+            <ul>
+                <li><span class="accent">Flux scale</span> — bright anchors vs expected</li>
+                <li><span class="accent">Catalog completeness</span> — fraction of expected sources recovered</li>
+                <li><span class="accent">Noise floor</span> — mosaic RMS / effective noise</li>
+                <li>All three must pass for epoch <span class="green">PASS</span></li>
+                <li>Strict QA (default): QA-FAIL epochs <span class="pink">skip forced photometry</span> and do not archive as science-clean</li>
+            </ul>
+        </section>
+
+        <section class="slide" data-progressive>
+            <h2>QA on the reference epoch</h2>
+            <table class="metrics">
+              <thead>
+                <tr><th>Gate</th><th>Result</th><th>Notes</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Flux scale</td><td class="pass">PASS</td><td>Bright anchors OK</td></tr>
+                <tr><td>Noise floor</td><td class="pass">PASS</td><td>After RFI rebuild</td></tr>
+                <tr><td>Completeness</td><td class="fail">FAIL</td><td>172/383 ≈ 45% (need ≥60%)</td></tr>
+              </tbody>
+            </table>
+            <ul style="margin-top:1.25rem">
+                <li>Overall epoch QA: <span class="pink">FAIL</span> → photometry gated off</li>
+                <li class="muted">Coverage-corrected investigation ≈ 71% — not yet the production gate</li>
+            </ul>
+        </section>
+
+        <section class="slide" data-progressive>
+            <h2>Astrometry — PASS</h2>
+            <table class="metrics">
+              <thead>
+                <tr><th>Survey</th><th>N</th><th>Median Δ</th><th>RMS Δ</th><th>Verdict</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>NVSS</td><td>176</td><td>1.56″</td><td>4.69″</td><td class="pass">PASS</td></tr>
+                <tr><td>FIRST</td><td>16</td><td>2.22″</td><td>2.98″</td><td class="pass">PASS</td></tr>
+                <tr><td>RACS</td><td>215</td><td>1.86″</td><td>4.58″</td><td class="pass">PASS</td></tr>
+              </tbody>
+            </table>
+            <ul style="margin-top:1.25rem">
+                <li>Gate: seeded RMS ≤ √(BMAJ×BMIN)/5 ≈ <span class="green">8.82″</span></li>
+                <li>Beam on this mosaic: 58.8″ × 33.1″</li>
+                <li class="muted">Independent agreement across three surveys</li>
+            </ul>
+        </section>
+
+        <section class="slide image-focus">
+            <h2>Astrometry evidence — NVSS cutouts</h2>
+            <p class="small muted" style="margin-bottom:0.75rem">
+              20 brightest NVSS · cyan + = catalog · orange × = DSA peak · lime = beam
+            </p>
+            <img class="diag shadow" src="./14_nvss_bright20_cutouts.png" alt="NVSS bright-source cutouts" />
+        </section>
+
+        <section class="slide image-focus">
+            <h2>Astrometry evidence — offsets on sky</h2>
+            <div class="columns">
+              <div class="column">
+                <p class="small muted">ΔRA vs ΔDec</p>
+                <img class="diag shadow" src="./15_offset_scatter.png" alt="Offset scatter" />
+              </div>
+              <div class="column">
+                <p class="small muted">Quiver (10″ ref.)</p>
+                <img class="diag shadow" src="./15_quiver_sky.png" alt="Sky quiver of offsets" />
+              </div>
+            </div>
+            <p class="small muted" style="margin-top:0.75rem">
+              No strong radius-dependent failure once the quiver is scaled correctly
+            </p>
+        </section>
+
+        <section class="slide" data-progressive>
+            <h2>Photometry &amp; variability</h2>
+            <ul>
+                <li>Condon matched-filter forced photometry is implemented</li>
+                <li>Mooley η / Vs / m and multi-epoch pairing exist in-package</li>
+                <li>ESE candidate scoring paths exist</li>
+                <li class="pink">Not run on this reference epoch under strict QA</li>
+                <li class="muted">Machinery is ahead of unblocked science products</li>
+            </ul>
+        </section>
+
+        <section class="slide" data-progressive>
+            <h2>Catalog caveat</h2>
+            <ul>
+                <li>Forced-phot “master” catalog build claims NVSS/FIRST/RAX/VLASS inputs</li>
+                <li>In practice, master rows are <span class="pink">100% VLASS</span> today</li>
+                <li>Astrometry validation therefore queried <span class="accent">survey DBs directly</span></li>
+                <li>Master rebuild is required before trusted multi-survey forced photometry</li>
+                <li class="muted">This is a known Phase-2 follow-up from the astrometry design</li>
+            </ul>
+        </section>
+
+        <section class="slide two-col-status">
+            <h2>Solid vs not yet</h2>
+            <div class="columns">
+              <div class="column">
+                <h3 class="green">Solid</h3>
+                <ul>
+                  <li>HDF5 → MS → cal → tile path</li>
+                  <li>Hourly-epoch Quicklook mosaics</li>
+                  <li>Astrometry on reference epoch</li>
+                  <li>RFI amplitude improvement</li>
+                  <li>Strict QA gating discipline</li>
+                </ul>
+              </div>
+              <div class="column">
+                <h3 class="pink">Not yet</h3>
+                <ul>
+                  <li>Completeness gate (production)</li>
+                  <li>Forced phot on this epoch</li>
+                  <li>Trusted multi-survey master catalog</li>
+                  <li>Science/Deep as default product</li>
+                  <li>ESE results as science deliverable</li>
+                </ul>
+              </div>
+            </div>
+        </section>
+
+        <section class="slide" data-progressive>
+            <h2>Near-term plan</h2>
+            <ol>
+                <li>Fix / adopt coverage-aware completeness in epoch QA</li>
+                <li>Unblock forced photometry on QA-PASS epochs</li>
+                <li>Rebuild master catalog with real NVSS/FIRST/RAX flags</li>
+                <li>Promote astrometry check into routine mosaic QA</li>
+                <li class="muted">Later: science/deep coadds; streaming sliding-window mosaics</li>
+            </ol>
+        </section>
+
+        <section class="slide centered">
+            <h1>Takeaway</h1>
+            <p class="subtitle" style="max-width: 48rem; margin: 1.5rem auto; line-height: 1.5">
+              Imaging and astrometry look <span class="green">credible</span> on the reference epoch.<br/>
+              Variability science products are <span class="pink">not ready yet</span> until
+              completeness / photometry clear.
+            </p>
+            <hr style="width: 100px; margin: 2rem auto" />
+            <p class="small muted">
+              Spec: docs/superpowers/specs/2026-07-11-pipeline-status-slide-deck-design.md<br/>
+              Artifacts: outputs/pipeline-status-2026-07-11/
+            </p>
+        </section>
+
+        <!-- Navigation -->
+        <div class="nav">
+            <button id="prev">← Prev</button>
+            <button id="next">Next →</button>
+        </div>
+
+        <div class="progress" id="progress"></div>
+        <div class="slide-number" id="slideNum"></div>
+
+        <script>
+            const slides = document.querySelectorAll(".slide");
+            let current = 0;
+
+            function getSlideFromHash() {
+                const hash = window.location.hash;
+                const match = hash.match(/#(\d+)/);
+                if (match) {
+                    return Math.max(0, Math.min(parseInt(match[1]) - 1, slides.length - 1));
+                }
+                return 0;
+            }
+
+            function getProgressiveItems(slide) {
+                if (!slide.hasAttribute('data-progressive')) return [];
+                return Array.from(slide.querySelectorAll('li, .reveal'));
+            }
+
+            function revealAllItems(slide) {
+                getProgressiveItems(slide).forEach(el => el.classList.add('visible'));
+            }
+
+            function hideAllItems(slide) {
+                getProgressiveItems(slide).forEach(el => el.classList.remove('visible'));
+            }
+
+            function getNextHiddenItem(slide) {
+                return getProgressiveItems(slide).find(el => !el.classList.contains('visible'));
+            }
+
+            function advance() {
+                const slide = slides[current];
+                const nextHidden = getNextHiddenItem(slide);
+                if (nextHidden) {
+                    nextHidden.classList.add('visible');
+                } else if (current < slides.length - 1) {
+                    showSlide(current + 1);
+                }
+            }
+
+            function goBack() {
+                if (current > 0) {
+                    showSlide(current - 1, true);
+                }
+            }
+
+            async function showSlide(n, showAll = false) {
+                slides[current].classList.remove("active");
+                current = Math.max(0, Math.min(n, slides.length - 1));
+                slides[current].classList.add("active");
+
+                if (showAll) {
+                    revealAllItems(slides[current]);
+                } else {
+                    hideAllItems(slides[current]);
+                }
+
+                history.replaceState(null, null, `#${current + 1}`);
+
+                document.getElementById("prev").disabled = current === 0;
+                document.getElementById("next").disabled =
+                    current === slides.length - 1;
+                document.getElementById("progress").style.width =
+                    ((current + 1) / slides.length) * 100 + "%";
+                document.getElementById("slideNum").textContent =
+                    current + 1 + " / " + slides.length;
+
+                const mermaidEls = slides[current].querySelectorAll(
+                    ".mermaid:not([data-processed])",
+                );
+                if (mermaidEls.length > 0 && window.mermaid) {
+                    await window.mermaid.run({ nodes: mermaidEls });
+                }
+            }
+
+            document.getElementById("prev").onclick = () => goBack();
+            document.getElementById("next").onclick = () => advance();
+
+            document.addEventListener("keydown", (e) => {
+                if (e.key === "ArrowRight" || e.key === " ") advance();
+                if (e.key === "ArrowLeft") goBack();
+                if (e.key === "Home") showSlide(0);
+                if (e.key === "End") showSlide(slides.length - 1, true);
+            });
+
+            window.addEventListener("hashchange", () => {
+                showSlide(getSlideFromHash());
+            });
+
+            showSlide(getSlideFromHash());
+        </script>
+    </body>
+</html>

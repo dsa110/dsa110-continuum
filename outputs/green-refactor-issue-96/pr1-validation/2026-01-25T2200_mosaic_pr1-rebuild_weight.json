@@ -1,0 +1,21 @@
+{
+  "artifact": "/data/dsa110-continuum/outputs/green-refactor-issue-96/pr1-validation/2026-01-25T2200_mosaic_pr1-rebuild_weight.png",
+  "source_fits": "/data/dsa110-continuum/outputs/green-refactor-issue-96/pr1-validation/2026-01-25T2200_mosaic.weights.fits",
+  "source_fits_mtime_utc": "2026-07-10T05:56:50.811859+00:00",
+  "rendered_at_utc": "2026-07-10T15:57:58.753411+00:00",
+  "shape": [
+    2706,
+    11552
+  ],
+  "positive_weight_percentiles": [
+    1.6732212400436401,
+    83831.15015624987
+  ],
+  "display": {
+    "stretch": "log",
+    "percentiles": [
+      0.5,
+      99.5
+    ]
+  }
+}
