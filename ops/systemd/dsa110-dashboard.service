@@ -4,9 +4,9 @@ After=network.target
 
 [Service]
 User=ubuntu
-WorkingDirectory=/data/dsa110-continuum-dashboard
-Environment=PYTHONPATH=/data/dsa110-continuum-dashboard
-Environment=DSA110_REPO_ROOT=/data/dsa110-continuum
+WorkingDirectory=/data/dsa110-continuum-production
+Environment=PYTHONPATH=/data/dsa110-continuum-production
+Environment=DSA110_REPO_ROOT=/data/dsa110-continuum-production
 EnvironmentFile=-/home/ubuntu/.config/dsa110/dashboard.env
 ExecStart=/opt/miniforge/envs/casa6/bin/python -m uvicorn scripts.qa_server:app --host 0.0.0.0 --port 8767 --log-level warning
 ExecStartPost=/bin/sh -c 'for attempt in $$(seq 1 60); do /usr/bin/curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8767/health > /dev/null && exit 0; sleep 1; done; exit 1'

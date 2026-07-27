@@ -4,6 +4,6 @@ Description=DSA-110 continuum daily batch pipeline launcher
 [Service]
 Type=oneshot
 User=ubuntu
-WorkingDirectory=/data/dsa110-continuum
-Environment=PYTHONPATH=/data/dsa110-continuum
+WorkingDirectory=/data/dsa110-continuum-production
+Environment=PYTHONPATH=/data/dsa110-continuum-production
 ExecStart=/opt/miniforge/envs/casa6/bin/python scripts/auto_pipeline.py
