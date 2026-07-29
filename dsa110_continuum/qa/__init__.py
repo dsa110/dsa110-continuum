@@ -8,10 +8,8 @@ validate_flux_scale: Validate flux scale against reference catalog
 run_full_validation: Run all validation types (astrometry, flux, counts)
 extract_sources_from_image: Extract source positions from FITS image
 
-    Pipeline Hooks (Phase 3.1 Multi-Epoch Trending):
-hook_calibration_complete: Post-calibration hook for metrics ingestion
-ingest_calibration_metrics: Ingest calibration metrics to database
-query_calibration_trending: Query calibration trending data
+    Pipeline Hooks:
+hook_ese_detection_complete: Post-ESE-detection hook
 
     Example
 -------
@@ -43,14 +41,7 @@ try:
         compute_geometric_delay_limits,
         validate_delay_solutions,
     )
-    from dsa110_continuum.qa.pipeline_hooks import (
-        CalibrationMetricsRecord,
-        extract_calibration_metrics,
-        hook_calibration_complete,
-        ingest_calibration_metrics,
-        query_calibration_trending,
-        update_calibration_trending,
-    )
+    from dsa110_continuum.qa.pipeline_hooks import hook_ese_detection_complete
     from dsa110_continuum.qa.pipeline_quality import (
         check_calibration_quality,
         check_image_quality,
@@ -73,13 +64,8 @@ __all__ = [
     "extract_sources_from_image",
     "run_full_validation",
     "validate_flux_scale",
-    # Pipeline hooks (Phase 3.1)
-    "CalibrationMetricsRecord",
-    "extract_calibration_metrics",
-    "hook_calibration_complete",
-    "ingest_calibration_metrics",
-    "query_calibration_trending",
-    "update_calibration_trending",
+    # Pipeline hooks
+    "hook_ese_detection_complete",
     # Calibration stability tracking (ring buffer)
     "AntennaGainSnapshot",
     "AntennaTrendAnalysis",
