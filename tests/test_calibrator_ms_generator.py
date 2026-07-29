@@ -143,30 +143,6 @@ class TestGenerateMultiple:
         assert convert.call_args.args[0] == [D1_GROUP]
 
 
-class TestConvertGroupsAcceptsTimestampStrings:
-    """select_groups_by_position returns timestamp strings; convert_groups must
-    treat a string group as the group timestamp, not a file list (regression:
-    it indexed the string, so Time("2", format="isot") raised ValueError and
-    auto-cal table generation always failed)."""
-
-    def test_string_group_uses_full_timestamp_window(self, generator):
-        import astropy.units as u
-
-        def fake_convert(**kwargs):
-            Path(kwargs["output_dir"], f"{kwargs['start_time']}.ms").mkdir(parents=True)
-
-        with patch(
-            "dsa110_continuum.conversion.convert_subband_groups_to_ms",
-            side_effect=fake_convert,
-        ) as conv:
-            ms_paths = generator.convert_groups([D1_GROUP])
-
-        kwargs = conv.call_args.kwargs
-        assert kwargs["start_time"] == D1_GROUP
-        assert kwargs["end_time"] == (Time(D1_GROUP, format="isot") + 2 * u.minute).isot
-        assert ms_paths == [generator.output_dir / f"{D1_GROUP}.ms"]
-
-
 class TestSiderealDayScoping:
     """Correctness criterion (analytic): in drift scan the same RA transits
     once per mean sidereal day (86164.0905 s = 1436.07 min). A positionally
@@ -264,6 +240,16 @@ class TestConvertGroupsBehavior:
 
     CONVERTER = "dsa110_continuum.conversion.convert_subband_groups_to_ms"
 
+    def test_string_group_uses_full_timestamp_window(self, generator):
+        result = {"converted": [D1_GROUP], "skipped": [], "failed": []}
+        with patch(self.CONVERTER, return_value=result) as conv:
+            ms_paths = generator.convert_groups([D1_GROUP])
+
+        kwargs = conv.call_args.kwargs
+        assert kwargs["start_time"] == D1_GROUP
+        assert kwargs["end_time"] == "2026-01-25T22:28:05.000"
+        assert ms_paths == [generator.output_dir / f"{D1_GROUP}.ms"]
+
     def test_subband_group_object_timestamp_from_sb_stem(self, generator):
         class FakeSubbandGroup:
             files = [f"/data/incoming/{D1_GROUP}_sb00.hdf5"]
@@ -293,7 +279,7 @@ class TestConvertGroupsBehavior:
             calls.append(kwargs["start_time"])
             if kwargs["start_time"] == D1_GROUP:
                 raise RuntimeError("conversion blew up")
-            Path(kwargs["output_dir"], f"{kwargs['start_time']}.ms").mkdir(parents=True)
+            return {"converted": [kwargs["start_time"]], "skipped": [], "failed": []}
 
         groups = [
             [f"/data/incoming/{D1_GROUP}_sb00.hdf5"],
@@ -304,6 +290,47 @@ class TestConvertGroupsBehavior:
 
         assert calls == [D1_GROUP, D2_GROUP]
         assert ms_paths == [generator.output_dir / f"{D2_GROUP}.ms"]
+
+    def test_unparseable_group_does_not_abort_remaining(self, generator):
+        def fake_convert(**kwargs):
+            return {"converted": [kwargs["start_time"]], "skipped": [], "failed": []}
+
+        with patch(self.CONVERTER, side_effect=fake_convert) as conv:
+            ms_paths = generator.convert_groups(["not-a-timestamp", D2_GROUP])
+
+        assert conv.call_count == 1
+        assert conv.call_args.kwargs["start_time"] == D2_GROUP
+        assert ms_paths == [generator.output_dir / f"{D2_GROUP}.ms"]
+
+    def test_uses_converter_group_id_for_ms_path(self, generator):
+        actual_group_id = "2026-01-25T22:26:06"
+        result = {"converted": [actual_group_id], "skipped": [], "failed": []}
+
+        with patch(self.CONVERTER, return_value=result):
+            ms_paths = generator.convert_groups([D1_GROUP])
+
+        assert ms_paths == [generator.output_dir / f"{actual_group_id}.ms"]
+
+    def test_uses_existing_converter_group_id_for_ms_path(self, generator):
+        actual_group_id = "2026-01-25T22:26:06"
+        actual_ms = generator.output_dir / f"{actual_group_id}.ms"
+        actual_ms.mkdir(parents=True)
+        result = {"converted": [], "skipped": [actual_group_id], "failed": []}
+
+        with patch(self.CONVERTER, return_value=result):
+            ms_paths = generator.convert_groups([D1_GROUP])
+
+        assert ms_paths == [actual_ms]
+
+    def test_does_not_return_skipped_group_when_reuse_disabled(self, generator):
+        actual_group_id = "2026-01-25T22:26:06"
+        (generator.output_dir / f"{actual_group_id}.ms").mkdir(parents=True)
+        result = {"converted": [], "skipped": [actual_group_id], "failed": []}
+
+        with patch(self.CONVERTER, return_value=result):
+            ms_paths = generator.convert_groups([D1_GROUP], skip_existing=False)
+
+        assert ms_paths == []
 
 
 class TestFailLoudPaths:
