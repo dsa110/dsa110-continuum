@@ -1030,6 +1030,8 @@ def _migrate_caltables_schema(conn: sqlite3.Connection) -> None:
 
     # Add missing provenance columns
     new_columns = [
+        ("valid_start_mjd", "REAL"),
+        ("valid_end_mjd", "REAL"),
         ("source_ms_path", "TEXT"),
         ("solver_command", "TEXT"),
         ("solver_version", "TEXT"),
